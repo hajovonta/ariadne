@@ -1,4 +1,72 @@
 ;;;; package.lisp
 
 (defpackage #:ariadne
-  (:use #:cl))
+  (:use #:cl)
+  (:export
+   ;; Graph
+   #:make-graph
+   #:graphp
+   #:graph-name
+   #:triple-count
+   #:clear-graph
+   ;; Triples
+   #:add-triple
+   #:remove-triple
+   #:remove-triples
+   #:get-triples
+   #:has-triple-p
+   #:triplep
+   #:triple-subject
+   #:triple-predicate
+   #:triple-object
+   ;; Enumeration
+   #:all-subjects
+   #:all-predicates
+   #:all-objects
+   ;; Pattern matching
+   #:variable-p
+   #:lookup-binding
+   #:unify
+   #:match-pattern
+   #:match-patterns
+   ;; Query DSL
+   #:query
+   ;; Property graph
+   #:add-node
+   #:get-node
+   #:remove-node
+   #:node-id
+   #:node-property
+   #:set-node-property
+   #:remove-node-property
+   #:node-properties
+   #:node-labels
+   #:find-nodes
+   #:add-edge
+   #:remove-edge
+   #:get-edges
+   #:edge-from
+   #:edge-to
+   #:edge-type
+   #:edge-property
+   #:neighbors
+   ;; Traversal
+   #:traverse
+   #:traverse-with-path
+   #:traverse-depth
+   #:shortest-path
+   ;; Transactions
+   #:with-transaction
+   #:begin-transaction
+   #:rollback-transaction
+   #:transaction-snapshot
+   ;; Import/Export
+   #:import-ntriples
+   #:import-ntriples-file
+   #:export-ntriples
+   #:import-turtle
+   #:export-turtle
+   #:import-nquads
+   ;; Persistence
+   #:save-graph
+   #:load-graph))

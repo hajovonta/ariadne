@@ -104,8 +104,9 @@
 
 (test unify-constant-match
   "Unify a constant with a matching value"
-  (let ((result (unify "alice" "alice" nil)))
-    (is-true result)))
+  (multiple-value-bind (env success) (unify "alice" "alice" nil)
+    (declare (ignore env))
+    (is-true success)))
 
 (test unify-constant-mismatch
   "Unify a constant with a non-matching value fails"

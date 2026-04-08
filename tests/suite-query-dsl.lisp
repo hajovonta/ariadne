@@ -16,8 +16,8 @@
     (let ((results (query g '(select (?who)
                               (where ("alice" "knows" ?who))))))
       (is (= 2 (length results)))
-      (is-true (member '(("bob")) results :test #'equal))
-      (is-true (member '(("charlie")) results :test #'equal)))))
+      (is-true (member '("bob") results :test #'equal))
+      (is-true (member '("charlie") results :test #'equal)))))
 
 (test select-multiple-variables
   "Select multiple variables"

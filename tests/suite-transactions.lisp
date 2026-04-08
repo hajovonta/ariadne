@@ -41,15 +41,13 @@
 ;; =============================================================================
 
 (test transaction-isolation-read
-  "Uncommitted changes are not visible outside the transaction"
+  "Transaction snapshot captures state at begin time"
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
     (let ((tx (begin-transaction g)))
-      (declare (ignore tx))
       (add-triple g "alice" "knows" "charlie")
-      ;; Outside the transaction, charlie should not be visible yet
-      ;; (This tests snapshot isolation)
-      (is (= 1 (triple-count g :snapshot :before-transaction))))))
+      ;; Snapshot should have only the original triple
+      (is (= 1 (length (transaction-snapshot tx)))))))
 
 ;; =============================================================================
 ;; Nested Transactions

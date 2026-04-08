@@ -94,7 +94,7 @@
     (add-edge g "alice" "bob" :knows :properties '((:since . 2020) (:weight . 0.9)))
     (let ((edges (get-edges g :from "alice" :type :knows)))
       (is (= 1 (length edges)))
-      (is (= 2020 (edge-property (first edges) :since))))))
+      (is (= 2020 (edge-property g (first edges) :since))))))
 
 (test get-outgoing-edges
   "Get all outgoing edges from a node"

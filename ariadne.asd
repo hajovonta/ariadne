@@ -1,10 +1,17 @@
 ;;;; ariadne.asd
 
 (asdf:defsystem #:ariadne
-  :description "Describe ariadne here"
-  :author "Your Name <your.name@example.com>"
-  :license  "Specify license here"
-  :version "0.0.1"
+  :description "A graph database in Common Lisp with SPARQL-like query DSL"
+  :author "Hajovonta <hajovonta@gmail.com>"
+  :license "MIT"
+  :version "0.1.0"
   :serial t
   :components ((:file "package")
-               (:file "ariadne")))
+               (:file "ariadne")
+               (:file "pattern")
+               (:file "query")
+               (:file "property-graph")
+               (:file "traversal")
+               (:file "transactions")
+               (:file "import-export")
+               (:file "persistence")))
