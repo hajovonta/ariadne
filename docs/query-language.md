@@ -134,7 +134,7 @@ Variables shared across patterns act as join conditions:
 
 ### FILTER
 
-Filter conditions are CL expressions with `?variables` substituted at evaluation time. Any valid CL expression can be used:
+Filter conditions use a safe, whitelisted subset of CL operations with `?variables` substituted at evaluation time:
 
 ```lisp
 ;; Numeric comparison
@@ -146,6 +146,16 @@ Filter conditions are CL expressions with `?variables` substituted at evaluation
 (query g '(select (?person)
            (where (?person "name" ?name))
            (filter (search "Smith" ?name))))
+
+;; Regex (requires cl-ppcre)
+(query g '(select (?person)
+           (where (?person "email" ?email))
+           (filter (regex ?email "example\\.com$"))))
+
+;; Case-insensitive regex
+(query g '(select (?person)
+           (where (?person "name" ?name))
+           (filter (regex ?name "smith" :case-insensitive-mode))))
 
 ;; Equality
 (query g '(select (?entity)
@@ -159,6 +169,8 @@ Filter conditions are CL expressions with `?variables` substituted at evaluation
            (filter (> ?age 28)
                    (equal ?type "person"))))
 ```
+
+Allowed filter operations: `< > <= >= = /= + - * /`, `equal equalp eql`, `string= string-equal search string< string>`, `numberp stringp symbolp integerp floatp`, `concatenate`, `not`, `regex`.
 
 ### OPTIONAL
 
@@ -182,19 +194,157 @@ Combine results from multiple independent patterns:
             (where (?who "likes" "bob")))))
 ```
 
+### NOT EXISTS
+
+Exclude results where a pattern matches:
+
+```lisp
+;; People without an email address
+(query g '(select (?person)
+           (where (?person "type" "person"))
+           (not-exists (?person "email" ?any))))
+```
+
+### MINUS
+
+Remove results where shared variables match:
+
+```lisp
+;; People alice knows but doesn't dislike
+(query g '(select (?who)
+           (where ("alice" "knows" ?who))
+           (minus ("alice" "dislikes" ?who))))
+```
+
+### BIND
+
+Assign computed values to new variables:
+
+```lisp
+(query g '(select (?person ?age)
+           (where (?person "birth-year" ?year))
+           (bind ?age (- 2026 ?year))))
+
+;; String concatenation
+(query g '(select (?person ?full)
+           (where (?person "first-name" ?first)
+                  (?person "last-name" ?last))
+           (bind ?full (concatenate 'string ?first " " ?last))))
+```
+
+### VALUES
+
+Restrict query to specific variable bindings (inline data):
+
+```lisp
+;; Single variable
+(query g '(select (?person ?age)
+           (where (?person "age" ?age))
+           (values ?person ("alice" "charlie"))))
+
+;; Multiple variables
+(query g '(select (?a ?b)
+           (where (?a "knows" ?b))
+           (values (?a ?b) (("alice" "bob") ("bob" "dave")))))
+```
+
+### Subqueries
+
+Subqueries can appear in WHERE patterns or FILTER expressions:
+
+```lisp
+;; In WHERE: find the person with the maximum age
+(query g '(select (?person ?age)
+           (where (?person "age" ?age)
+                  (subquery (select ((max ?a))
+                             (where (?anyone "age" ?a)))
+                            ?age))))
+
+;; In FILTER: people with above-average salary
+(query g '(select (?person ?sal)
+           (where (?person "salary" ?sal))
+           (filter (> ?sal
+                     (subquery (select ((avg ?s))
+                                (where (?x "salary" ?s))))))))
+```
+
+### ASK
+
+Boolean existence check — returns T or NIL:
+
+```lisp
+(query g '(ask (where ("alice" "knows" "bob"))))   ; => T
+(query g '(ask (where ("alice" "knows" "nobody")))) ; => NIL
+```
+
+### CONSTRUCT
+
+Generate new triples from query results:
+
+```lisp
+;; Returns list of (s p o) lists
+(query g '(construct (?a "friend-of-friend" ?c)
+           (where (?a "knows" ?b)
+                  (?b "knows" ?c))))
+
+;; Insert directly into a target graph
+(query g `(construct (?a "friend-of-friend" ?c)
+           (where (?a "knows" ?b)
+                  (?b "knows" ?c))
+           (into ,target-graph)))
+```
+
+### DESCRIBE
+
+Return all triples about a resource:
+
+```lisp
+(query g '(describe "alice"))            ; triples where alice is subject OR object
+(query g '(describe "alice" :subject))   ; only where alice is subject
+```
+
 ### Aggregation
 
 ```lisp
-;; Count matching results
+;; Count (without GROUP BY)
 (query g '(select ((count ?friend))
            (where ("alice" "knows" ?friend))))
 ;; => ((3))
+
+;; Any aggregation works without GROUP BY
+(query g '(select ((max ?age))
+           (where (?person "age" ?age))))
+;; => ((35))
 
 ;; Distinct values
 (query g '(select-distinct (?type)
            (where (?x "type" ?type))))
 ;; => (("person") ("company"))
 ```
+
+### GROUP BY / HAVING
+
+```lisp
+;; Group by with count
+(query g '(select (?company (count ?person))
+           (where (?person "works-at" ?company))
+           (group-by ?company)))
+;; => (("acme" 3) ("globex" 1))
+
+;; Multiple aggregations
+(query g '(select (?team (min ?score) (max ?score))
+           (where (?person "team" ?team)
+                  (?person "score" ?score))
+           (group-by ?team)))
+
+;; HAVING filters on aggregated values
+(query g '(select (?company (count ?person))
+           (where (?person "works-at" ?company))
+           (group-by ?company)
+           (having (> (count ?person) 1))))
+```
+
+Supported aggregation functions: `count`, `sum`, `avg`, `min`, `max`.
 
 ### ORDER BY / LIMIT / OFFSET
 
@@ -219,14 +369,56 @@ Combine results from multiple independent patterns:
 | `select` | `(select (?vars...) ...)` | Project specific variables |
 | `select *` | `(select * ...)` | Project all bound variables |
 | `select-distinct` | `(select-distinct (?vars...) ...)` | Deduplicated results |
+| `ask` | `(ask (where ...))` | Boolean existence check |
+| `construct` | `(construct (s p o) (where ...))` | Generate triples |
+| `describe` | `(describe resource)` | All triples about a resource |
 | `where` | `(where (s p o) ...)` | Triple patterns to match |
 | `filter` | `(filter expr ...)` | Keep results where all exprs are true |
+| `regex` | `(regex ?var "pattern")` | Regex filter (in filter clause) |
 | `optional` | `(optional (s p o) ...)` | Left-join patterns |
 | `union` | `(union (where ...) (where ...))` | Combine result sets |
+| `not-exists` | `(not-exists (s p o) ...)` | Exclude matching patterns |
+| `minus` | `(minus (s p o) ...)` | Remove matching bindings |
+| `bind` | `(bind ?var expr)` | Computed variable assignment |
+| `values` | `(values ?var (v1 v2 ...))` | Inline data / restrict bindings |
+| `subquery` | `(subquery (select ...) ?var)` | Nested query in WHERE or FILTER |
+| `group-by` | `(group-by ?var)` | Group results for aggregation |
+| `having` | `(having expr)` | Filter on aggregated values |
 | `order-by` | `(order-by ?var)` | Sort results by variable |
 | `limit` | `(limit n)` | Maximum number of results |
 | `offset` | `(offset n)` | Skip first n results |
-| `count` | `(select ((count ?var)) ...)` | Count matching results |
+
+### Property Path Syntax
+
+| Path | Syntax | Description |
+|------|--------|-------------|
+| Transitive | `(+ "pred")` | One or more hops |
+| Kleene star | `(* "pred")` | Zero or more hops |
+| Zero-or-one | `(? "pred")` | Zero or one hop |
+| Inverse | `(inv "pred")` | Follow edges backwards |
+| Inverse transitive | `(inv+ "pred")` | Backwards, one or more hops |
+| Alternative | `(alt "p1" "p2")` | Match any of the predicates |
+| Bounded | `(range "pred" min max)` | Between min and max hops |
+
+```lisp
+;; Transitive: all reachable nodes
+(query g '(select (?person) (where ("alice" (+ "knows") ?person))))
+
+;; Kleene star: include start node
+(query g '(select (?node) (where ("alice" (* "knows") ?node))))
+
+;; Inverse: who knows bob?
+(query g '(select (?who) (where ("bob" (inv "knows") ?who))))
+
+;; All ancestors (inverse transitive)
+(query g '(select (?ancestor) (where ("dave" (inv+ "parent") ?ancestor))))
+
+;; Alternative predicates
+(query g '(select (?person) (where ("alice" (alt "knows" "likes") ?person))))
+
+;; Bounded: 1 to 2 hops
+(query g '(select (?node) (where ("a" (range "knows" 1 2) ?node))))
+```
 
 ### Comparison with SPARQL
 
@@ -245,10 +437,11 @@ WHERE {                              (where (?person "name" ?name)
 
 Key differences from SPARQL:
 - S-expression syntax instead of string-based grammar — composable, macroexpandable
-- Filter expressions are native CL — any Lisp function can be used
+- Filter expressions use a safe, whitelisted evaluator — no arbitrary code execution
 - No SPARQL string parser required
 - No PREFIX declarations needed (use CL strings or keywords directly)
-- `CONSTRUCT`, `DESCRIBE`, `ASK`, property paths, subqueries, and federated queries are not yet implemented
+- ~80% of SPARQL 1.1 features implemented
+- Federated queries (SERVICE) and named graphs (GRAPH) are not yet implemented
 
 ---
 
@@ -587,6 +780,100 @@ Save and load graphs to disk. Uses CL's `print`/`read` for full type preservatio
 
 ---
 
+---
+
+## 9. Inference Rules
+
+Forward-chaining rule engine that materializes new triples by pattern matching. Rules are applied repeatedly until no new triples are generated (fixed point).
+
+### Defining Rules
+
+```lisp
+;; Simple rule: parent implies ancestor
+(defrule g :ancestor
+  :when '((?a "parent" ?b))
+  :then '((?a "ancestor" ?b)))
+
+;; Transitive rule: ancestor chains
+(defrule g :ancestor-transitive
+  :when '((?a "ancestor" ?b) (?b "ancestor" ?c))
+  :then '((?a "ancestor" ?c)))
+
+;; RDFS-style subclass inference
+(defrule g :subclass-type
+  :when '((?x "type" ?class) (?class "subClassOf" ?super))
+  :then '((?x "type" ?super)))
+
+;; Symmetric property
+(defrule g :symmetric-friend
+  :when '((?a "friendOf" ?b))
+  :then '((?b "friendOf" ?a)))
+```
+
+### Applying Rules
+
+```lisp
+;; Apply all rules until fixed point
+(apply-rules g)
+```
+
+### Managing Rules
+
+```lisp
+;; List all rules
+(graph-rules g)
+
+;; Remove a rule
+(remove-rule g :ancestor)
+```
+
+---
+
+## 10. Graphviz Export
+
+Export graphs to DOT format for visualization with Graphviz.
+
+### Basic Export
+
+```lisp
+;; Get DOT string
+(export-dot g)
+;; => "digraph ariadne { ... }"
+
+;; Named graph
+(export-dot (make-graph :name "social"))
+;; => "digraph social { ... }"
+
+;; Write to file
+(export-dot g :file #p"graph.dot")
+```
+
+### Filtering
+
+```lisp
+;; Only include specific predicates
+(export-dot g :predicates '("knows" "likes"))
+```
+
+### Subgraph Extraction
+
+```lisp
+;; Export neighborhood around a node (1 hop)
+(export-dot g :center "bob" :depth 1)
+```
+
+### Rendering
+
+```bash
+# Generate PNG from DOT file
+dot -Tpng graph.dot -o graph.png
+
+# Generate SVG
+dot -Tsvg graph.dot -o graph.svg
+```
+
+---
+
 ## Complete API Reference
 
 ### Graph
@@ -689,3 +976,18 @@ Save and load graphs to disk. Uses CL's `print`/`read` for full type preservatio
 |----------|-----------|-------------|
 | `save-graph` | `(g path)` | Save graph to file |
 | `load-graph` | `(path)` | Load graph from file |
+
+### Inference
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `defrule` | `(g name &key when then)` | Define an inference rule |
+| `remove-rule` | `(g name)` | Remove a rule by name |
+| `apply-rules` | `(g)` | Apply all rules to fixed point |
+| `graph-rules` | `(g)` | List all defined rules |
+
+### Graph Export
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `export-dot` | `(g &key predicates center depth file)` | Export as DOT/Graphviz |

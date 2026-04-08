@@ -1,19 +1,22 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, and property graph support. Built with TDD — 249/249 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, and Graphviz export. Built with TDD — 345/345 tests passing.
 
 ## Key Features
 
 - **Triple Store** — Core storage model based on subject-predicate-object triples with three concurrent indexes (SPO, POS, OSP) for O(1) lookups on any combination
-- **SPARQL-like Query DSL** — Declarative pattern matching with logic variables: `SELECT`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `ORDER BY`, `LIMIT`, `OFFSET`, `COUNT`, `DISTINCT`
+- **SPARQL-like Query DSL** — Declarative pattern matching with logic variables: `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, subqueries
+- **Aggregation** — `GROUP BY` with `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+- **Property Paths** — Transitive closure (`+`), Kleene star (`*`), zero-or-one (`?`), inverse (`inv`, `inv+`), alternative (`alt`), bounded (`range`)
 - **Gremlin-style Traversal** — Imperative graph walking with chainable steps: `out`, `in`, `both`, `has`, `values`
 - **Property Graph Layer** — Nodes with labels and properties, typed edges with properties, neighbor queries
-- **Pattern Matching Engine** — Logic variable unification (`?var`) with multi-pattern joins
+- **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation: RDFS-style subclass reasoning, symmetric properties, transitive closure
 - **RDF Import/Export** — N-Triples parser/serializer, Turtle parser (token-based), N-Quads import
+- **Graphviz Export** — DOT format output with predicate filtering, subgraph extraction around a node, file export
 - **Transactions** — Snapshot-based rollback with `with-transaction` macro
 - **Persistence** — Save/load graphs to disk with full type preservation
 - **Graph Algorithms** — BFS shortest path, depth-limited traversal, cycle-safe walking, path tracking
-- **Zero Dependencies** — Pure Common Lisp, no external libraries required
+- **Safe Filters** — Whitelisted filter evaluation with regex support (cl-ppcre)
 
 ## Quick Start
 
@@ -43,13 +46,20 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
              (filter (> ?age 30))))
 ;; => (("charlie" 35))
 
-;; Traversal: two hops out
-(traverse *g* "alice" '(out "knows") '(out "knows"))
-;; => ("charlie")
+;; Transitive closure: all reachable people
+(query *g* '(select (?person)
+             (where ("alice" (+ "knows") ?person))))
+;; => (("bob") ("charlie"))
 
-;; Shortest path
-(shortest-path *g* "alice" "charlie" :edge-type "knows")
-;; => ("alice" "bob" "charlie")
+;; Inference: derive new knowledge
+(defrule *g* :symmetric-knows
+  :when '((?a "knows" ?b))
+  :then '((?b "knows" ?a)))
+(apply-rules *g*)
+;; Now: (has-triple-p *g* "bob" "knows" "alice") => T
+
+;; Graphviz export
+(export-dot *g* :file #p"social.dot")
 ```
 
 ## Installation
@@ -63,6 +73,10 @@ git clone <repository-url> ariadne
 (ql:quickload :ariadne)
 ```
 
+## Dependencies
+
+- **cl-ppcre** — Regular expressions for REGEX filter support
+
 ## Running Tests
 
 ```lisp
@@ -73,6 +87,7 @@ git clone <repository-url> ariadne
 (ariadne/tests:run-suite :triple-store)
 (ariadne/tests:run-suite :query-dsl)
 (ariadne/tests:run-suite :traversal)
+(ariadne/tests:run-suite :inference)
 ```
 
 ### Test Suites
@@ -83,9 +98,14 @@ git clone <repository-url> ariadne
 | `:indexing` | SPO/POS/OSP index consistency and lookups |
 | `:property-graph` | Nodes, edges, labels, properties, neighbors |
 | `:query-dsl` | SELECT/WHERE/FILTER/OPTIONAL/UNION/ORDER BY/LIMIT |
+| `:query-advanced` | GROUP BY, HAVING, ASK, CONSTRUCT, BIND, NOT EXISTS, MINUS, property paths |
+| `:query-extended` | Inverse paths, Kleene star, DESCRIBE, REGEX |
+| `:subqueries` | VALUES inline data, subqueries in WHERE and FILTER |
 | `:sparql-patterns` | Pattern matching, multi-pattern joins, unification |
 | `:traversal` | Graph walking, path tracking, shortest path, cycle detection |
 | `:transactions` | Commit, rollback, snapshot isolation |
+| `:inference` | Forward-chaining rules, RDFS subclass, symmetric, transitive, fixed-point |
+| `:graph-export` | DOT/Graphviz export, predicate filter, subgraph, file output |
 | `:import-export` | N-Triples, Turtle, N-Quads parsing and serialization |
 | `:persistence` | Save/load with type preservation |
 | `:edge-cases` | Unicode, emoji, empty graphs, stress tests, mixed types |
@@ -108,22 +128,41 @@ OSP: object → subject → predicate → triple     (find by object)
 
 Any combination of bound/unbound positions is efficiently served by choosing the appropriate index.
 
+### Query Execution
+
+```
+Query DSL expression
+  → Parse clauses (where, filter, optional, union, bind, values, ...)
+  → Expand property paths
+  → Pattern matching with index-backed triple lookup
+  → Logic variable unification and join
+  → Subquery evaluation
+  → NOT EXISTS / MINUS exclusion
+  → BIND computed variables
+  → Filter evaluation (safe, whitelisted)
+  → GROUP BY + aggregation + HAVING
+  → Projection, ordering, pagination
+  → Results
+```
+
 ### Module Structure
 
 | File | Description |
 |------|-------------|
 | `ariadne.lisp` | Core triple store, indexes, graph operations |
 | `pattern.lisp` | Logic variables, unification, pattern matching |
-| `query.lisp` | SPARQL-like query DSL |
+| `query.lisp` | SPARQL-like query DSL, property paths, subqueries, aggregation |
 | `property-graph.lisp` | Node/edge/property layer |
 | `traversal.lisp` | Gremlin-style traversal, shortest path |
 | `transactions.lisp` | Snapshot-based transactions |
+| `inference.lisp` | Forward-chaining rule engine |
+| `graph-export.lisp` | DOT/Graphviz export |
 | `import-export.lisp` | N-Triples, Turtle, N-Quads |
 | `persistence.lisp` | Save/load to disk |
 
 ## Documentation
 
-- **[Ariadne Query Language Reference](docs/query-language.md)** — Comprehensive guide to all query interfaces: triple lookups, SPARQL-like DSL, pattern matching, traversal, property graph API, RDF import/export, transactions, and persistence
+- **[Ariadne Query Language Reference](docs/query-language.md)** — Comprehensive guide to all query interfaces, with examples and complete API reference
 
 ## License
 
