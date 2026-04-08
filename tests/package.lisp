@@ -115,6 +115,10 @@
   :description "GROUP BY, aggregations, ASK, CONSTRUCT, BIND, NOT EXISTS, property paths"
   :in :ariadne)
 
+(def-suite :query-extended
+  :description "HAVING, inverse paths, Kleene star, DESCRIBE, REGEX"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

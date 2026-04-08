@@ -213,10 +213,10 @@
         (g2 (make-graph)))
     (add-triple g "alice" "knows" "bob")
     (add-triple g "bob" "knows" "charlie")
-    (query g '(construct (?a "friend-of-friend" ?c)
+    (query g `(construct (?a "friend-of-friend" ?c)
                (where (?a "knows" ?b)
                       (?b "knows" ?c))
-               (into g2)))
+               (into ,g2)))
     ;; g2 should now have the inferred triple
     (is-true (has-triple-p g2 "alice" "friend-of-friend" "charlie"))))
 

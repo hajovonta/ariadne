@@ -20,6 +20,7 @@
                              (:file "suite-import-export")
                              (:file "suite-persistence")
                              (:file "suite-edge-cases")
-                             (:file "suite-query-advanced"))))
+                             (:file "suite-query-advanced")
+                             (:file "suite-query-extended"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))
