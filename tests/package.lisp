@@ -119,6 +119,18 @@
   :description "HAVING, inverse paths, Kleene star, DESCRIBE, REGEX"
   :in :ariadne)
 
+(def-suite :subqueries
+  :description "Subqueries and VALUES inline data"
+  :in :ariadne)
+
+(def-suite :inference
+  :description "Inference rules engine"
+  :in :ariadne)
+
+(def-suite :graph-export
+  :description "Graph export to DOT/Graphviz"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

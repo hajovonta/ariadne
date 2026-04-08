@@ -17,6 +17,7 @@
     (cond
       ((sym-name-equal form "ASK") (execute-ask g expr))
       ((sym-name-equal form "CONSTRUCT") (execute-construct g expr))
+      ((sym-name-equal form "DESCRIBE") (execute-describe g expr))
       (t (execute-select g expr)))))
 
 ;;; ==========================================================================
@@ -59,6 +60,21 @@
       (nreverse results))))
 
 ;;; ==========================================================================
+;;; DESCRIBE
+;;; ==========================================================================
+
+(defun execute-describe (g expr)
+  "DESCRIBE returns all triples about a resource."
+  (let ((resource (second expr))
+        (mode (third expr)))
+    (if (and mode (sym-name-equal mode "SUBJECT"))
+        (get-triples g :subject resource)
+        ;; Default: triples where resource is subject OR object
+        (let ((as-subject (get-triples g :subject resource))
+              (as-object (get-triples g :object resource)))
+          (remove-duplicates (append as-subject as-object))))))
+
+;;; ==========================================================================
 ;;; SELECT
 ;;; ==========================================================================
 
@@ -75,6 +91,7 @@
          (not-exists-patterns nil)
          (minus-patterns nil)
          (group-var nil)
+         (having-clause nil)
          (order-var nil)
          (limit-n nil)
          (offset-n nil)
@@ -91,6 +108,7 @@
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
           ((sym-name-equal tag "MINUS") (setf minus-patterns (rest clause)))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
+          ((sym-name-equal tag "HAVING") (setf having-clause (rest clause)))
           ((sym-name-equal tag "ORDER-BY") (setf order-var (second clause)))
           ((sym-name-equal tag "LIMIT") (setf limit-n (second clause)))
           ((sym-name-equal tag "OFFSET") (setf offset-n (second clause))))))
@@ -118,7 +136,7 @@
       ;; GROUP BY + aggregation
       (when group-var
         (return-from execute-select
-          (execute-group-by envs group-var vars)))
+          (execute-group-by envs group-var vars having-clause)))
       ;; Project variables
       (let ((results (project-results vars envs)))
         (when distinct-p
@@ -187,7 +205,16 @@
                          concatenate))
             (apply (symbol-function op) args))
            ((eq op 'not) (not (first args)))
+           ((sym-name-equal op "REGEX")
+            (apply #'ariadne-regex args))
            (t (error "Disallowed filter operation: ~A" op)))))))
+
+(defun ariadne-regex (string pattern &optional mode)
+  "Regex match using cl-ppcre."
+  (let ((scanner (if (and mode (sym-name-equal mode "CASE-INSENSITIVE-MODE"))
+                     (cl-ppcre:create-scanner pattern :case-insensitive-mode t)
+                     (cl-ppcre:create-scanner pattern))))
+    (not (null (cl-ppcre:scan scanner string)))))
 
 (defun subst-vars (expr env)
   (cond
@@ -267,32 +294,53 @@
 ;;; GROUP BY + Aggregation
 ;;; ==========================================================================
 
-(defun execute-group-by (envs group-var vars)
+(defun execute-group-by (envs group-var vars &optional having-clause)
   "Group environments by GROUP-VAR and compute aggregations."
   (let ((groups (make-hash-table :test 'equal)))
-    ;; Partition envs into groups
     (dolist (env envs)
       (let ((key (lookup-binding group-var env)))
         (push env (gethash key groups))))
-    ;; Compute aggregations per group
     (let ((results nil))
       (maphash
        (lambda (key group-envs)
-         (let ((row (list key)))
-           ;; Process each var in the select list after the group var
-           (dolist (v (rest vars))
-             (if (and (listp v) (>= (length v) 2))
-                 ;; Aggregation: (count ?x), (sum ?x), (avg ?x), (min ?x), (max ?x)
-                 (let ((agg-fn (first v))
-                       (agg-var (second v)))
-                   (let ((values (mapcar (lambda (env) (lookup-binding agg-var env))
-                                         group-envs)))
-                     (push (compute-aggregate agg-fn values) row)))
-                 ;; Plain variable — take first value
-                 (push (lookup-binding v (first group-envs)) row)))
-           (push (nreverse row) results)))
+         ;; Check HAVING before including this group
+         (when (or (null having-clause)
+                   (eval-having having-clause group-envs vars))
+           (let ((row (list key)))
+             (dolist (v (rest vars))
+               (if (and (listp v) (>= (length v) 2))
+                   (let ((agg-var (second v)))
+                     (let ((values (mapcar (lambda (env) (lookup-binding agg-var env))
+                                           group-envs)))
+                       (push (compute-aggregate (first v) values) row)))
+                   (push (lookup-binding v (first group-envs)) row)))
+             (push (nreverse row) results))))
        groups)
       results)))
+
+(defun eval-having (having-clause group-envs vars)
+  "Evaluate a HAVING clause against a group of environments."
+  (every
+   (lambda (expr)
+     (let ((resolved (subst-having-aggregates expr group-envs vars)))
+       (eval resolved)))
+   having-clause))
+
+(defun subst-having-aggregates (expr group-envs vars)
+  "Replace aggregate expressions in HAVING with computed values."
+  (cond
+    ((atom expr) expr)
+    ;; Recognize (count ?var), (sum ?var), etc.
+    ((and (symbolp (first expr))
+          (member (symbol-name (first expr))
+                  '("COUNT" "SUM" "AVG" "MIN" "MAX")
+                  :test #'string-equal)
+          (= 2 (length expr))
+          (variable-p (second expr)))
+     (let ((values (mapcar (lambda (env) (lookup-binding (second expr) env))
+                           group-envs)))
+       (compute-aggregate (first expr) values)))
+    (t (mapcar (lambda (x) (subst-having-aggregates x group-envs vars)) expr))))
 
 (defun compute-aggregate (fn values)
   "Compute an aggregate function over a list of values."
@@ -366,24 +414,20 @@ A property path pattern has a list as predicate: (+ pred), (? pred), (alt p1 p2)
 (defun execute-path (g start op path-expr target)
   "Execute a property path, returning (start . end) pairs."
   (cond
-    ;; Transitive closure: (+ "pred")
     ((sym-name-equal op "+")
-     (let ((pred (second path-expr)))
-       (transitive-closure g start pred target)))
-    ;; Optional (zero or one): (? "pred")
+     (transitive-closure g start (second path-expr) target))
     ((sym-name-equal op "?")
-     (let ((pred (second path-expr)))
-       (zero-or-one-path g start pred target)))
-    ;; Alternative: (alt "p1" "p2" ...)
+     (zero-or-one-path g start (second path-expr) target))
+    ((sym-name-equal op "*")
+     (kleene-star-path g start (second path-expr) target))
     ((sym-name-equal op "ALT")
-     (let ((preds (rest path-expr)))
-       (alternative-path g start preds target)))
-    ;; Bounded: (range "pred" min max)
+     (alternative-path g start (rest path-expr) target))
     ((sym-name-equal op "RANGE")
-     (let ((pred (second path-expr))
-           (min-hops (third path-expr))
-           (max-hops (fourth path-expr)))
-       (bounded-path g start pred min-hops max-hops target)))
+     (bounded-path g start (second path-expr) (third path-expr) (fourth path-expr) target))
+    ((sym-name-equal op "INV")
+     (inverse-path g start (second path-expr) target))
+    ((sym-name-equal op "INV+")
+     (inverse-transitive g start (second path-expr) target))
     (t (error "Unknown path operator: ~A" op))))
 
 (defun transitive-closure (g start pred target)
@@ -458,6 +502,57 @@ A property path pattern has a list as predicate: (+ pred), (? pred), (alt p1 p2)
               (dolist (n next)
                 (pushnew (cons bound-start n) results :test #'equal)))
             (setf current next)))))
+    (if (and target (not (variable-p target)))
+        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+        results)))
+
+(defun kleene-star-path (g start pred target)
+  "Zero or more hops (Kleene star)."
+  (let ((bound-start (and (not (variable-p start)) start))
+        (results nil))
+    (when bound-start
+      ;; Zero hops: start itself
+      (push (cons bound-start bound-start) results)
+      ;; One or more: transitive closure
+      (let ((visited (make-hash-table :test 'equal)))
+        (setf (gethash bound-start visited) t)
+        (labels ((walk (node)
+                   (dolist (tr (get-triples g :subject node :predicate pred))
+                     (let ((next (triple-object tr)))
+                       (unless (gethash next visited)
+                         (setf (gethash next visited) t)
+                         (push (cons bound-start next) results)
+                         (walk next))))))
+          (walk bound-start))))
+    (if (and target (not (variable-p target)))
+        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+        results)))
+
+(defun inverse-path (g start pred target)
+  "Inverse path: follow edges backwards."
+  (let ((bound-start (and (not (variable-p start)) start))
+        (results nil))
+    (when bound-start
+      (dolist (tr (get-triples g :predicate pred :object bound-start))
+        (push (cons bound-start (triple-subject tr)) results)))
+    (if (and target (not (variable-p target)))
+        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+        results)))
+
+(defun inverse-transitive (g start pred target)
+  "Inverse transitive: follow edges backwards, one or more hops."
+  (let ((bound-start (and (not (variable-p start)) start))
+        (results nil))
+    (when bound-start
+      (let ((visited (make-hash-table :test 'equal)))
+        (labels ((walk (node)
+                   (dolist (tr (get-triples g :predicate pred :object node))
+                     (let ((next (triple-subject tr)))
+                       (unless (gethash next visited)
+                         (setf (gethash next visited) t)
+                         (push (cons bound-start next) results)
+                         (walk next))))))
+          (walk bound-start))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
