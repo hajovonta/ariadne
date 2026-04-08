@@ -99,9 +99,36 @@
    envs))
 
 (defun eval-filter (filter env)
-  "Evaluate a filter expression with variables resolved from ENV."
-  (let ((resolved (subst-vars filter env)))
-    (eval resolved)))
+  "Evaluate a filter expression with variables resolved from ENV.
+Only allows a safe subset of operations — no EVAL."
+  (safe-eval (subst-vars filter env)))
+
+(defun safe-eval (expr)
+  "Evaluate EXPR using only whitelisted operations."
+  (cond
+    ((atom expr) expr)
+    (t (let ((op (first expr))
+             (args (mapcar #'safe-eval (rest expr))))
+         (case op
+           ;; Comparison
+           ((< > <= >= = /=) (apply (symbol-function op) args))
+           ;; Equality
+           ((equal equalp eql eq string= string-equal)
+            (apply (symbol-function op) args))
+           ;; Arithmetic
+           ((+ - * /) (apply (symbol-function op) args))
+           ;; String
+           ((search string< string> string<= string>=)
+            (apply (symbol-function op) args))
+           ;; Type predicates
+           ((numberp stringp symbolp integerp floatp)
+            (apply (symbol-function op) args))
+           ;; Logic
+           ((not) (not (first args)))
+           ((and) (every #'identity args))
+           ((or) (some #'identity args))
+           (otherwise
+            (error "Disallowed filter operation: ~A" op)))))))
 
 (defun subst-vars (expr env)
   "Substitute all ?variables in EXPR with their values from ENV."

@@ -26,7 +26,9 @@
     (add-triple g "alice" "age" 30)
     (let ((results (query g '(select (?pred ?obj)
                               (where ("alice" ?pred ?obj))))))
-      (is (= 2 (length results))))))
+      (is (= 2 (length results)))
+      (is-true (member '("knows" "bob") results :test #'equal))
+      (is-true (member '("age" 30) results :test #'equal)))))
 
 (test select-with-join
   "Join across multiple triple patterns"
@@ -112,7 +114,12 @@
     (let ((results (query g '(select (?name ?email)
                               (where (?person "name" ?name))
                               (optional (?person "email" ?email))))))
-      (is (= 2 (length results))))))
+      (is (= 2 (length results)))
+      ;; Alice should have email, Bob should have nil
+      (let ((alice-row (find "Alice" results :key #'first :test #'equal))
+            (bob-row (find "Bob" results :key #'first :test #'equal)))
+        (is (equal "alice@example.com" (second alice-row)))
+        (is-false (second bob-row))))))
 
 ;; =============================================================================
 ;; UNION
@@ -192,3 +199,42 @@
                               (offset 1)
                               (limit 2)))))
       (is (= 2 (length results))))))
+
+;; =============================================================================
+;; SELECT * value verification
+;; =============================================================================
+
+(test select-all-returns-values
+  "Select * returns actual bound values"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (let ((results (query g '(select *
+                              (where ("alice" ?p ?o))))))
+      (is (= 1 (length results)))
+      (let ((row (first results)))
+        (is-true (member "knows" row :test #'equal))
+        (is-true (member "bob" row :test #'equal))))))
+
+;; =============================================================================
+;; Safe filter evaluation
+;; =============================================================================
+
+(test filter-disallowed-operation
+  "Disallowed filter operations signal an error"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "age" 30)
+    (signals error
+      (query g '(select (?x)
+                 (where (?x "age" ?a))
+                 (filter (progn (print "hacked"))))))))
+
+(test filter-arithmetic
+  "Filter with arithmetic expressions"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "score" 80)
+    (add-triple g "bob" "score" 40)
+    (let ((results (query g '(select (?who)
+                              (where (?who "score" ?s))
+                              (filter (> (* ?s 2) 100))))))
+      (is (= 1 (length results)))
+      (is (equal '("alice") (first results))))))

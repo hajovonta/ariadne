@@ -80,3 +80,23 @@
     (let ((g2 (load-graph path)))
       (is (string= "my-knowledge-base" (graph-name g2))))
     (when (probe-file path) (delete-file path))))
+
+;; =============================================================================
+;; Persistence with Property Graph Data
+;; =============================================================================
+
+(test save-and-load-property-graph
+  "Save/load preserves property graph nodes and edges"
+  (let ((g (make-graph))
+        (path (merge-pathnames "test-data/test-pg.ariadne"
+                               (asdf:system-source-directory :ariadne-tests))))
+    (add-node g "alice" :properties '((:name . "Alice")) :labels '(:person))
+    (add-node g "bob" :labels '(:person))
+    (add-edge g "alice" "bob" :knows)
+    (save-graph g path)
+    (let ((g2 (load-graph path)))
+      (is-true (get-node g2 "alice"))
+      (is (equal "Alice" (node-property g2 "alice" :name)))
+      (is-true (member :person (node-labels g2 "alice")))
+      (is (> (length (get-edges g2 :from "alice")) 0)))
+    (when (probe-file path) (delete-file path))))

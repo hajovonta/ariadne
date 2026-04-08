@@ -47,10 +47,9 @@
   (let ((g (make-graph))
         (path (merge-pathnames "test-data/sample.nt"
                                (asdf:system-source-directory :ariadne-tests))))
-    ;; This test requires the test-data/sample.nt file to exist
-    (when (probe-file path)
-      (import-ntriples-file g path)
-      (is (> (triple-count g) 0)))))
+    (is-true (probe-file path))
+    (import-ntriples-file g path)
+    (is (> (triple-count g) 0))))
 
 ;; =============================================================================
 ;; N-Triples Export
@@ -82,7 +81,13 @@
                    "Alice")
     (let ((nt (export-ntriples g1)))
       (import-ntriples g2 nt))
-    (is (= (triple-count g1) (triple-count g2)))))
+    (is (= (triple-count g1) (triple-count g2)))
+    (is-true (has-triple-p g2 "http://example.org/alice"
+                              "http://xmlns.com/foaf/0.1/knows"
+                              "http://example.org/bob"))
+    (is-true (has-triple-p g2 "http://example.org/alice"
+                              "http://xmlns.com/foaf/0.1/name"
+                              "Alice"))))
 
 ;; =============================================================================
 ;; Turtle Import
@@ -150,3 +155,65 @@ ex:alice ex:knows ex:bob , ex:charlie , ex:dave ."))
         (data "<http://example.org/alice> <http://example.org/knows> <http://example.org/bob> <http://example.org/graph1> ."))
     (import-nquads g data)
     (is (= 1 (triple-count g)))))
+
+(test import-nquads-multiline
+  "Import multiple N-Quads lines"
+  (let ((g (make-graph))
+        (data "<http://example.org/alice> <http://example.org/knows> <http://example.org/bob> <http://example.org/g1> .
+<http://example.org/bob> <http://example.org/knows> <http://example.org/charlie> <http://example.org/g2> ."))
+    (import-nquads g data)
+    (is (= 2 (triple-count g)))))
+
+;; =============================================================================
+;; Typed Literal Conversions
+;; =============================================================================
+
+(test import-ntriples-boolean-literal
+  "Import N-Triples with boolean typed literal"
+  (let ((g (make-graph))
+        (data "<http://example.org/alice> <http://example.org/active> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> ."))
+    (import-ntriples g data)
+    (let ((triples (get-triples g :subject "http://example.org/alice")))
+      (is (eq t (triple-object (first triples)))))))
+
+(test import-ntriples-decimal-literal
+  "Import N-Triples with decimal typed literal"
+  (let ((g (make-graph))
+        (data "<http://example.org/alice> <http://example.org/score> \"3.14\"^^<http://www.w3.org/2001/XMLSchema#decimal> ."))
+    (import-ntriples g data)
+    (let ((triples (get-triples g :subject "http://example.org/alice")))
+      (is (numberp (triple-object (first triples)))))))
+
+;; =============================================================================
+;; Malformed Input
+;; =============================================================================
+
+(test import-ntriples-empty-string
+  "Import empty string is a no-op"
+  (let ((g (make-graph)))
+    (import-ntriples g "")
+    (is (= 0 (triple-count g)))))
+
+(test import-ntriples-comments-only
+  "Import N-Triples with only comments"
+  (let ((g (make-graph)))
+    (import-ntriples g "# this is a comment
+# another comment")
+    (is (= 0 (triple-count g)))))
+
+(test import-ntriples-blank-lines
+  "Import N-Triples with blank lines interspersed"
+  (let ((g (make-graph))
+        (data "
+<http://example.org/a> <http://example.org/b> <http://example.org/c> .
+
+<http://example.org/d> <http://example.org/e> <http://example.org/f> .
+"))
+    (import-ntriples g data)
+    (is (= 2 (triple-count g)))))
+
+(test import-turtle-empty
+  "Import empty Turtle is a no-op"
+  (let ((g (make-graph)))
+    (import-turtle g "")
+    (is (= 0 (triple-count g)))))

@@ -35,6 +35,16 @@
     (let ((results (traverse g "alice" '(both "knows"))))
       (is (= 2 (length results))))))
 
+(test traverse-both-no-duplicates
+  "traverse-both should not return duplicates when reachable both ways"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (add-triple g "bob" "knows" "alice")
+    ;; bob is reachable from alice via out AND in
+    (let ((results (traverse g "alice" '(both "knows"))))
+      ;; bob should appear only once
+      (is (= 1 (count "bob" results :test #'equal))))))
+
 ;; =============================================================================
 ;; Chained Traversal
 ;; =============================================================================
@@ -125,14 +135,15 @@
 ;; =============================================================================
 
 (test traverse-cycle-detection
-  "Traversal should handle cycles without infinite loops"
+  "Traversal with fixed-depth steps terminates on cyclic data"
   (let ((g (make-graph)))
     (add-triple g "a" "next" "b")
     (add-triple g "b" "next" "c")
     (add-triple g "c" "next" "a")
     (let ((results (traverse g "a" '(out "next") '(out "next") '(out "next"))))
-      ;; Should terminate and return "a" (back to start)
-      (is (= 1 (length results))))))
+      ;; Three hops: a->b->c->a, should return back to start
+      (is (= 1 (length results)))
+      (is (equal "a" (first results))))))
 
 ;; =============================================================================
 ;; Depth-Limited Traversal
@@ -172,3 +183,20 @@
     (add-triple g "a" "connects" "b")
     (add-triple g "c" "connects" "d")
     (is-false (shortest-path g "a" "d" :edge-type "connects"))))
+
+(test shortest-path-same-node
+  "Shortest path from a node to itself"
+  (let ((g (make-graph)))
+    (add-triple g "a" "connects" "b")
+    (let ((path (shortest-path g "a" "a" :edge-type "connects")))
+      (is (equal '("a") path)))))
+
+;; =============================================================================
+;; Unknown Traversal Step
+;; =============================================================================
+
+(test traverse-unknown-step-errors
+  "Unknown traversal step signals an error"
+  (let ((g (make-graph)))
+    (add-triple g "a" "knows" "b")
+    (signals error (traverse g "a" '(fly "knows")))))

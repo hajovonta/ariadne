@@ -37,8 +37,9 @@ Each step is a list like (out \"knows\"), (in \"knows\"), (has \"age\" (> 30)), 
         (pushnew (triple-subject tr) results :test #'equal)))))
 
 (defun traverse-both (g nodes predicate)
-  (append (traverse-out g nodes predicate)
-          (traverse-in g nodes predicate)))
+  (let ((results (traverse-out g nodes predicate)))
+    (dolist (n (traverse-in g nodes predicate) results)
+      (pushnew n results :test #'equal))))
 
 (defun apply-has-filter (g nodes predicate value)
   (remove-if-not

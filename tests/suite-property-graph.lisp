@@ -71,6 +71,11 @@
     ;; Edge should also be removed
     (is (= 0 (length (get-edges g :from "alice"))))))
 
+(test get-nonexistent-node
+  "get-node returns nil for nonexistent node"
+  (let ((g (make-graph)))
+    (is-false (get-node g "nobody"))))
+
 ;; =============================================================================
 ;; Edge Operations
 ;; =============================================================================
@@ -171,3 +176,46 @@
     (add-edge g "alice" "bob" :knows)
     (add-edge g "charlie" "alice" :knows)
     (is (= 2 (length (neighbors g "alice" :direction :both))))))
+
+;; =============================================================================
+;; Neighbors with Type Filter
+;; =============================================================================
+
+(test neighbors-with-type-filter
+  "Get neighbors filtered by edge type"
+  (let ((g (make-graph)))
+    (add-node g "alice")
+    (add-node g "bob")
+    (add-node g "charlie")
+    (add-edge g "alice" "bob" :knows)
+    (add-edge g "alice" "charlie" :works-with)
+    (is (= 1 (length (neighbors g "alice" :direction :out :type :knows))))
+    (is (equal '("bob") (neighbors g "alice" :direction :out :type :knows)))))
+
+;; =============================================================================
+;; get-edges with no constraints
+;; =============================================================================
+
+(test get-all-edges
+  "Get all edges in the graph"
+  (let ((g (make-graph)))
+    (add-node g "alice")
+    (add-node g "bob")
+    (add-node g "charlie")
+    (add-edge g "alice" "bob" :knows)
+    (add-edge g "bob" "charlie" :knows)
+    (is (= 2 (length (get-edges g))))))
+
+;; =============================================================================
+;; Edge property - verify multiple properties
+;; =============================================================================
+
+(test edge-multiple-properties
+  "Verify multiple edge properties"
+  (let ((g (make-graph)))
+    (add-node g "alice")
+    (add-node g "bob")
+    (let ((e (add-edge g "alice" "bob" :knows
+                       :properties '((:since . 2020) (:weight . 0.9)))))
+      (is (= 2020 (edge-property g e :since)))
+      (is (= 0.9 (edge-property g e :weight))))))

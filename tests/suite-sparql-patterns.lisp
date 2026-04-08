@@ -24,7 +24,11 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "age" 30)
     (let ((bindings (match-pattern g '("alice" ?p ?o))))
-      (is (= 2 (length bindings))))))
+      (is (= 2 (length bindings)))
+      (is-true (find "knows" bindings
+                     :key (lambda (b) (cdr (assoc '?p b))) :test #'equal))
+      (is-true (find "age" bindings
+                     :key (lambda (b) (cdr (assoc '?p b))) :test #'equal)))))
 
 (test match-all-variables
   "Match a pattern with all three positions as variables"
@@ -76,8 +80,15 @@
     (add-triple g "charlie" "works-at" "globex")
     (let ((bindings (match-patterns g '((?p1 "works-at" ?company)
                                         (?p2 "works-at" ?company)))))
-      ;; Should find pairs at same company (including self-pairs)
-      (is (>= (length bindings) 2)))))
+      ;; acme: alice-alice, alice-bob, bob-alice, bob-bob = 4
+      ;; globex: charlie-charlie = 1
+      ;; total = 5
+      (is (= 5 (length bindings)))
+      ;; Verify a cross-pair exists (alice, bob at acme)
+      (is-true (find-if (lambda (b)
+                          (and (equal "alice" (cdr (assoc '?p1 b)))
+                               (equal "bob" (cdr (assoc '?p2 b)))))
+                        bindings)))))
 
 ;; =============================================================================
 ;; Variable Binding
@@ -110,8 +121,9 @@
 
 (test unify-constant-mismatch
   "Unify a constant with a non-matching value fails"
-  (let ((result (unify "alice" "bob" nil)))
-    (is-false result)))
+  (multiple-value-bind (env success) (unify "alice" "bob" nil)
+    (declare (ignore env))
+    (is-false success)))
 
 (test unify-variable-unbound
   "Unify an unbound variable binds it"
@@ -125,5 +137,6 @@
 
 (test unify-variable-bound-mismatch
   "Unify a bound variable with non-matching value fails"
-  (let ((result (unify '?x "bob" '((?x . "alice")))))
-    (is-false result)))
+  (multiple-value-bind (env success) (unify '?x "bob" '((?x . "alice")))
+    (declare (ignore env))
+    (is-false success)))

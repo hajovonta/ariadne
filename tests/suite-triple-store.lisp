@@ -199,3 +199,40 @@
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "alice" "age" 30)
     (is (= 3 (length (all-objects g))))))
+
+;; =============================================================================
+;; remove-triples additional combinations
+;; =============================================================================
+
+(test remove-by-object
+  "Remove all triples with a given object"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (add-triple g "charlie" "knows" "bob")
+    (add-triple g "alice" "knows" "dave")
+    (remove-triples g :object "bob")
+    (is (= 1 (triple-count g)))
+    (is-true (has-triple-p g "alice" "knows" "dave"))))
+
+(test remove-by-subject-predicate
+  "Remove triples matching subject AND predicate"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (add-triple g "alice" "knows" "charlie")
+    (add-triple g "alice" "age" 30)
+    (remove-triples g :subject "alice" :predicate "knows")
+    (is (= 1 (triple-count g)))
+    (is-true (has-triple-p g "alice" "age" 30))))
+
+;; =============================================================================
+;; get-triples subject+object (OSP path)
+;; =============================================================================
+
+(test query-by-subject-object
+  "Find triples matching subject AND object (uses OSP index)"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (add-triple g "alice" "likes" "bob")
+    (add-triple g "alice" "knows" "charlie")
+    (let ((results (get-triples g :subject "alice" :object "bob")))
+      (is (= 2 (length results))))))

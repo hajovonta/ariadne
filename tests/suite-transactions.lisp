@@ -50,6 +50,19 @@
       (is (= 1 (length (transaction-snapshot tx)))))))
 
 ;; =============================================================================
+;; transaction-snapshot direct usage
+;; =============================================================================
+
+(test transaction-snapshot-contents
+  "transaction-snapshot returns the actual triple data"
+  (let ((g (make-graph)))
+    (add-triple g "alice" "knows" "bob")
+    (let* ((tx (begin-transaction g))
+           (snap (transaction-snapshot tx)))
+      (is (= 1 (length snap)))
+      (is (equal '("alice" "knows" "bob") (first snap))))))
+
+;; =============================================================================
 ;; Nested Transactions
 ;; =============================================================================
 
@@ -73,4 +86,6 @@
             (error "rollback inner"))
         (error () nil)))
     ;; Only the outer triple should survive
-    (is (= 1 (triple-count g)))))
+    (is (= 1 (triple-count g)))
+    (is-true (has-triple-p g "alice" "knows" "bob"))
+    (is-false (has-triple-p g "bob" "knows" "charlie"))))
