@@ -1,0 +1,6 @@
+<http://example.org/alice> <http://xmlns.com/foaf/0.1/knows> <http://example.org/bob> .
+<http://example.org/alice> <http://xmlns.com/foaf/0.1/name> "Alice" .
+<http://example.org/bob> <http://xmlns.com/foaf/0.1/knows> <http://example.org/charlie> .
+<http://example.org/bob> <http://xmlns.com/foaf/0.1/name> "Bob" .
+<http://example.org/charlie> <http://xmlns.com/foaf/0.1/name> "Charlie" .
+<http://example.org/alice> <http://example.org/age> "30"^^<http://www.w3.org/2001/XMLSchema#integer> .
