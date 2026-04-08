@@ -16,11 +16,11 @@
 
 (defstruct (graph (:constructor %make-graph))
   (name nil)
-  ;; Three indexes for O(1) lookup on any combination
-  (spo (make-hash-table :test 'equal) :type hash-table)  ; s -> {p -> {o -> triple}}
-  (pos (make-hash-table :test 'equal) :type hash-table)  ; p -> {o -> {s -> triple}}
-  (osp (make-hash-table :test 'equal) :type hash-table)  ; o -> {s -> {p -> triple}}
-  (count 0 :type fixnum))
+  (spo (make-hash-table :test 'equal) :type hash-table)
+  (pos (make-hash-table :test 'equal) :type hash-table)
+  (osp (make-hash-table :test 'equal) :type hash-table)
+  (count 0 :type fixnum)
+  (extra nil :type list))
 
 (defun make-graph (&key name)
   (%make-graph :name name))

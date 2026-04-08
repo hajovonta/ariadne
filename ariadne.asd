@@ -15,4 +15,6 @@
                (:file "traversal")
                (:file "transactions")
                (:file "import-export")
-               (:file "persistence")))
+               (:file "persistence")
+               (:file "inference")
+               (:file "graph-export")))

@@ -3,6 +3,12 @@
 
 (defpackage #:ariadne/tests
   (:use #:cl #:ariadne)
+  (:shadowing-import-from #:ariadne
+                          #:export-dot
+                          #:defrule
+                          #:remove-rule
+                          #:apply-rules
+                          #:graph-rules)
   (:import-from #:fiveam
                 #:def-suite
                 #:in-suite

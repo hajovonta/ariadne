@@ -90,6 +90,7 @@
          (binds nil)
          (not-exists-patterns nil)
          (minus-patterns nil)
+         (values-clause nil)
          (group-var nil)
          (having-clause nil)
          (order-var nil)
@@ -107,6 +108,7 @@
           ((sym-name-equal tag "BIND") (push (rest clause) binds))
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
           ((sym-name-equal tag "MINUS") (setf minus-patterns (rest clause)))
+          ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
           ((sym-name-equal tag "HAVING") (setf having-clause (rest clause)))
           ((sym-name-equal tag "ORDER-BY") (setf order-var (second clause)))
@@ -127,12 +129,18 @@
       ;; Apply MINUS
       (when minus-patterns
         (setf envs (apply-minus g envs minus-patterns)))
+      ;; Apply VALUES
+      (when values-clause
+        (setf envs (apply-values-clause envs values-clause)))
       ;; Apply BIND
       (dolist (bind (nreverse binds))
         (setf envs (apply-bind envs (first bind) (second bind))))
-      ;; Apply filters
+      ;; Apply filters (resolve subqueries in filter expressions first)
       (when filters
-        (setf envs (apply-filters envs filters)))
+        (let ((*query-graph* g)
+              (resolved-filters (mapcar (lambda (f) (resolve-subquery-in-filter g f)) filters)))
+          (setf envs (apply-filters envs resolved-filters))))
+
       ;; GROUP BY + aggregation
       (when group-var
         (return-from execute-select
@@ -168,11 +176,16 @@
   (cond
     ((eq vars '*)
      (mapcar (lambda (env) (mapcar #'cdr env)) envs))
-    ;; Simple (count ?var)
+    ;; Aggregation without GROUP BY: (select ((count ?var)) ...) or (select ((max ?var)) ...)
     ((and (= 1 (length vars))
           (listp (first vars))
-          (sym-name-equal (first (first vars)) "COUNT"))
-     (list (list (length envs))))
+          (>= (length (first vars)) 2)
+          (let ((fn-name (symbol-name (first (first vars)))))
+            (member fn-name '("COUNT" "SUM" "AVG" "MIN" "MAX") :test #'string-equal)))
+     (let* ((agg-spec (first vars))
+            (agg-var (second agg-spec))
+            (values (mapcar (lambda (env) (lookup-binding agg-var env)) envs)))
+       (list (list (compute-aggregate (first agg-spec) values)))))
     (t
      (mapcar (lambda (env)
                (mapcar (lambda (v) (lookup-binding v env)) vars))
@@ -191,10 +204,18 @@
 (defun eval-filter (filter env)
   (safe-eval (subst-vars filter env)))
 
+(defvar *query-graph* nil "Dynamic binding for graph during filter evaluation.")
+
 (defun safe-eval (expr)
   "Evaluate EXPR using only whitelisted operations."
   (cond
     ((atom expr) expr)
+    ((null (first expr)) (error "Disallowed filter operation: NIL"))
+    ((sym-name-equal (first expr) "SUBQUERY")
+     (let ((results (query *query-graph* (second expr))))
+       (if (and results (= 1 (length results)) (= 1 (length (first results))))
+           (caar results)
+           results)))
     (t (let ((op (first expr))
              (args (mapcar #'safe-eval (rest expr))))
          (cond
@@ -359,15 +380,15 @@
 ;;; ==========================================================================
 
 (defun expand-property-paths (g patterns)
-  "Expand property path patterns into executable form.
-A property path pattern has a list as predicate: (+ pred), (? pred), (alt p1 p2), (range pred min max)."
   (let ((expanded nil))
     (dolist (pattern patterns (nreverse expanded))
-      (destructuring-bind (s p o) pattern
-        (if (and (listp p) (symbolp (first p)))
-            ;; Property path — expand into a special marker
-            (push (list s (list :path-expr p) o) expanded)
-            (push pattern expanded))))))
+      (if (or (subquery-pattern-p pattern)
+              (/= 3 (length pattern)))
+          (push pattern expanded)
+          (destructuring-bind (s p o) pattern
+            (if (and (listp p) (symbolp (first p)))
+                (push (list s (list :path-expr p) o) expanded)
+                (push pattern expanded)))))))
 
 (defun path-pattern-p (pattern)
   "Check if a pattern contains a property path expression."
@@ -378,19 +399,28 @@ A property path pattern has a list as predicate: (+ pred), (? pred), (alt p1 p2)
 ;;; before calling match-patterns, and applying path patterns after.
 
 (defun match-with-paths (g patterns)
-  "Match patterns, handling property paths separately."
+  "Match patterns, handling property paths and subqueries."
   (let ((simple nil)
-        (path-pats nil))
+        (path-pats nil)
+        (subquery-pats nil))
     (dolist (p patterns)
-      (if (path-pattern-p p)
-          (push p path-pats)
-          (push p simple)))
+      (cond
+        ((path-pattern-p p) (push p path-pats))
+        ((subquery-pattern-p p) (push p subquery-pats))
+        (t (push p simple))))
     (let ((envs (if simple
                     (match-patterns g (nreverse simple))
                     (list nil))))
       (dolist (pp (nreverse path-pats))
         (setf envs (apply-path-pattern g envs pp)))
+      (dolist (sq (nreverse subquery-pats))
+        (setf envs (apply-subquery-pattern g envs sq)))
       envs)))
+
+(defun subquery-pattern-p (pattern)
+  (and (listp pattern)
+       (symbolp (first pattern))
+       (sym-name-equal (first pattern) "SUBQUERY")))
 
 (defun apply-path-pattern (g envs pattern)
   "Apply a property path pattern to existing environments."
@@ -556,3 +586,61 @@ A property path pattern has a list as predicate: (+ pred), (? pred), (alt p1 p2)
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
+
+;;; ==========================================================================
+;;; VALUES
+;;; ==========================================================================
+
+(defun apply-values-clause (envs clause)
+  "Filter envs to only those matching VALUES bindings.
+CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
+  (let ((var-spec (first clause))
+        (data (second clause)))
+    (if (variable-p var-spec)
+        ;; Single variable: (values ?x ("a" "b" "c"))
+        (remove-if-not
+         (lambda (env)
+           (let ((val (lookup-binding var-spec env)))
+             (member val data :test #'equal)))
+         envs)
+        ;; Multiple variables: (values (?x ?y) (("a" "b") ("c" "d")))
+        (remove-if-not
+         (lambda (env)
+           (some (lambda (row)
+                   (every (lambda (var val)
+                            (equal (lookup-binding var env) val))
+                          var-spec row))
+                 data))
+         envs))))
+
+;;; ==========================================================================
+;;; Subqueries
+;;; ==========================================================================
+
+(defun apply-subquery-pattern (g envs pattern)
+  "Apply a subquery pattern: (subquery <query-expr> <bind-var>)."
+  (let ((sq-expr (second pattern))
+        (bind-var (third pattern)))
+    (let ((sq-results (query g sq-expr)))
+      (let ((sq-values (mapcar (lambda (row)
+                                 (if (= 1 (length row)) (first row) row))
+                               sq-results)))
+        (remove-if-not
+         (lambda (env)
+           (let ((val (lookup-binding bind-var env)))
+             (member val sq-values :test #'equal)))
+         envs)))))
+
+;;; Subqueries in FILTER — handled by safe-eval recognizing (subquery ...) forms
+
+(defun resolve-subquery-in-filter (g expr)
+  "Pre-process filter expressions to resolve embedded subqueries."
+  (cond
+    ((atom expr) expr)
+    ((sym-name-equal (first expr) "SUBQUERY")
+     ;; (subquery (select ...)) => the scalar result
+     (let ((results (query g (second expr))))
+       (if (and results (= 1 (length results)) (= 1 (length (first results))))
+           (caar results)
+           results)))
+    (t (mapcar (lambda (x) (resolve-subquery-in-filter g x)) expr))))

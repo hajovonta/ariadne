@@ -69,4 +69,11 @@
    #:import-nquads
    ;; Persistence
    #:save-graph
-   #:load-graph))
+   #:load-graph
+   ;; Inference
+   #:defrule
+   #:remove-rule
+   #:apply-rules
+   #:graph-rules
+   ;; Export
+   #:export-dot))
