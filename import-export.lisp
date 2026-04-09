@@ -508,6 +508,10 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                        ((member c '(#\Space #\Tab #\Newline #\Return
                                     #\; #\, #\( #\) #\[ #\]))
                         (return))
+                       ;; Backslash escape: skip next char
+                       ((char= c #\\)
+                        (incf pos)
+                        (when (< pos len) (incf pos)))
                        ;; Dot: stop only if followed by ws/punct/EOF
                        ((char= c #\.)
                         (if (or (>= (1+ pos) len)
@@ -656,8 +660,9 @@ Handles quoted strings, URIs, and punctuation (; , .)."
              ;; Need predicate
              ((null predicate)
               (let ((tok (pop toks)))
-                ;; Reject literals as predicates
-                (when (and (> (length tok) 0)
+                ;; Reject literals as predicates (only at top level)
+                (when (and (= 0 bracket-depth)
+                           (> (length tok) 0)
                            (or (char= #\" (char tok 0))
                                (char= #\' (char tok 0))))
                   (error "Literals cannot be predicates: ~A" tok))

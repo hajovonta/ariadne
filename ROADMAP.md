@@ -4,7 +4,7 @@
 
 - **518 tests passing** across 33 test suites
 - ~95% SPARQL 1.1 feature coverage
-- W3C Turtle positive conformance: 207/209 (99%)
+- W3C Turtle positive conformance: 209/209 (100%)
 - W3C Turtle negative conformance: 82/82 (100%)
 - Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
 - Import throughput: ~500K triples/sec (Turtle), ~80-360K triples/sec (N-Triples/N-Quads)
