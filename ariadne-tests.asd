@@ -5,7 +5,8 @@
   :author "Gabor Poczkodi <hajovonta@gmail.com>"
   :license "MIT"
   :depends-on (#:ariadne
-               #:fiveam)
+               #:fiveam
+               #:bordeaux-threads)
   :serial t
   :components ((:module "tests"
                 :serial t
@@ -38,6 +39,7 @@
                              (:file "suite-named-graphs")
                              (:file "suite-sparql-parser")
                              (:file "suite-query-planner")
-                             (:file "suite-compact-index"))))
+                             (:file "suite-compact-index")
+                             (:file "suite-thread-safety"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

@@ -2,6 +2,7 @@
 
 (defpackage #:ariadne
   (:use #:cl)
+  (:local-nicknames (#:bt #:bordeaux-threads))
   (:export
    ;; Graph
    #:make-graph

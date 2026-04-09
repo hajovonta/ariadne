@@ -5,7 +5,8 @@
   :author "Hajovonta <hajovonta@gmail.com>"
   :license "MIT"
   :version "0.1.0"
-  :depends-on (#:cl-ppcre)
+  :depends-on (#:cl-ppcre
+               #:bordeaux-threads)
   :serial t
   :components ((:file "package")
                (:file "ariadne")

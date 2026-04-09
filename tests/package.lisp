@@ -3,6 +3,7 @@
 
 (defpackage #:ariadne/tests
   (:use #:cl #:ariadne)
+  (:local-nicknames (#:bt #:bordeaux-threads))
   (:shadowing-import-from #:ariadne
                           #:export-dot
                           #:defrule
@@ -191,6 +192,10 @@
 
 (def-suite :compact-index
   :description "Compact index correctness verification"
+  :in :ariadne)
+
+(def-suite :thread-safety
+  :description "Thread safety: concurrent reads and writes"
   :in :ariadne)
 
 ;; =============================================================================
