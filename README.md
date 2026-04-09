@@ -1,6 +1,6 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 533/533 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 584/584 tests passing.
 
 ## Key Features
 
@@ -22,6 +22,12 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **SPARQL String Parser** — Execute standard SPARQL query strings directly
 - **Thread Safety** — Lock-based concurrent read/write access (bordeaux-threads)
 - **Streaming Import** — Line-by-line import for large files (~100K triples/sec)
+- **OWL/RDFS Reasoning** — Automatic entailment: subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
+- **Schema Validation** — Define expected classes/properties, validate types and cardinality constraints
+- **Duplicate Detection** — Find near-duplicate entities via fuzzy string matching
+- **Web Visualization** — Interactive Cytoscape.js graph explorer with predicate filtering, search, layout switching
+- **SPARQL Endpoint** — HTTP server accepting SPARQL queries at `/sparql?query=...`
+- **Export Formats** — N-Triples, Turtle, N-Quads, JSON-LD, Cytoscape JSON, DOT/Graphviz
 
 ## Quick Start
 

@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **533 tests passing** across 33 test suites
+- **584 tests passing** across 38 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 209/209 (100%)
 - W3C Turtle negative conformance: 82/82 (100%)
@@ -71,43 +71,65 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 - [ ] Documentation site with tutorials
 - [ ] CI / automated test runs
 
-## Phase 7 — Interactive Web Visualization
+## Phase 7 — Interactive Web Visualization ✓
 
-- [ ] Hunchentoot web server serving graph explorer
-- [ ] Cytoscape.js frontend with interactive zoom, pan, drag
-- [ ] JSON endpoint exporting graph/subgraph as Cytoscape elements
-- [ ] Layout options: force-directed, hierarchical, circular
-- [ ] Predicate filtering — show/hide edge types
-- [ ] Node hover: show properties and connections
-- [ ] Subgraph extraction: explore neighborhood around a clicked node
-- [ ] Search: find nodes by label or URI
+- [x] Hunchentoot web server serving graph explorer
+- [x] Cytoscape.js frontend with interactive zoom, pan, drag
+- [x] JSON endpoint exporting graph/subgraph as Cytoscape elements
+- [x] Layout options: force-directed, hierarchical, circular
+- [x] Predicate filtering — show/hide edge types
+- [x] Node hover: show properties and connections
+- [x] Subgraph extraction: explore neighborhood around a clicked node
+- [x] Search: find nodes by label or URI
 
-## Phase 8 — Graph Operations & Export Formats
+## Phase 8 — Graph Operations & Export Formats ✓
 
 - [x] merge-graphs — merge two graphs, deduplicating triples
 - [x] diff-graphs — find triples in one graph but not the other
 - [x] copy-graph — deep copy a graph
 - [x] export-nquads — N-Quads export with graph names
-- [ ] export-json-ld — JSON-LD export
-- [ ] export-cytoscape-json — Cytoscape.js compatible JSON
+- [x] export-json-ld — JSON-LD export
+- [x] export-cytoscape-json — Cytoscape.js compatible JSON
 
-## Phase 9 — Data Quality & Validation
+## Phase 9 — Data Quality & Validation ✓
 
-- [ ] Schema validation — define expected predicates/types, validate triples on insert
-- [ ] Constraint checking — cardinality constraints (e.g. "a person must have exactly one name")
-- [ ] Duplicate detection — find near-duplicate entities via fuzzy string matching on labels
+- [x] Schema validation — define expected predicates/types, validate triples on insert
+- [x] Constraint checking — cardinality constraints (e.g. "a person must have exactly one name")
+- [x] Duplicate detection — find near-duplicate entities via fuzzy string matching on labels
 
-## Phase 10 — Interoperability
+## Phase 10 — Interoperability ✓
 
-- [ ] SPARQL endpoint — HTTP server accepting standard SPARQL protocol queries
-- [ ] OWL reasoning — RDFS/OWL entailment beyond simple forward-chaining rules
+- [x] SPARQL endpoint — HTTP server accepting standard SPARQL protocol queries
+- [x] OWL reasoning — RDFS/OWL entailment beyond simple forward-chaining rules
 
 ## Phase 11 — Scale & Operations
 
 - [ ] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
 - [ ] Incremental persistence — append-only log instead of full save/load
 - [ ] Graph partitioning — split large graphs across multiple in-memory stores
-- [ ] Profiling — identify slow patterns, hot indexes, query bottlenecks
+- [ ] Profiling — query timing, index stats, bottleneck identification
+- [ ] Backup/restore with versioning
+- [ ] Query result pagination/streaming for large result sets
+
+## Phase 12 — Query Completeness
+
+- [ ] SPARQL UPDATE — INSERT DATA, DELETE DATA, DELETE/INSERT WHERE
+- [ ] SPARQL UPDATE protocol — HTTP POST to /sparql for modifications
+- [ ] SPARQL parser: CONSTRUCT support
+- [ ] SPARQL parser: GROUP BY, HAVING, aggregation functions
+- [ ] SPARQL parser: OPTIONAL, UNION, MINUS, BIND
+- [ ] SPARQL parser: property paths
+
+## Phase 13 — Import Formats
+
+- [ ] RDF/XML import — opens up legacy datasets
+- [ ] JSON-LD import
+
+## Phase 14 — CI & Distribution
+
+- [ ] CI pipeline — automated test runs on push
+- [ ] Quicklisp submission
+- [ ] Documentation site with tutorials
 
 ## Completed
 
