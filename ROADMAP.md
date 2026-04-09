@@ -88,6 +88,24 @@ Target: 78/78 negative tests correctly rejected.
 - [ ] export-json-ld — JSON-LD export
 - [ ] export-cytoscape-json — Cytoscape.js compatible JSON
 
+## Phase 9 — Data Quality & Validation
+
+- [ ] Schema validation — define expected predicates/types, validate triples on insert
+- [ ] Constraint checking — cardinality constraints (e.g. "a person must have exactly one name")
+- [ ] Duplicate detection — find near-duplicate entities via fuzzy string matching on labels
+
+## Phase 10 — Interoperability
+
+- [ ] SPARQL endpoint — HTTP server accepting standard SPARQL protocol queries
+- [ ] OWL reasoning — RDFS/OWL entailment beyond simple forward-chaining rules
+
+## Phase 11 — Scale & Operations
+
+- [ ] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
+- [ ] Incremental persistence — append-only log instead of full save/load
+- [ ] Graph partitioning — split large graphs across multiple in-memory stores
+- [ ] Profiling — identify slow patterns, hot indexes, query bottlenecks
+
 ## Completed
 
 - [x] Core triple store with SPO/POS/OSP indexes
