@@ -2,9 +2,11 @@ image: debian/stable
 packages:
   - sbcl
   - curl
-sources:
-  - git@git.sr.ht:~hajovonta/ariadne
+  - git
 tasks:
+  - clone: |
+      cd ~
+      git clone https://git.sr.ht/~hajovonta/ariadne || git clone git@git.sr.ht:~hajovonta/ariadne
   - setup-quicklisp: |
       curl -sL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/quicklisp.lisp
       sbcl --noinform --non-interactive \
