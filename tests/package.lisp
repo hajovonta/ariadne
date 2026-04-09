@@ -169,6 +169,14 @@
   :description "Graph analytics: PageRank, connected components, degree centrality"
   :in :ariadne)
 
+(def-suite :remaining-sparql
+  :description "Sequence paths, GROUP_CONCAT, SAMPLE"
+  :in :ariadne)
+
+(def-suite :reactive
+  :description "Reactive queries: triggers on pattern match"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

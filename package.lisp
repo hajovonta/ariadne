@@ -86,4 +86,8 @@
    #:degree-centrality
    #:connected-components
    #:pagerank
-   #:clustering-coefficient))
+   #:clustering-coefficient
+   ;; Reactive
+   #:on-match
+   #:remove-trigger
+   #:graph-triggers))
