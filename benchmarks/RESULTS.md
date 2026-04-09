@@ -51,3 +51,15 @@
 - Add string interning for URIs (shared string table)
 - Re-benchmark after optimizations
 - Target: 1M+ triples without OOM, <30s for drugbank-full
+
+## Streaming Import Results (2026-04-09)
+
+| Method              | Lines   | Triples | Time (s) | Triples/sec | GC %  | Memory  |
+|---------------------|---------|---------|----------|-------------|-------|---------|
+| Bulk (500K lines)   | 500,000 | 435,412 |    5.052 |      86,000 |  25%  | 4,137MB |
+| Stream (500K lines) | 500,000 | 435,412 |    3.444 |     126,000 |  35%  | 2,986MB |
+| Stream (4.2M lines) |4,215,954|     OOM |      OOM |         OOM |  OOM  |   OOM   |
+
+Streaming is 47% faster and uses 28% less memory than bulk import.
+Full drugbank (4.2M lines) still OOMs — in-memory graph too large for default SBCL heap.
+Next: string interning to reduce memory, or increase --dynamic-space-size.
