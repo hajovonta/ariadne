@@ -120,4 +120,6 @@
    #:find-similar-entities
    ;; Export formats
    #:export-json-ld
-   #:export-cytoscape-json))
+   #:export-cytoscape-json
+   ;; SPARQL UPDATE
+   #:sparql-update))

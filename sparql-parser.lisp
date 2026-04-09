@@ -216,3 +216,72 @@
                  term))
            term)))
     (t term)))
+
+
+;;; ==========================================================================
+;;; SPARQL UPDATE
+;;; ==========================================================================
+
+(defun sparql-update (g update-string)
+  "Execute a SPARQL UPDATE string (INSERT DATA / DELETE DATA)."
+  (let ((prefixes (make-hash-table :test 'equal))
+        (s (string-trim '(#\Space #\Tab #\Newline #\Return) update-string)))
+    ;; Parse PREFIX declarations
+    (loop while (and (> (length s) 7)
+                     (string-equal "PREFIX" (subseq s 0 6)))
+          do (let* ((rest (string-trim '(#\Space #\Tab) (subseq s 6)))
+                    (colon (position #\: rest))
+                    (prefix (subseq rest 0 (1+ colon)))
+                    (after (string-trim '(#\Space #\Tab) (subseq rest (1+ colon))))
+                    (uri-end (position #\> after))
+                    (uri (subseq after 1 uri-end)))
+               (setf (gethash prefix prefixes) uri)
+               (setf s (string-trim '(#\Space #\Tab #\Newline #\Return)
+                                    (subseq after (1+ uri-end))))))
+    ;; Determine operation
+    (cond
+      ((and (>= (length s) 11) (string-equal "INSERT DATA" (subseq s 0 11)))
+       (let ((triples (parse-update-triples (subseq s 11) prefixes)))
+         (dolist (tr triples)
+           (add-triple g (first tr) (second tr) (third tr)))
+         (length triples)))
+      ((and (>= (length s) 11) (string-equal "DELETE DATA" (subseq s 0 11)))
+       (let ((triples (parse-update-triples (subseq s 11) prefixes)))
+         (dolist (tr triples)
+           (remove-triple g (first tr) (second tr) (third tr)))
+         (length triples)))
+      (t (error "Unsupported SPARQL UPDATE operation")))))
+
+(defun parse-update-triples (body prefixes)
+  "Parse { s p o . s p o . } into list of (s p o) lists."
+  (let* ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) body))
+         (inner (if (and (> (length trimmed) 1)
+                         (char= #\{ (char trimmed 0)))
+                    (subseq trimmed 1 (position #\} trimmed :from-end t))
+                    trimmed))
+         (tokens (sparql-tokenize inner))
+         (result nil))
+    (loop while (>= (length tokens) 3) do
+      (let ((s (resolve-sparql-token (pop tokens) prefixes))
+            (p (resolve-sparql-token (pop tokens) prefixes))
+            (o (resolve-sparql-token (pop tokens) prefixes)))
+        (push (list s p o) result)
+        ;; Skip optional dot
+        (when (and tokens (string= "." (car tokens)))
+          (pop tokens))))
+    (nreverse result)))
+
+(defun resolve-sparql-token (tok prefixes)
+  "Resolve a SPARQL token using prefixes."
+  (cond
+    ((and (> (length tok) 1) (char= #\< (char tok 0)) (char= #\> (char tok (1- (length tok)))))
+     (subseq tok 1 (1- (length tok))))
+    ((and (> (length tok) 1) (char= #\" (char tok 0)))
+     (subseq tok 1 (position #\" tok :start 1)))
+    ((position #\: tok)
+     (let* ((colon (position #\: tok))
+            (prefix (subseq tok 0 (1+ colon)))
+            (local (subseq tok (1+ colon)))
+            (base (gethash prefix prefixes)))
+       (if base (concatenate 'string base local) tok)))
+    (t tok)))

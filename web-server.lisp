@@ -274,6 +274,14 @@ function selectAll(){
     (error (e)
       (format nil "{\"error\":\"~A\"}" (json-escape (princ-to-string e))))))
 
+(defun sparql-update-json (g update-string)
+  "Execute SPARQL UPDATE and return JSON result."
+  (handler-case
+      (let ((count (sparql-update g update-string)))
+        (format nil "{\"success\":true,\"mutationCount\":~A}" count))
+    (error (e)
+      (format nil "{\"error\":\"~A\"}" (json-escape (princ-to-string e))))))
+
 (defun start-web-server (graph &key (port 8080))
   "Start the web visualization server for GRAPH on PORT."
   (when *web-server* (stop-web-server))
@@ -313,6 +321,10 @@ function selectAll(){
       ((query :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
     (sparql-query-json *web-graph* query))
+  (ht:define-easy-handler (handle-sparql-update :uri "/update")
+      ((update :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (sparql-update-json *web-graph* update))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)

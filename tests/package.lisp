@@ -226,6 +226,10 @@
   :description "JSON-LD and Cytoscape JSON export"
   :in :ariadne)
 
+(def-suite :sparql-update
+  :description "SPARQL UPDATE: INSERT DATA, DELETE DATA"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
