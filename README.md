@@ -1,29 +1,27 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz export. Built with TDD — 518/518 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 533/533 tests passing.
 
 ## Key Features
 
-- **Triple Store** — Core storage model based on subject-predicate-object triples with three concurrent indexes (SPO, POS, OSP) for O(1) lookups on any combination
+- **Triple Store** — Core storage with compact flat indexes for O(1) lookups. Scales to 3.6M triples.
 - **SPARQL-like Query DSL** — Declarative pattern matching with logic variables: `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, subqueries
-- **Aggregation** — `GROUP BY` with `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
-- **Property Paths** — Transitive closure (`+`), Kleene star (`*`), zero-or-one (`?`), inverse (`inv`, `inv+`), alternative (`alt`), bounded (`range`)
+- **Aggregation** — `GROUP BY` with `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP_CONCAT`, `SAMPLE`
+- **Property Paths** — Transitive closure (`+`), Kleene star (`*`), zero-or-one (`?`), inverse (`inv`, `inv+`), alternative (`alt`), bounded (`range`), sequence (`seq`)
 - **Gremlin-style Traversal** — Imperative graph walking with chainable steps: `out`, `in`, `both`, `has`, `values`
 - **Property Graph Layer** — Nodes with labels and properties, typed edges with properties, neighbor queries
-- **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation: RDFS-style subclass reasoning, symmetric properties, transitive closure
-- **RDF Import/Export** — N-Triples parser/serializer, Turtle parser (token-based), N-Quads import
-- **Graphviz Export** — DOT format output with predicate filtering, subgraph extraction around a node, file export
+- **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
+- **RDF Import/Export** — N-Triples, Turtle (W3C conformant: 209/209 positive, 82/82 negative), N-Quads
+- **Visualization** — Graphviz rendering (dot/neato/fdp/circo/twopi/sfdp), describe-graph summary
+- **Graph Operations** — Merge, diff, copy graphs. N-Quads export.
 - **Transactions** — Snapshot-based rollback with `with-transaction` macro
 - **Persistence** — Save/load graphs to disk with full type preservation
-- **Graph Algorithms** — BFS shortest path, depth-limited traversal, cycle-safe walking, path tracking
-- **Safe Filters** — Whitelisted filter evaluation with regex support (cl-ppcre)
-- **REPL Formatting** — Pretty-print query results as aligned tables
-- **Streaming Import** — Line-by-line N-Triples/N-Quads import for large files
 - **Graph Analytics** — PageRank, connected components, degree centrality, clustering coefficient
 - **Reactive Queries** — Triggers that fire callbacks when matching triples are added
 - **Named Graphs** — Quad store with GRAPH clause for multi-graph queries
 - **SPARQL String Parser** — Execute standard SPARQL query strings directly
-- **Thread Safety** — Lock-based concurrent read/write access
+- **Thread Safety** — Lock-based concurrent read/write access (bordeaux-threads)
+- **Streaming Import** — Line-by-line import for large files (~100K triples/sec)
 
 ## Quick Start
 

@@ -2,12 +2,13 @@
 
 ## Current Status
 
-- **518 tests passing** across 33 test suites
+- **533 tests passing** across 33 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 209/209 (100%)
 - W3C Turtle negative conformance: 82/82 (100%)
 - Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
-- Import throughput: ~500K triples/sec (Turtle), ~80-360K triples/sec (N-Triples/N-Quads)
+- Import throughput: ~500K triples/sec (Turtle), ~100K triples/sec (N-Quads streaming)
+- Scale: 3.6M triples in 34 seconds (drugbank full)
 - Published at [git.sr.ht/~hajovonta/ariadne](https://git.sr.ht/~hajovonta/ariadne)
 
 ## Phase 1 — Polish for Release
@@ -19,24 +20,26 @@
 - [x] LICENSE file
 - [x] Remote repository (git.sr.ht/~hajovonta/ariadne)
 
-## Phase 2 — W3C Turtle Strict Conformance
+## Phase 2 — W3C Turtle Strict Conformance ✓
 
-Target: 78/78 negative tests correctly rejected.
+Target: 82/82 negative tests correctly rejected. Achieved.
 
-- [ ] URI validation — reject spaces, invalid characters in `<...>`
-- [ ] Structure validation — require subject, predicate, object; reject unterminated statements
-- [ ] String validation — reject unterminated quotes, bad escape sequences
-- [ ] Prefix validation — reject undefined prefixes, malformed prefix declarations
-- [ ] Number validation — reject malformed numeric literals
-- [ ] Keyword validation — reject invalid keywords (e.g. `@PREFIX` instead of `@prefix`)
-- [ ] N3 extras rejection — reject N3 syntax that isn't valid Turtle (e.g. `=`, `=>`, `{...}`)
+- [x] URI validation — reject spaces, invalid characters, bad escapes in `<...>`
+- [x] Structure validation — require subject, predicate, object; reject unterminated statements
+- [x] String validation — reject unterminated quotes, bad escape sequences
+- [x] Prefix validation — reject undefined prefixes, malformed prefix declarations
+- [x] Number validation — reject malformed numeric literals
+- [x] Keyword validation — reject invalid keywords (e.g. `@PREFIX` instead of `@prefix`)
+- [x] N3 extras rejection — reject N3 syntax that isn't valid Turtle (e.g. `=`, `=>`, `{...}`)
+- [x] Blank node validation — reject labels ending with dot, blank nodes as predicates
+- [x] NQuads-in-Turtle detection — reject 4th element after triple
 
 ## Phase 3 — Performance
 
 - [x] Streaming import — line-by-line `stream-import-nquads` / `stream-import-ntriples` for large files
 - [x] String interning — deduplicate repeated URIs to reduce memory
 - [x] Compact index — flat composite-key hash tables (41-63% less GC)
-- [ ] Benchmarks at scale — test at 1M+ triples with `--dynamic-space-size 16384`
+- [x] Benchmarks at scale — tested at 3.6M triples (drugbank full)
 - [x] Query planner — reorder WHERE patterns by selectivity for optimal execution
 - [x] Thread safety — lock-based concurrent access (bordeaux-threads)
 
