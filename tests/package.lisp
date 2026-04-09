@@ -266,6 +266,14 @@
   :description "Prefix registry for short URIs"
   :in :ariadne)
 
+(def-suite :memory-usage
+  :description "Memory usage reporting"
+  :in :ariadne)
+
+(def-suite :skolemization
+  :description "Blank node skolemization"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

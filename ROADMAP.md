@@ -133,7 +133,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 
 ## Phase 15 — Usability & Query Completeness
 
-- [ ] Prefix registry — `register-prefix` so queries don't need full URIs
+- [x] Prefix registry — `register-prefix` so queries don't need full URIs
 - [ ] DELETE WHERE — bulk delete by pattern matching
 - [ ] SPARQL parser: DESCRIBE support
 - [ ] Blank node skolemization — stable IDs for blank nodes

@@ -144,4 +144,8 @@
    ;; Prefix registry
    #:register-prefix
    #:register-common-prefixes
-   #:graph-prefixes))
+   #:graph-prefixes
+   ;; Memory usage
+   #:graph-memory-usage
+   ;; Skolemization
+   #:skolemize-blank-nodes))

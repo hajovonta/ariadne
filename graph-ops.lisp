@@ -164,3 +164,27 @@
              (expect #\])
              (nreverse items))))
       (read-array))))
+
+(defun blank-node-p (s)
+  "Return T if S is a blank node string."
+  (and (stringp s) (>= (length s) 2) (char= (char s 0) #\_) (char= (char s 1) #\:)))
+
+(defun skolemize-blank-nodes (g &key (base "https://ariadne.example"))
+  "Replace all blank nodes in G with stable well-known URIs."
+  (let ((mapping (make-hash-table :test 'equal))
+        (triples (get-triples g)))
+    (flet ((skolem-uri (bnode)
+             (or (gethash bnode mapping)
+                 (setf (gethash bnode mapping)
+                       (format nil "~A/.well-known/genid/~A" base (subseq bnode 2))))))
+      (dolist (tr triples)
+        (let ((s (triple-subject tr))
+              (p (triple-predicate tr))
+              (o (triple-object tr)))
+          (when (or (blank-node-p s) (blank-node-p o))
+            (remove-triple g s p o)
+            (add-triple g
+                        (if (blank-node-p s) (skolem-uri s) s)
+                        p
+                        (if (blank-node-p o) (skolem-uri o) o)))))))
+  g)

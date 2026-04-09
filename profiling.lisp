@@ -21,3 +21,23 @@
         :objects (length (all-objects g))
         :spo-index-size (hash-table-count (graph-spo g))
         :interned-strings (hash-table-count *intern-table*)))
+
+(defun hash-table-byte-estimate (ht)
+  "Rough estimate of hash table memory in bytes."
+  ;; ~64 bytes overhead + ~32 bytes per bucket
+  (+ 64 (* 32 (hash-table-size ht))))
+
+(defun graph-memory-usage (g)
+  "Return a plist estimating memory usage of graph G."
+  (let ((index-bytes (+ (hash-table-byte-estimate (graph-spo g))
+                        (hash-table-byte-estimate (graph-sp g))
+                        (hash-table-byte-estimate (graph-s g))
+                        (hash-table-byte-estimate (graph-p g))
+                        (hash-table-byte-estimate (graph-po g))
+                        (hash-table-byte-estimate (graph-o g))
+                        (hash-table-byte-estimate (graph-os g))
+                        (hash-table-byte-estimate (graph-triple-graph g))
+                        (hash-table-byte-estimate (graph-graph-index g)))))
+    (list :triple-count (triple-count g)
+          :index-bytes index-bytes
+          :intern-count (hash-table-count *intern-table*))))
