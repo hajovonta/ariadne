@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **409 tests passing** across 22 test suites
+- **428 tests passing** across 24 test suites
 - ~90% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -13,7 +13,7 @@
 ## Phase 1 — Polish for Release
 
 - [x] REPL result formatting — pretty-print query results as aligned tables
-- [ ] Example datasets — ship a small knowledge graph with example queries in `examples/`
+- [x] Example datasets — family tree with example queries in `examples/`
 - [x] Proper Turtle export — prefix grouping, semicolons, commas, 'a' shorthand
 - [x] Error handling — graceful errors on malformed input, bad queries, unclosed strings
 - [x] LICENSE file
@@ -57,7 +57,7 @@ Target: 78/78 negative tests correctly rejected.
 ## Phase 5 — Differentiation
 
 - [ ] Reactive queries / triggers — `(on-match g pattern callback)` fires when a pattern appears
-- [ ] Graph analytics — PageRank, connected components, betweenness centrality
+- [x] Graph analytics — PageRank, connected components, degree centrality, clustering coefficient
 - [ ] SPARQL string parser — accept standard SPARQL query strings, translate to DSL
 - [ ] REPL integration — table formatting, graph visualization
 
@@ -99,3 +99,5 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Streaming import for large N-Triples/N-Quads files
 - [x] Error handling for malformed input, bad queries, unclosed strings
 - [x] Benchmarked: 500K triples/sec Turtle, 86-112K triples/sec N-Quads
+- [x] Graph analytics: PageRank, connected components, degree centrality, clustering coefficient
+- [x] Example dataset: family tree with queries and inference

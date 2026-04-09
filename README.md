@@ -1,6 +1,6 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, and Graphviz export. Built with TDD — 409/409 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz export. Built with TDD — 428/428 tests passing.
 
 ## Key Features
 
@@ -19,6 +19,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Safe Filters** — Whitelisted filter evaluation with regex support (cl-ppcre)
 - **REPL Formatting** — Pretty-print query results as aligned tables
 - **Streaming Import** — Line-by-line N-Triples/N-Quads import for large files
+- **Graph Analytics** — PageRank, connected components, degree centrality, clustering coefficient
 
 ## Quick Start
 
@@ -115,6 +116,8 @@ git clone <repository-url> ariadne
 | `:streaming-import` | Line-by-line N-Triples/N-Quads import for large files |
 | `:repl-formatting` | Pretty-print query results as aligned tables |
 | `:error-handling` | Graceful errors for malformed input, bad queries, persistence |
+| `:examples` | Example datasets and queries |
+| `:graph-analytics` | PageRank, connected components, degree centrality, clustering |
 | `:persistence` | Save/load with type preservation |
 | `:edge-cases` | Unicode, emoji, empty graphs, stress tests, mixed types |
 
@@ -165,6 +168,7 @@ Query DSL expression
 | `transactions.lisp` | Snapshot-based transactions |
 | `inference.lisp` | Forward-chaining rule engine |
 | `graph-export.lisp` | DOT/Graphviz export |
+| `analytics.lisp` | PageRank, connected components, degree centrality, clustering |
 | `import-export.lisp` | N-Triples, Turtle import/export, N-Quads |
 | `streaming.lisp` | Line-by-line streaming import for large files |
 | `repl.lisp` | REPL result formatting |

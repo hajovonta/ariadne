@@ -19,4 +19,5 @@
                (:file "inference")
                (:file "graph-export")
                (:file "repl")
-               (:file "streaming")))
+               (:file "streaming")
+               (:file "analytics")))
