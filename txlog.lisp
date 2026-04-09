@@ -11,18 +11,20 @@
 
 (defun start-txlog (g path)
   "Start logging all mutations to PATH. Appends to existing log."
-  (let ((stream (open path :direction :output
-                           :if-exists :append
-                           :if-does-not-exist :create)))
-    (setf (graph-txlog-stream g) stream)))
+  (bt:with-lock-held ((graph-lock g))
+    (let ((stream (open path :direction :output
+                             :if-exists :append
+                             :if-does-not-exist :create)))
+      (setf (graph-txlog-stream g) stream))))
 
 (defun stop-txlog (g)
   "Stop logging and close the log file."
-  (let ((stream (graph-txlog-stream g)))
-    (when stream
-      (force-output stream)
-      (close stream)
-      (setf (graph-txlog-stream g) nil))))
+  (bt:with-lock-held ((graph-lock g))
+    (let ((stream (graph-txlog-stream g)))
+      (when stream
+        (force-output stream)
+        (close stream)
+        (setf (graph-txlog-stream g) nil)))))
 
 (defun txlog-write (g op s p o)
   "Write a log entry if txlog is active."
