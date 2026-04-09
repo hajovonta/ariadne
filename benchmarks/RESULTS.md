@@ -118,3 +118,19 @@ Previously OOM'd. Compact index made it possible.
 | GC             | 6.85s (20%)    |
 | Memory consed  | 22.8GB         |
 | Unique strings | 1,495,729      |
+
+## Post-Feature Benchmark (2026-04-09)
+
+After adding OWL reasoning, schema validation, web server, SPARQL UPDATE,
+RDF/XML import, JSON-LD import/export, transaction log, profiling.
+
+| Dataset           | Metric     | Compact (before) | All features | Change |
+|-------------------|------------|------------------|--------------|--------|
+| brick.ttl         | Turtle     | 337K/sec         | 206K/sec     | -39%   |
+| schema-org.ttl    | Turtle     | 366K/sec         | 276K/sec     | -25%   |
+| berlin.nt         | N-Triples  | 207K/sec         | 310K/sec     | +50%   |
+| dbpedia-cities.nt | N-Triples  | 282K/sec         | 301K/sec     | +7%    |
+| drugbank 500K     | N-Quads    | 3.217s           | 3.379s       | +5%    |
+
+Turtle slower due to W3C validation (escape checking, bracket tracking).
+N-Triples/N-Quads unchanged or faster. Intern table now thread-safe.
