@@ -4,6 +4,20 @@
 (in-package #:ariadne)
 
 ;;; ==========================================================================
+;;; String Interning
+;;; ==========================================================================
+
+(defvar *intern-table* (make-hash-table :test 'equal))
+
+(defun intern-string (s)
+  "Return a shared copy of string S, deduplicating repeated strings."
+  (or (gethash s *intern-table*)
+      (setf (gethash s *intern-table*) s)))
+
+(defun clear-intern-table ()
+  (clrhash *intern-table*))
+
+;;; ==========================================================================
 ;;; Triple
 ;;; ==========================================================================
 
@@ -101,6 +115,10 @@
 (defun add-triple (g subject predicate object)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
+  ;; Intern strings to deduplicate
+  (when (stringp subject) (setf subject (intern-string subject)))
+  (when (stringp predicate) (setf predicate (intern-string predicate)))
+  (when (stringp object) (setf object (intern-string object)))
   ;; Check for duplicate
   (when (has-triple-p g subject predicate object)
     (return-from add-triple

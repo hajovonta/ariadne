@@ -63,3 +63,18 @@
 Streaming is 47% faster and uses 28% less memory than bulk import.
 Full drugbank (4.2M lines) still OOMs — in-memory graph too large for default SBCL heap.
 Next: string interning to reduce memory, or increase --dynamic-space-size.
+
+## String Interning Results (2026-04-09)
+
+| Method                    | Triples | Time (s) | Triples/sec | Memory  | Unique Strings |
+|---------------------------|---------|----------|-------------|---------|----------------|
+| Stream, no interning      | 435,412 |    3.444 |     126,000 | 2,986MB |            N/A |
+| Stream, with interning    | 435,412 |    3.490 |     125,000 | 3,007MB |        189,001 |
+| Stream+intern (full 4.2M) |     OOM |      OOM |         OOM |     OOM |            OOM |
+
+String interning deduplicates correctly (189K unique out of 435K triples) but memory
+savings are marginal on diverse data (bio2rdf URIs with UUIDs). The dominant memory
+consumer is the 3-level nested hash table indexes (SPO/POS/OSP), not string duplication.
+
+Bottleneck: each triple creates entries in 3 nested hash tables. At 4.2M triples,
+the hash table overhead (headers, buckets) exceeds the default SBCL heap.
