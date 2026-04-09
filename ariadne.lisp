@@ -73,6 +73,7 @@
 ;;; ==========================================================================
 
 (declaim (ftype function check-triggers))
+(declaim (ftype function txlog-write))
 
 (defun add-triple (g subject predicate object)
   (when (or (null subject) (null predicate))
@@ -96,6 +97,7 @@
         (incf (graph-count g))
         (when (graph-triggers g)
           (check-triggers g tr))
+        (txlog-write g :add subject predicate object)
         tr))))
 
 (defun remove-triple (g subject predicate object)
@@ -112,6 +114,7 @@
         (index-delete (graph-os g) (list object subject) tr)
         (setf (graph-all g) (delete tr (graph-all g) :test #'eq))
         (decf (graph-count g))
+        (txlog-write g :remove subject predicate object)
         t))))
 
 (defun remove-triples (g &key subject predicate object)

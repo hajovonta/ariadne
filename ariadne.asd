@@ -30,4 +30,5 @@
                (:file "owl")
                (:file "schema")
                (:file "rdf-xml")
-               (:file "profiling")))
+               (:file "profiling")
+               (:file "txlog")))

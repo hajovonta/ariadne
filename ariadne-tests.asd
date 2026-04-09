@@ -53,6 +53,7 @@
                              (:file "suite-rdf-xml")
                              (:file "suite-json-ld-import")
                              (:file "suite-profiling")
-                             (:file "suite-sparql-parser-paths"))))
+                             (:file "suite-sparql-parser-paths")
+                             (:file "suite-incremental-persistence"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

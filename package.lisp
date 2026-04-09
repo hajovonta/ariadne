@@ -128,4 +128,8 @@
    #:import-json-ld
    ;; Profiling
    #:profile-query
-   #:graph-statistics))
+   #:graph-statistics
+   ;; Transaction log
+   #:start-txlog
+   #:stop-txlog
+   #:replay-txlog))

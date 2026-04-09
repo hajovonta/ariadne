@@ -250,6 +250,10 @@
   :description "SPARQL parser: property paths and BIND"
   :in :ariadne)
 
+(def-suite :incremental-persistence
+  :description "Append-only transaction log"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
