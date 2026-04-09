@@ -3,9 +3,11 @@
 ## Current Status
 
 - **361 tests passing** across 17 test suites
-- ~80% SPARQL 1.1 feature coverage
+- ~90% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
+- Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
+- Published at [git.sr.ht/~hajovonta/ariadne](https://git.sr.ht/~hajovonta/ariadne)
 
 ## Phase 1 — Polish for Release
 
@@ -13,7 +15,8 @@
 - [ ] Example datasets — ship a small knowledge graph with example queries in `examples/`
 - [ ] Proper Turtle export — prefix grouping and shorthand (current export falls back to N-Triples)
 - [ ] Error handling — graceful errors on malformed input, missing nodes, bad query syntax
-- [ ] LICENSE file
+- [x] LICENSE file
+- [x] Remote repository (git.sr.ht/~hajovonta/ariadne)
 
 ## Phase 2 — W3C Turtle Strict Conformance
 
@@ -78,3 +81,6 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Persistence via CL print/read
 - [x] 'a' shorthand, boolean literals, comments in Turtle
 - [x] Real-world Turtle file import (perihelion-kg.ttl)
+- [x] MIT LICENSE
+- [x] Remote repository (git.sr.ht/~hajovonta/ariadne)
+- [x] Comprehensive documentation (README.md, docs/query-language.md)
