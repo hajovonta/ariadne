@@ -28,4 +28,5 @@
                (:file "graph-ops")
                (:file "web-server")
                (:file "owl")
-               (:file "schema")))
+               (:file "schema")
+               (:file "rdf-xml")))

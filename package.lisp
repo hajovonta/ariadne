@@ -122,4 +122,6 @@
    #:export-json-ld
    #:export-cytoscape-json
    ;; SPARQL UPDATE
-   #:sparql-update))
+   #:sparql-update
+   ;; RDF/XML
+   #:import-rdf-xml))

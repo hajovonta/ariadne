@@ -234,6 +234,10 @@
   :description "Extended SPARQL string parser"
   :in :ariadne)
 
+(def-suite :rdf-xml
+  :description "RDF/XML import"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

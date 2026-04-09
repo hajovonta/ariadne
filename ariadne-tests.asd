@@ -49,6 +49,7 @@
                              (:file "suite-schema-validation")
                              (:file "suite-export-formats")
                              (:file "suite-sparql-update")
-                             (:file "suite-sparql-parser-extended"))))
+                             (:file "suite-sparql-parser-extended")
+                             (:file "suite-rdf-xml"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))
