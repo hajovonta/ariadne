@@ -477,12 +477,18 @@ Handles quoted strings, URIs, and punctuation (; , .)."
               ;; Blank node _:...
               ((and (char= ch #\_) (< (1+ pos) len) (char= #\: (char data (1+ pos))))
                (let ((start pos))
+                 ;; Read including dots (don't stop at dot)
                  (loop while (and (< pos len)
                                   (not (member (char data pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\. #\; #\, #\( #\) #\[ #\]))))
+                                                 #\; #\, #\( #\) #\[ #\]))))
                        do (incf pos))
-                 (push (subseq data start pos) tokens)))
+                 (let ((tok (subseq data start pos)))
+                   ;; Check if label ends with dot — invalid per W3C
+                   (when (and (> (length tok) 2)
+                              (char= #\. (char tok (1- (length tok)))))
+                     (error "Blank node label cannot end with dot: ~A" tok))
+                   (push tok tokens))))
               ;; Other token (prefixed name, number, etc.)
               (t
                (let ((start pos))
