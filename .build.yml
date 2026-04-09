@@ -3,7 +3,7 @@ packages:
   - sbcl
   - curl
 sources:
-  - https://git.sr.ht/~hajovonta/ariadne
+  - git@git.sr.ht:~hajovonta/ariadne
 tasks:
   - setup-quicklisp: |
       curl -sL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/quicklisp.lisp
