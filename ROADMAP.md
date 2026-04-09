@@ -2,11 +2,12 @@
 
 ## Current Status
 
-- **361 tests passing** across 17 test suites
+- **376 tests passing** across 18 test suites
 - ~90% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
 - Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
+- Import throughput: ~500K triples/sec (Turtle), ~80-360K triples/sec (N-Triples/N-Quads)
 - Published at [git.sr.ht/~hajovonta/ariadne](https://git.sr.ht/~hajovonta/ariadne)
 
 ## Phase 1 — Polish for Release
@@ -32,7 +33,9 @@ Target: 78/78 negative tests correctly rejected.
 
 ## Phase 3 — Performance
 
-- [ ] Benchmarks — measure insert throughput, query latency, memory at 1K/10K/100K/1M triples
+- [ ] Streaming import — line-by-line `import-nquads-file` / `import-ntriples-file` for multi-GB files
+- [ ] String interning — deduplicate repeated URIs to reduce memory
+- [ ] Benchmarks at scale — test at 500K and 1M+ triples
 - [ ] Query planner — reorder WHERE patterns to minimize intermediate results
 - [ ] Thread safety — read-write locks for concurrent access (bordeaux-threads)
 
