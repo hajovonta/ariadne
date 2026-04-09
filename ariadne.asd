@@ -21,4 +21,5 @@
                (:file "repl")
                (:file "streaming")
                (:file "analytics")
-               (:file "reactive")))
+               (:file "reactive")
+               (:file "sparql-parser")))

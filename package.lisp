@@ -94,4 +94,6 @@
    ;; Named graphs
    #:add-quad
    #:get-quads
-   #:named-graphs))
+   #:named-graphs
+   ;; SPARQL string parser
+   #:sparql))

@@ -181,6 +181,10 @@
   :description "Named graphs: quads, GRAPH clause"
   :in :ariadne)
 
+(def-suite :sparql-parser
+  :description "SPARQL string parser"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
