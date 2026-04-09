@@ -173,7 +173,10 @@ function loadGraph(){
           'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
         { selector: '.dimmed', style: { opacity: 0.08 }}
       ],
-      layout: { name: document.getElementById('layout').value, animate: false }
+      layout: { name: document.getElementById('layout').value, animate: false },
+      wheelSensitivity: 0.15,
+      minZoom: 0.1,
+      maxZoom: 10
     });
     document.getElementById('stats').textContent =
       cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
