@@ -137,6 +137,10 @@
   :description "Graph export to DOT/Graphviz"
   :in :ariadne)
 
+(def-suite :turtle-real-world
+  :description "Real-world Turtle parsing: 'a' shorthand, comments, booleans, complex patterns"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
