@@ -335,8 +335,9 @@
                (if (and (listp v) (>= (length v) 2))
                    (let ((agg-var (second v)))
                      (let ((values (mapcar (lambda (env) (lookup-binding agg-var env))
-                                           group-envs)))
-                       (push (compute-aggregate (first v) values) row)))
+                                           group-envs))
+                           (separator (third v)))
+                       (push (compute-aggregate (first v) values separator) row)))
                    (push (lookup-binding v (first group-envs)) row)))
              (push (nreverse row) results))))
        groups)
@@ -366,7 +367,7 @@
        (compute-aggregate (first expr) values)))
     (t (mapcar (lambda (x) (subst-having-aggregates x group-envs vars)) expr))))
 
-(defun compute-aggregate (fn values)
+(defun compute-aggregate (fn values &optional separator)
   "Compute an aggregate function over a list of values."
   (let ((nums (remove-if-not #'numberp values)))
     (cond
@@ -376,6 +377,12 @@
        (if nums (/ (reduce #'+ nums) (length nums)) 0))
       ((sym-name-equal fn "MIN") (when nums (reduce #'min nums)))
       ((sym-name-equal fn "MAX") (when nums (reduce #'max nums)))
+      ((sym-name-equal fn "GROUP-CONCAT")
+       (let ((sep (or separator ", ")))
+         (format nil (concatenate 'string "~{~A~^" sep "~}")
+                 (mapcar #'princ-to-string values))))
+      ((sym-name-equal fn "SAMPLE")
+       (first values))
       (t (error "Unknown aggregate function: ~A" fn)))))
 
 ;;; ==========================================================================
@@ -461,6 +468,8 @@
      (inverse-path g start (second path-expr) target))
     ((sym-name-equal op "INV+")
      (inverse-transitive g start (second path-expr) target))
+    ((sym-name-equal op "SEQ")
+     (sequence-path g start (rest path-expr) target))
     (t (error "Unknown path operator: ~A" op))))
 
 (defun transitive-closure (g start pred target)
@@ -647,3 +656,21 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
            (caar results)
            results)))
     (t (mapcar (lambda (x) (resolve-subquery-in-filter g x)) expr))))
+
+(defun sequence-path (g start predicates target)
+  "Sequence path: chain multiple predicates. (seq p1 p2 p3) = p1/p2/p3."
+  (let ((bound-start (and (not (variable-p start)) start))
+        (results nil))
+    (when bound-start
+      (let ((current (list bound-start)))
+        (dolist (pred predicates)
+          (let ((next nil))
+            (dolist (node current)
+              (dolist (tr (get-triples g :subject node :predicate pred))
+                (pushnew (triple-object tr) next :test #'equal)))
+            (setf current next)))
+        (dolist (end current)
+          (push (cons bound-start end) results))))
+    (if (and target (not (variable-p target)))
+        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+        results)))

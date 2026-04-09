@@ -112,6 +112,8 @@
 ;;; Add / Remove / Query
 ;;; ==========================================================================
 
+(declaim (ftype function check-triggers))
+
 (defun add-triple (g subject predicate object)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
@@ -128,6 +130,9 @@
     (index-add (graph-pos g) predicate object subject tr)
     (index-add (graph-osp g) object subject predicate tr)
     (incf (graph-count g))
+    ;; Check reactive triggers
+    (when (graph-triggers g)
+      (check-triggers g tr))
     tr))
 
 (defun remove-triple (g subject predicate object)

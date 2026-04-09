@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **428 tests passing** across 24 test suites
+- **446 tests passing** across 26 test suites
 - ~90% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -48,15 +48,15 @@ Target: 78/78 negative tests correctly rejected.
 
 ## Phase 4 — Remaining SPARQL Features
 
-- [ ] Subqueries — queries nested inside WHERE clauses (partially done, needs hardening)
-- [ ] Sequence paths `/` — `foaf:knows/foaf:name` (workaround: multi-pattern joins)
-- [ ] GROUP_CONCAT aggregation
-- [ ] SAMPLE aggregation
+- [x] Subqueries — queries nested inside WHERE clauses (partially done, needs hardening)
+- [x] Sequence paths `/` — `(seq "knows" "name")`
+- [x] GROUP_CONCAT aggregation
+- [x] SAMPLE aggregation
 - [ ] Named graphs — GRAPH clause, FROM / FROM NAMED
 
 ## Phase 5 — Differentiation
 
-- [ ] Reactive queries / triggers — `(on-match g pattern callback)` fires when a pattern appears
+- [x] Reactive queries / triggers — `(on-match g :name :pattern '(...) :callback fn)`
 - [x] Graph analytics — PageRank, connected components, degree centrality, clustering coefficient
 - [ ] SPARQL string parser — accept standard SPARQL query strings, translate to DSL
 - [ ] REPL integration — table formatting, graph visualization
@@ -101,3 +101,6 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Benchmarked: 500K triples/sec Turtle, 86-112K triples/sec N-Quads
 - [x] Graph analytics: PageRank, connected components, degree centrality, clustering coefficient
 - [x] Example dataset: family tree with queries and inference
+- [x] Sequence paths (seq "p1" "p2" ...)
+- [x] GROUP_CONCAT and SAMPLE aggregations
+- [x] Reactive triggers: on-match, remove-trigger, graph-triggers

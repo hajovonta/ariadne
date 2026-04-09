@@ -20,4 +20,5 @@
                (:file "graph-export")
                (:file "repl")
                (:file "streaming")
-               (:file "analytics")))
+               (:file "analytics")
+               (:file "reactive")))
