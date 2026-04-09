@@ -2,6 +2,7 @@ image: debian/stable
 packages:
   - sbcl
   - curl
+  - graphviz
 sources:
   - https://git.sr.ht/~hajovonta/ariadne
 tasks:
