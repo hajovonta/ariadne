@@ -254,6 +254,10 @@
   :description "Append-only transaction log"
   :in :ariadne)
 
+(def-suite :pagination
+  :description "Query result pagination"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

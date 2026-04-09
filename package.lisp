@@ -132,4 +132,8 @@
    ;; Transaction log
    #:start-txlog
    #:stop-txlog
-   #:replay-txlog))
+   #:replay-txlog
+   ;; Pagination
+   #:make-query-cursor
+   #:cursor-next
+   #:cursor-done-p))

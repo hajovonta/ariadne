@@ -724,3 +724,39 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
     (dolist (tr (get-quads g :graph graph-name))
       (add-triple temp (triple-subject tr) (triple-predicate tr) (triple-object tr)))
     (match-with-paths temp patterns)))
+
+
+;;; ==========================================================================
+;;; Query Cursor / Pagination
+;;; ==========================================================================
+
+(defstruct (query-cursor (:constructor %make-query-cursor))
+  results
+  (offset 0 :type fixnum)
+  (page-size 10 :type fixnum))
+
+(defun make-query-cursor (g expr &key (page-size 10))
+  "Create a cursor for paginated query results."
+  ;; Strip any existing limit/offset from expr and execute full query
+  (let ((clean-expr (remove-if (lambda (clause)
+                                 (and (listp clause)
+                                      (member (car clause) '(limit offset))))
+                               expr)))
+    (%make-query-cursor :results (query g clean-expr)
+                        :page-size page-size)))
+
+(defun cursor-next (cursor)
+  "Return the next page of results from CURSOR."
+  (let* ((results (query-cursor-results cursor))
+         (offset (query-cursor-offset cursor))
+         (size (query-cursor-page-size cursor))
+         (page (subseq results
+                       (min offset (length results))
+                       (min (+ offset size) (length results)))))
+    (setf (query-cursor-offset cursor) (+ offset size))
+    page))
+
+(defun cursor-done-p (cursor)
+  "Return T if all results have been consumed."
+  (>= (query-cursor-offset cursor)
+      (length (query-cursor-results cursor))))
