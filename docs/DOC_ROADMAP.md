@@ -1,22 +1,22 @@
 # Documentation Roadmap
 
-Detailed API documentation for each section. Each section gets its own file in `docs/api/` with verbose descriptions and 2-3 examples per function.
+Detailed API documentation for each section. Each section has its own file in `docs/api/` with verbose descriptions and 2-3 examples per function.
 
 ## Status
 
-- [ ] [Graph](api/graph.md)
-- [ ] [Triples](api/triples.md)
-- [ ] [Query DSL](api/query-dsl.md)
-- [ ] [Pattern Matching](api/pattern-matching.md)
-- [ ] [Property Graph](api/property-graph.md)
-- [ ] [Traversal](api/traversal.md)
-- [ ] [Named Graphs](api/named-graphs.md)
-- [ ] [Transactions](api/transactions.md)
-- [ ] [Import / Export](api/import-export.md)
-- [ ] [Persistence](api/persistence.md)
-- [ ] [Inference](api/inference.md)
-- [ ] [Reactive Triggers](api/reactive-triggers.md)
-- [ ] [Graph Analytics](api/graph-analytics.md)
-- [ ] [Graph Operations](api/graph-operations.md)
-- [ ] [Visualization & REPL](api/visualization.md)
-- [ ] [SPARQL String Parser](api/sparql-parser.md)
+- [x] [Graph](api/graph.md)
+- [x] [Triples](api/triples.md)
+- [x] [Query DSL](api/query-dsl.md)
+- [x] [Pattern Matching](api/pattern-matching.md)
+- [x] [Property Graph](api/property-graph.md)
+- [x] [Traversal](api/traversal.md)
+- [x] [Named Graphs](api/named-graphs.md)
+- [x] [Transactions](api/transactions.md)
+- [x] [Import / Export](api/import-export.md)
+- [x] [Persistence](api/persistence.md)
+- [x] [Inference](api/inference.md)
+- [x] [Reactive Triggers](api/reactive-triggers.md)
+- [x] [Graph Analytics](api/graph-analytics.md)
+- [x] [Graph Operations](api/graph-operations.md)
+- [x] [Visualization & REPL](api/visualization.md)
+- [x] [SPARQL String Parser](api/sparql-parser.md)
