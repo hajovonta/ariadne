@@ -79,6 +79,15 @@ Target: 78/78 negative tests correctly rejected.
 - [ ] Subgraph extraction: explore neighborhood around a clicked node
 - [ ] Search: find nodes by label or URI
 
+## Phase 8 — Graph Operations & Export Formats
+
+- [ ] merge-graphs — merge two graphs, deduplicating triples
+- [ ] diff-graphs — find triples in one graph but not the other
+- [ ] copy-graph — deep copy a graph
+- [ ] export-nquads — N-Quads export with graph names
+- [ ] export-json-ld — JSON-LD export
+- [ ] export-cytoscape-json — Cytoscape.js compatible JSON
+
 ## Completed
 
 - [x] Core triple store with SPO/POS/OSP indexes
