@@ -174,10 +174,28 @@ Handles quoted strings, URIs, and punctuation (; , .)."
             (cond
               ;; Comment
               ((char= ch #\#) (skip-comment))
-              ;; Punctuation
-              ((member ch '(#\. #\; #\,))
+              ;; Punctuation (. is only punctuation if followed by whitespace/EOF/newline)
+              ((member ch '(#\; #\,))
                (push (string ch) tokens)
                (incf pos))
+              ((char= ch #\.)
+               (if (or (>= (1+ pos) len)
+                       (member (char data (1+ pos)) '(#\Space #\Tab #\Newline #\Return)))
+                   (progn (push (string ch) tokens) (incf pos))
+                   ;; Dot is part of a token (e.g. prefixed name with dots)
+                   (let ((start pos))
+                     (loop while (and (< pos len)
+                                      (not (member (char data pos)
+                                                   '(#\Space #\Tab #\Newline #\Return
+                                                     #\; #\,))))
+                           do (if (and (char= (char data pos) #\.)
+                                       (or (>= (1+ pos) len)
+                                           (member (char data (1+ pos))
+                                                   '(#\Space #\Tab #\Newline #\Return))))
+                                  (return)
+                                  (incf pos)))
+                     (when (> pos start)
+                       (push (subseq data start pos) tokens)))))
               ;; URI <...>
               ((char= ch #\<)
                (let ((end (position #\> data :start (1+ pos))))
