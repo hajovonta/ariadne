@@ -258,6 +258,10 @@
   :description "Query result pagination"
   :in :ariadne)
 
+(def-suite :backup
+  :description "Backup/restore with versioning"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

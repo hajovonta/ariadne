@@ -136,4 +136,8 @@
    ;; Pagination
    #:make-query-cursor
    #:cursor-next
-   #:cursor-done-p))
+   #:cursor-done-p
+   ;; Backup
+   #:backup-graph
+   #:restore-latest-backup
+   #:list-backups))

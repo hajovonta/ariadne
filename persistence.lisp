@@ -23,3 +23,35 @@
       (dolist (tr (getf data :triples))
         (add-triple g (first tr) (second tr) (third tr)))
       g)))
+
+
+;;; ==========================================================================
+;;; Backup / Restore with versioning
+;;; ==========================================================================
+
+(defvar *backup-counter* 0)
+
+(defun backup-graph (g directory)
+  "Save a timestamped backup of G to DIRECTORY. Returns the backup path."
+  (ensure-directories-exist (merge-pathnames "x" directory))
+  (let* ((name (or (graph-name g) "graph"))
+         (timestamp (multiple-value-bind (sec min hour day month year)
+                        (get-decoded-time)
+                      (format nil "~4,'0D~2,'0D~2,'0D-~2,'0D~2,'0D~2,'0D-~3,'0D"
+                              year month day hour min sec (incf *backup-counter*))))
+         (filename (format nil "~A-~A.ariadne" name timestamp))
+         (path (merge-pathnames filename directory)))
+    (save-graph g path)
+    path))
+
+(defun list-backups (directory)
+  "List all backup files in DIRECTORY, newest first."
+  (let ((files (directory (merge-pathnames "*.ariadne" directory))))
+    (sort files #'string> :key #'namestring)))
+
+(defun restore-latest-backup (directory)
+  "Load the most recent backup from DIRECTORY."
+  (let ((backups (list-backups directory)))
+    (if backups
+        (load-graph (first backups))
+        (error "No backups found in ~A" directory))))
