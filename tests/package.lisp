@@ -214,6 +214,10 @@
   :description "OWL/RDFS entailment rules"
   :in :ariadne)
 
+(def-suite :sparql-endpoint
+  :description "SPARQL HTTP endpoint"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

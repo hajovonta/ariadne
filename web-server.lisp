@@ -253,6 +253,27 @@ function selectAll(){
 ;;; Server
 ;;; ==========================================================================
 
+(defun sparql-query-json (g query-string)
+  "Execute SPARQL query and return JSON result string."
+  (handler-case
+      (let ((results (sparql g query-string)))
+        (cond
+          ((eq results t) "{\"boolean\":true}")
+          ((null results) "{\"boolean\":false}")
+          ((listp results)
+           (format nil "{\"results\":[~{~A~^,~}]}"
+                   (mapcar (lambda (row)
+                             (format nil "[~{~A~^,~}]"
+                                     (mapcar (lambda (v)
+                                               (if (stringp v)
+                                                   (format nil "\"~A\"" (json-escape v))
+                                                   (format nil "~A" v)))
+                                             (if (listp row) row (list row)))))
+                           results)))
+          (t (format nil "~A" results))))
+    (error (e)
+      (format nil "{\"error\":\"~A\"}" (json-escape (princ-to-string e))))))
+
 (defun start-web-server (graph &key (port 8080))
   "Start the web visualization server for GRAPH on PORT."
   (when *web-server* (stop-web-server))
@@ -288,6 +309,10 @@ function selectAll(){
                          #'> :key #'cdr)))
       (format nil "[~{\"~A\"~^,~}]"
               (mapcar (lambda (pc) (json-escape (car pc))) sorted))))
+  (ht:define-easy-handler (handle-sparql :uri "/sparql")
+      ((query :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (sparql-query-json *web-graph* query))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)
