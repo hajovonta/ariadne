@@ -210,6 +210,10 @@
   :description "Web visualization server"
   :in :ariadne)
 
+(def-suite :owl-reasoning
+  :description "OWL/RDFS entailment rules"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

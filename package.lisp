@@ -110,4 +110,6 @@
    #:export-nquads
    ;; Web visualization
    #:start-web-server
-   #:stop-web-server))
+   #:stop-web-server
+   ;; OWL/RDFS reasoning
+   #:apply-owl-rules))

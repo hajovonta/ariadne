@@ -26,4 +26,5 @@
                (:file "reactive")
                (:file "sparql-parser")
                (:file "graph-ops")
-               (:file "web-server")))
+               (:file "web-server")
+               (:file "owl")))
