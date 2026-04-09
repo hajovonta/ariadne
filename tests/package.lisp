@@ -230,6 +230,10 @@
   :description "SPARQL UPDATE: INSERT DATA, DELETE DATA"
   :in :ariadne)
 
+(def-suite :sparql-parser-extended
+  :description "Extended SPARQL string parser"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

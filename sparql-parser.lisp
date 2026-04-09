@@ -108,6 +108,8 @@
          (sparql-parse-select toks prefixes nil))
         ((string-equal form "ASK")
          (sparql-parse-ask toks prefixes))
+        ((string-equal form "CONSTRUCT")
+         (sparql-parse-construct toks prefixes))
         (t (error "Unknown SPARQL query form: ~A" form))))))
 
 (defun sparql-parse-select (toks prefixes distinct-p)
@@ -116,10 +118,21 @@
   (when (and toks (string-equal (car toks) "DISTINCT"))
     (pop toks)
     (setf distinct-p t))
-  ;; Parse variable list
+  ;; Parse variable list (including aggregations like (COUNT ?var))
   (let ((vars nil))
-    (loop while (and toks (symbolp (car toks)) (char= #\? (char (symbol-name (car toks)) 0))) do
-      (push (pop toks) vars))
+    (loop while (and toks
+                     (not (and (stringp (car toks)) (string-equal (car toks) "WHERE")))
+                     (not (string= (car toks) "{")))
+          do (if (string= (car toks) "(")
+                 ;; Aggregation: (COUNT ?var)
+                 (progn
+                   (pop toks)
+                   (let ((fn (intern (string-upcase (princ-to-string (pop toks)))))
+                         (var (pop toks)))
+                     (when (and toks (string= (car toks) ")"))
+                       (pop toks))
+                     (push (list fn var) vars)))
+                 (push (pop toks) vars)))
     (setf vars (nreverse vars))
     ;; Expect WHERE
     (when (and toks (string-equal (car toks) "WHERE"))
@@ -128,29 +141,56 @@
     (when (and toks (string= (car toks) "{"))
       (pop toks))
     ;; Parse patterns and filters
-    (multiple-value-bind (patterns filters toks-rest)
+    (multiple-value-bind (patterns filters toks-rest optionals unions)
         (sparql-parse-body toks prefixes)
       (setf toks toks-rest)
       ;; Expect }
       (when (and toks (string= (car toks) "}"))
         (pop toks))
-      ;; Parse trailing clauses (LIMIT, ORDER BY, etc.)
+      ;; Parse trailing clauses
       (let ((clauses nil))
         (loop while toks do
           (cond
             ((string-equal (car toks) "LIMIT")
              (pop toks)
              (push (list 'limit (pop toks)) clauses))
+            ((string-equal (car toks) "OFFSET")
+             (pop toks)
+             (push (list 'offset (pop toks)) clauses))
             ((string-equal (car toks) "ORDER")
              (pop toks)
              (when (and toks (string-equal (car toks) "BY"))
                (pop toks))
              (push (list 'order-by (pop toks)) clauses))
+            ((string-equal (car toks) "GROUP")
+             (pop toks)
+             (when (and toks (string-equal (car toks) "BY"))
+               (pop toks))
+             (push (list 'group-by (pop toks)) clauses))
+            ((string-equal (car toks) "HAVING")
+             (pop toks)
+             ;; Parse HAVING expression: (agg ?var) op value
+             (let ((agg-or-paren (pop toks))
+                   having-expr)
+               (if (string= agg-or-paren "(")
+                   ;; (COUNT ?var) > N
+                   (let ((agg-fn (intern (string-upcase (princ-to-string (pop toks)))))
+                         (agg-var (pop toks)))
+                     (pop toks) ; )
+                     (let ((op (intern (string-upcase (princ-to-string (pop toks)))))
+                           (val (sparql-resolve-term (pop toks) prefixes)))
+                       (setf having-expr (list op (list agg-fn agg-var) val))))
+                   (setf having-expr agg-or-paren))
+               (push (list 'having having-expr) clauses)))
             (t (return))))
         ;; Build DSL expression
         (let ((expr (list (if distinct-p 'select-distinct 'select)
                           vars
                           (cons 'where patterns))))
+          (dolist (opt optionals)
+            (setf expr (append expr (list opt))))
+          (dolist (u unions)
+            (setf expr (append expr (list u))))
           (when filters
             (setf expr (append expr (list (cons 'filter filters)))))
           (dolist (c clauses)
@@ -168,25 +208,62 @@
     (list 'ask (cons 'where patterns))))
 
 (defun sparql-parse-body (toks prefixes)
-  "Parse the body of a WHERE clause. Returns (values patterns filters remaining-toks)."
+  "Parse the body of a WHERE clause. Returns (values patterns filters remaining-toks optionals unions)."
   (let ((patterns nil)
-        (filters nil))
+        (filters nil)
+        (optionals nil)
+        (unions nil))
     (loop while (and toks (not (string= (car toks) "}"))) do
       (cond
         ;; FILTER
         ((string-equal (car toks) "FILTER")
          (pop toks)
-         ;; Expect (
          (when (and toks (string= (car toks) "("))
            (pop toks))
-         ;; Parse filter expression: ?var op value
          (let ((left (sparql-resolve-term (pop toks) prefixes))
                (op (intern (string-upcase (princ-to-string (pop toks)))))
                (right (sparql-resolve-term (pop toks) prefixes)))
            (push (list op left right) filters))
-         ;; Expect )
          (when (and toks (string= (car toks) ")"))
            (pop toks)))
+        ;; OPTIONAL { ... }
+        ((string-equal (car toks) "OPTIONAL")
+         (pop toks)
+         (when (and toks (string= (car toks) "{"))
+           (pop toks))
+         (multiple-value-bind (opt-patterns opt-filters opt-rest)
+             (sparql-parse-body toks prefixes)
+           (declare (ignore opt-filters))
+           (setf toks opt-rest)
+           (when (and toks (string= (car toks) "}"))
+             (pop toks))
+           (push (cons 'optional opt-patterns) optionals)))
+        ;; UNION: { ... } UNION { ... }
+        ((string= (car toks) "{")
+         (pop toks)
+         (multiple-value-bind (u-patterns u-filters u-rest)
+             (sparql-parse-body toks prefixes)
+           (declare (ignore u-filters))
+           (setf toks u-rest)
+           (when (and toks (string= (car toks) "}"))
+             (pop toks))
+           (if (and toks (string-equal (car toks) "UNION"))
+               (progn
+                 (pop toks)
+                 (when (and toks (string= (car toks) "{"))
+                   (pop toks))
+                 (multiple-value-bind (u2-patterns u2-filters u2-rest)
+                     (sparql-parse-body toks prefixes)
+                   (declare (ignore u2-filters))
+                   (setf toks u2-rest)
+                   (when (and toks (string= (car toks) "}"))
+                     (pop toks))
+                   (push (list 'union
+                               (cons 'where u-patterns)
+                               (cons 'where u2-patterns))
+                         unions)))
+               ;; Not UNION, just nested block — treat as patterns
+               (dolist (p u-patterns) (push p patterns)))))
         ;; Triple pattern: s p o .
         (t
          (let ((s (sparql-resolve-term (pop toks) prefixes))
@@ -196,7 +273,7 @@
          ;; Skip optional .
          (when (and toks (string= (car toks) "."))
            (pop toks)))))
-    (values (nreverse patterns) (nreverse filters) toks)))
+    (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions))))
 
 (defun sparql-resolve-term (term prefixes)
   "Resolve a SPARQL term: expand prefixed names, keep variables as symbols."
@@ -217,6 +294,33 @@
            term)))
     (t term)))
 
+
+(defun sparql-parse-construct (toks prefixes)
+  "Parse CONSTRUCT { template } WHERE { patterns }."
+  ;; Parse template { s p o }
+  (when (and toks (string= (car toks) "{"))
+    (pop toks))
+  (let ((template nil))
+    (loop while (and toks (not (string= (car toks) "}"))) do
+      (let ((s (sparql-resolve-term (pop toks) prefixes))
+            (p (sparql-resolve-term (pop toks) prefixes))
+            (o (sparql-resolve-term (pop toks) prefixes)))
+        (push (list s p o) template))
+      (when (and toks (string= (car toks) "."))
+        (pop toks)))
+    (when (and toks (string= (car toks) "}"))
+      (pop toks))
+    ;; Parse WHERE
+    (when (and toks (string-equal (car toks) "WHERE"))
+      (pop toks))
+    (when (and toks (string= (car toks) "{"))
+      (pop toks))
+    (multiple-value-bind (patterns filters toks-rest)
+        (sparql-parse-body toks prefixes)
+      (declare (ignore filters toks-rest))
+      (when (and toks (string= (car toks) "}"))
+        (pop toks))
+      (list 'construct (first (nreverse template)) (cons 'where patterns)))))
 
 ;;; ==========================================================================
 ;;; SPARQL UPDATE
