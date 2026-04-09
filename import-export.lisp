@@ -392,9 +392,14 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                             (char= #\^ (char data pos))
                             (char= #\^ (char data (1+ pos))))
                    (incf pos 2)
-                   (when (and (< pos len) (char= #\< (char data pos)))
-                     (let ((end (position #\> data :start pos)))
-                       (when end (setf pos (1+ end))))))
+                   (if (and (< pos len) (char= #\< (char data pos)))
+                       (let ((end (position #\> data :start pos)))
+                         (when end (setf pos (1+ end))))
+                       (loop while (and (< pos len)
+                                        (not (member (char data pos)
+                                                     '(#\Space #\Tab #\Newline #\Return
+                                                       #\. #\; #\, #\( #\) #\[ #\]))))
+                             do (incf pos))))
                  (when (and (< pos len) (char= #\@ (char data pos)))
                    ;; Check not also ^^
                    (let ((lang-start (1+ pos)))
@@ -454,9 +459,14 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                             (char= #\^ (char data pos))
                             (char= #\^ (char data (1+ pos))))
                    (incf pos 2)
-                   (when (and (< pos len) (char= #\< (char data pos)))
-                     (let ((end (position #\> data :start pos)))
-                       (when end (setf pos (1+ end))))))
+                   (if (and (< pos len) (char= #\< (char data pos)))
+                       (let ((end (position #\> data :start pos)))
+                         (when end (setf pos (1+ end))))
+                       (loop while (and (< pos len)
+                                        (not (member (char data pos)
+                                                     '(#\Space #\Tab #\Newline #\Return
+                                                       #\. #\; #\, #\( #\) #\[ #\]))))
+                             do (incf pos))))
                  (when (and (< pos len) (char= #\@ (char data pos)))
                    (let ((lang-start (1+ pos)))
                      (loop while (and (< pos len)
@@ -518,7 +528,9 @@ Handles quoted strings, URIs, and punctuation (; , .)."
         (predicate nil)
         (base-uri nil)
         (anon-counter 0)
-        (had-predicate nil))
+        (had-predicate nil)
+        (expect-punct nil)
+        (bracket-depth 0))
     ;; Reject N3/TriG tokens at top level
     (dolist (tok tokens)
       (when (or (string= tok "=") (string= tok "=>") (string= tok "<=")
@@ -582,11 +594,11 @@ Handles quoted strings, URIs, and punctuation (; , .)."
              (error "Unexpected dot without statement"))
            (when (and subject (null predicate) (not had-predicate))
              (error "Incomplete statement: subject without predicate"))
-           (setf subject nil predicate nil had-predicate nil))
+           (setf subject nil predicate nil had-predicate nil expect-punct nil))
           ;; ";" — same subject, new predicate
           ((string= tok ";")
            (pop toks)
-           (setf predicate nil)
+           (setf predicate nil had-predicate t expect-punct nil)
            ;; Trailing ; without next predicate — check for dot or EOF
            (when (or (null toks) (string= "." (car toks)))
              ;; Trailing ; before . is allowed in Turtle
@@ -594,10 +606,13 @@ Handles quoted strings, URIs, and punctuation (; , .)."
           ;; "]" and ")" — closing brackets, skip
           ((or (string= tok "]") (string= tok ")"))
            (pop toks)
-           (setf had-predicate t))
+           (decf bracket-depth)
+           (setf predicate nil had-predicate t expect-punct nil))
           ;; "[" — blank node: if followed by "]", anonymous blank node
           ((string= tok "[")
            (pop toks)
+           (incf bracket-depth)
+           (setf expect-punct nil)
            (when (and toks (string= "]" (car toks)))
              ;; [] = anonymous blank node
              (pop toks)
@@ -608,16 +623,22 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                 (error "Blank nodes cannot be predicates")))))
           ;; "(" — collection start, skip
           ((string= tok "(")
-           (pop toks))
+           (pop toks)
+           (incf bracket-depth)
+           (setf expect-punct nil))
           ;; "," — same subject and predicate, new object
           ((string= tok ",")
            (pop toks)
+           (setf expect-punct nil)
            (when (and subject predicate toks)
              (let ((obj-tok (pop toks)))
                (let ((obj (turtle-resolve obj-tok prefixes)))
-                 (add-triple g subject predicate obj)))))
+                 (add-triple g subject predicate obj)
+                 (setf expect-punct t)))))
           ;; Regular token
           (t
+           (when (and expect-punct (= 0 bracket-depth))
+             (error "Expected . ; or , after object, got: ~A" tok))
            (cond
              ;; Need subject
              ((null subject)
@@ -662,7 +683,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                 ;; 'a' is only valid as predicate
                 (when (string= obj-tok "a")
                   (error "'a' is only valid as predicate, not object"))
-                (add-triple g subject predicate obj)))))))
+                (add-triple g subject predicate obj)
+                (setf expect-punct t)))))))
       )
     ;; If we have a subject but no dot was seen, that's an error
     (when subject
