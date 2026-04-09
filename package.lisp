@@ -117,4 +117,7 @@
    #:define-schema
    #:graph-schema
    #:validate-graph
-   #:find-similar-entities))
+   #:find-similar-entities
+   ;; Export formats
+   #:export-json-ld
+   #:export-cytoscape-json))

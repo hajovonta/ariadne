@@ -222,6 +222,10 @@
   :description "Schema validation and constraint checking"
   :in :ariadne)
 
+(def-suite :export-formats
+  :description "JSON-LD and Cytoscape JSON export"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

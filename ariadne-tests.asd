@@ -46,6 +46,7 @@
                              (:file "suite-web-server")
                              (:file "suite-owl-reasoning")
                              (:file "suite-sparql-endpoint")
-                             (:file "suite-schema-validation"))))
+                             (:file "suite-schema-validation")
+                             (:file "suite-export-formats"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))
