@@ -517,7 +517,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
         (subject nil)
         (predicate nil)
         (base-uri nil)
-        (anon-counter 0))
+        (anon-counter 0)
+        (had-predicate nil))
     ;; Reject N3/TriG tokens at top level
     (dolist (tok tokens)
       (when (or (string= tok "=") (string= tok "=>") (string= tok "<=")
@@ -579,7 +580,9 @@ Handles quoted strings, URIs, and punctuation (; , .)."
            (pop toks)
            (when (and (null subject) (null predicate))
              (error "Unexpected dot without statement"))
-           (setf subject nil predicate nil))
+           (when (and subject (null predicate) (not had-predicate))
+             (error "Incomplete statement: subject without predicate"))
+           (setf subject nil predicate nil had-predicate nil))
           ;; ";" — same subject, new predicate
           ((string= tok ";")
            (pop toks)
@@ -590,7 +593,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
              nil))
           ;; "]" and ")" — closing brackets, skip
           ((or (string= tok "]") (string= tok ")"))
-           (pop toks))
+           (pop toks)
+           (setf had-predicate t))
           ;; "[" — blank node: if followed by "]", anonymous blank node subject
           ;; otherwise skip (property list content handled as regular tokens)
           ((string= tok "[")
@@ -647,7 +651,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                 ;; Reject uppercase A
                 (when (string= tok "A")
                   (error "'a' shorthand must be lowercase"))
-                (setf predicate (turtle-resolve tok prefixes))))
+                (setf predicate (turtle-resolve tok prefixes)
+                      had-predicate t)))
              ;; Have both — this is the object
              (t
               (let* ((obj-tok (pop toks))
