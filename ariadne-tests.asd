@@ -36,6 +36,7 @@
                              (:file "suite-remaining-sparql")
                              (:file "suite-reactive")
                              (:file "suite-named-graphs")
-                             (:file "suite-sparql-parser"))))
+                             (:file "suite-sparql-parser")
+                             (:file "suite-query-planner"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

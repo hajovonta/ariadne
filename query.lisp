@@ -422,14 +422,52 @@
         ((path-pattern-p p) (push p path-pats))
         ((subquery-pattern-p p) (push p subquery-pats))
         (t (push p simple))))
+    ;; Reorder simple patterns by selectivity (most bound positions first)
+    (when simple
+      (setf simple (optimize-pattern-order (nreverse simple))))
     (let ((envs (if simple
-                    (match-patterns g (nreverse simple))
+                    (match-patterns g simple)
                     (list nil))))
       (dolist (pp (nreverse path-pats))
         (setf envs (apply-path-pattern g envs pp)))
       (dolist (sq (nreverse subquery-pats))
         (setf envs (apply-subquery-pattern g envs sq)))
       envs)))
+
+(defun optimize-pattern-order (patterns)
+  "Reorder patterns so more selective ones execute first.
+Selectivity = number of bound (non-variable) positions."
+  (let ((bound-vars (make-hash-table :test 'equal)))
+    ;; Greedy: pick the most selective pattern at each step,
+    ;; considering variables bound by previously selected patterns
+    (let ((remaining patterns)
+          (ordered nil))
+      (loop while remaining do
+        (let ((best nil)
+              (best-score -1))
+          (dolist (p remaining)
+            (let ((score (pattern-selectivity p bound-vars)))
+              (when (> score best-score)
+                (setf best p best-score score))))
+          (push best ordered)
+          (setf remaining (remove best remaining :test #'eq))
+          ;; Mark variables in this pattern as bound for subsequent patterns
+          (dolist (term (if (= 3 (length best)) best nil))
+            (when (variable-p term)
+              (setf (gethash term bound-vars) t)))))
+      (nreverse ordered))))
+
+(defun pattern-selectivity (pattern bound-vars)
+  "Score a pattern's selectivity. Higher = more selective = should run first.
+Bound constants score 2, variables already bound by prior patterns score 1, unbound variables score 0."
+  (let ((score 0))
+    (when (= 3 (length pattern))
+      (dolist (term pattern)
+        (cond
+          ((not (variable-p term)) (incf score 2))  ; constant
+          ((gethash term bound-vars) (incf score 1)) ; bound by prior pattern
+          (t nil))))                                   ; unbound
+    score))
 
 (defun subquery-pattern-p (pattern)
   (and (listp pattern)

@@ -185,6 +185,10 @@
   :description "SPARQL string parser"
   :in :ariadne)
 
+(def-suite :query-planner
+  :description "Query planner and optimization"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

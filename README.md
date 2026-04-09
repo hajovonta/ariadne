@@ -1,6 +1,6 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz export. Built with TDD — 468/468 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz export. Built with TDD — 472/472 tests passing.
 
 ## Key Features
 

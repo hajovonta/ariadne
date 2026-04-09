@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **468 tests passing** across 28 test suites
+- **472 tests passing** across 29 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -37,7 +37,7 @@ Target: 78/78 negative tests correctly rejected.
 - [x] String interning — deduplicate repeated URIs to reduce memory
 - [ ] Compact index — replace nested hash tables with flat structures for lower memory overhead
 - [ ] Benchmarks at scale — test at 1M+ triples with `--dynamic-space-size 16384`
-- [ ] Query planner — reorder WHERE patterns to minimize intermediate results
+- [x] Query planner — reorder WHERE patterns by selectivity for optimal execution
 - [ ] Thread safety — read-write locks for concurrent access (bordeaux-threads)
 
 ### Current Scale Limits
