@@ -1,0 +1,33 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix fam:  <http://example.org/family#> .
+
+# Classes
+fam:Person a rdfs:Class ; rdfs:label "Person" .
+
+# People
+fam:alice a fam:Person ; rdfs:label "Alice" ; fam:age 72 .
+fam:bob a fam:Person ; rdfs:label "Bob" ; fam:age 70 .
+fam:charlie a fam:Person ; rdfs:label "Charlie" ; fam:age 48 .
+fam:diana a fam:Person ; rdfs:label "Diana" ; fam:age 45 .
+fam:eve a fam:Person ; rdfs:label "Eve" ; fam:age 22 .
+fam:frank a fam:Person ; rdfs:label "Frank" ; fam:age 20 .
+fam:grace a fam:Person ; rdfs:label "Grace" ; fam:age 50 .
+fam:henry a fam:Person ; rdfs:label "Henry" ; fam:age 25 .
+
+# Parent-child relationships
+fam:alice fam:hasChild fam:charlie .
+fam:alice fam:hasChild fam:diana .
+fam:bob fam:hasChild fam:charlie .
+fam:bob fam:hasChild fam:diana .
+fam:charlie fam:hasChild fam:eve .
+fam:charlie fam:hasChild fam:frank .
+fam:grace fam:hasChild fam:eve .
+fam:grace fam:hasChild fam:frank .
+fam:diana fam:hasChild fam:henry .
+
+# Marriages
+fam:alice fam:spouseOf fam:bob .
+fam:bob fam:spouseOf fam:alice .
+fam:charlie fam:spouseOf fam:grace .
+fam:grace fam:spouseOf fam:charlie .

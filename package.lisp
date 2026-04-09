@@ -81,4 +81,9 @@
    #:format-results
    ;; Streaming import
    #:stream-import-ntriples
-   #:stream-import-nquads))
+   #:stream-import-nquads
+   ;; Graph analytics
+   #:degree-centrality
+   #:connected-components
+   #:pagerank
+   #:clustering-coefficient))

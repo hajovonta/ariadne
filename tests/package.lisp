@@ -161,6 +161,14 @@
   :description "Streaming import for large files"
   :in :ariadne)
 
+(def-suite :examples
+  :description "Example datasets and queries"
+  :in :ariadne)
+
+(def-suite :graph-analytics
+  :description "Graph analytics: PageRank, connected components, degree centrality"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
