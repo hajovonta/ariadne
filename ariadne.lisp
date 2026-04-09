@@ -8,14 +8,17 @@
 ;;; ==========================================================================
 
 (defvar *intern-table* (make-hash-table :test 'equal))
+(defvar *intern-lock* (bt:make-lock "intern-lock"))
 
 (defun intern-string (s)
   "Return a shared copy of string S, deduplicating repeated strings."
-  (or (gethash s *intern-table*)
-      (setf (gethash s *intern-table*) s)))
+  (bt:with-lock-held (*intern-lock*)
+    (or (gethash s *intern-table*)
+        (setf (gethash s *intern-table*) s))))
 
 (defun clear-intern-table ()
-  (clrhash *intern-table*))
+  (bt:with-lock-held (*intern-lock*)
+    (clrhash *intern-table*)))
 
 ;;; ==========================================================================
 ;;; Triple

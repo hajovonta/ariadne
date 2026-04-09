@@ -685,8 +685,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
              (t
               (let* ((obj-tok (pop toks))
                      (obj (turtle-resolve obj-tok prefixes)))
-                ;; 'a' is only valid as predicate
-                (when (string= obj-tok "a")
+                ;; 'a' is only valid as predicate at top level
+                (when (and (string= obj-tok "a") (= 0 bracket-depth))
                   (error "'a' is only valid as predicate, not object"))
                 (add-triple g subject predicate obj)
                 (setf expect-punct t)))))))
