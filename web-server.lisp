@@ -53,9 +53,8 @@
         (edges nil))
     ;; Collect nodes and edges
     (dolist (tr triples)
-      (setf (gethash (triple-subject tr) nodes) t)
-      (when (stringp (triple-object tr))
-        (setf (gethash (triple-object tr) nodes) t))
+      (setf (gethash (princ-to-string (triple-subject tr)) nodes) t)
+      (setf (gethash (princ-to-string (triple-object tr)) nodes) t)
       (push tr edges))
     ;; Build JSON
     (with-output-to-string (s)
@@ -75,8 +74,8 @@
             (write-string "," s)
             (format s "{\"data\":{\"id\":\"e~A\",\"source\":\"~A\",\"target\":\"~A\",\"label\":\"~A\"}}"
                     (incf eid)
-                    (json-escape (triple-subject tr))
-                    (json-escape (triple-object tr))
+                    (json-escape (princ-to-string (triple-subject tr)))
+                    (json-escape (princ-to-string (triple-object tr)))
                     (json-escape (triple-predicate tr))))))
       (write-string "]" s))))
 
@@ -102,18 +101,21 @@
 <style>
   body { margin: 0; font-family: sans-serif; background: #1a1a2e; color: #eee; }
   #cy { width: 100%%; height: calc(100vh - 50px); }
-  #toolbar { height: 50px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: #16213e; }
+  #toolbar { height: 50px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: #16213e; flex-wrap: wrap; }
   #toolbar input, #toolbar select, #toolbar button {
     padding: 6px 10px; border-radius: 4px; border: 1px solid #444; background: #0f3460; color: #eee; }
   #toolbar button { cursor: pointer; }
   #toolbar button:hover { background: #e94560; }
   #info { position: fixed; bottom: 16px; right: 16px; background: #16213e; padding: 12px;
-    border-radius: 8px; max-width: 350px; font-size: 13px; display: none; }
+    border-radius: 8px; max-width: 350px; font-size: 13px; display: none; border: 1px solid #333; }
+  #predicates { max-width: 300px; }
 </style>
 </head><body>
 <div id='toolbar'>
   <strong>Ariadne</strong>
   <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
+  <select id='predicates' multiple title='Filter predicates (ctrl+click)'></select>
+  <button onclick='loadGraph()'>Apply</button>
   <select id='layout' onchange='changeLayout()'>
     <option value='cose'>Force-directed</option>
     <option value='breadthfirst'>Hierarchical</option>
@@ -122,53 +124,91 @@
     <option value='concentric'>Concentric</option>
   </select>
   <button onclick='cy.fit()'>Fit</button>
+  <button onclick='selectAll()'>All predicates</button>
   <span id='stats'></span>
 </div>
 <div id='cy'></div>
 <div id='info'></div>
 <script>
 let cy;
-fetch('/api/graph').then(r=>r.json()).then(data=>{
-  cy = cytoscape({
-    container: document.getElementById('cy'),
-    elements: data,
-    style: [
-      { selector: 'node', style: {
-        'label': 'data(label)', 'background-color': '#e94560',
-        'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom',
-        'text-margin-y': 4, 'width': 20, 'height': 20 }},
-      { selector: 'edge', style: {
-        'label': 'data(label)', 'curve-style': 'bezier',
-        'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
-        'target-arrow-color': '#0f3460', 'color': '#888',
-        'font-size': '9px', 'width': 2 }},
-      { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
-      { selector: '.highlighted', style: { 'background-color': '#ffd700' }},
-      { selector: '.dimmed', style: { opacity: 0.2 }}
-    ],
-    layout: { name: 'cose', animate: false }
+// Load predicate list
+fetch('/api/predicates').then(r=>r.json()).then(preds=>{
+  let sel = document.getElementById('predicates');
+  preds.forEach(p => {
+    let opt = document.createElement('option');
+    opt.value = p; opt.textContent = p.split('#').pop().split('/').pop();
+    sel.appendChild(opt);
   });
-  document.getElementById('stats').textContent =
-    cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
-  cy.on('tap', 'node', function(e){
-    let n = e.target;
-    cy.elements().removeClass('highlighted dimmed');
-    let hood = n.neighborhood().add(n);
-    hood.addClass('highlighted');
-    cy.elements().not(hood).addClass('dimmed');
-    let info = '<b>' + n.data('id') + '</b><br>';
-    n.connectedEdges().forEach(e => {
-      let other = e.source().id() === n.id() ? e.target() : e.source();
-      info += e.data('label') + ' → ' + other.data('label') + '<br>';
-    });
-    let el = document.getElementById('info');
-    el.innerHTML = info; el.style.display = 'block';
-  });
-  cy.on('tap', function(e){ if(e.target===cy){
-    cy.elements().removeClass('highlighted dimmed');
-    document.getElementById('info').style.display='none';
-  }});
+  // Auto-select first 3 predicates for initial view
+  if(sel.options.length > 0) {
+    for(let i=0; i<Math.min(3, sel.options.length); i++) sel.options[i].selected = true;
+  }
+  loadGraph();
 });
+function loadGraph(){
+  let sel = document.getElementById('predicates');
+  let selected = Array.from(sel.selectedOptions).map(o => o.value);
+  let url = '/api/graph';
+  if(selected.length > 0 && selected.length < sel.options.length)
+    url += '?predicates=' + encodeURIComponent(selected.join(','));
+  fetch(url).then(r=>r.json()).then(data=>{
+    if(cy) cy.destroy();
+    cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements: data,
+      style: [
+        { selector: 'node', style: {
+          'label': '', 'background-color': '#e94560',
+          'width': 14, 'height': 14 }},
+        { selector: 'node:active, node:selected', style: {
+          'label': 'data(label)', 'color': '#eee', 'font-size': '11px',
+          'text-valign': 'bottom', 'text-margin-y': 4 }},
+        { selector: 'edge', style: {
+          'curve-style': 'bezier',
+          'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
+          'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
+        { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
+        { selector: '.highlighted', style: {
+          'background-color': '#ffd700', 'label': 'data(label)',
+          'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
+        { selector: '.dimmed', style: { opacity: 0.08 }}
+      ],
+      layout: { name: document.getElementById('layout').value, animate: false }
+    });
+    document.getElementById('stats').textContent =
+      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+    cy.on('mouseover', 'node', function(e){
+      e.target.style('label', e.target.data('label'));
+      e.target.style('color', '#eee');
+      e.target.style('font-size', '11px');
+      e.target.style('text-valign', 'bottom');
+      e.target.style('text-margin-y', 4);
+    });
+    cy.on('mouseout', 'node', function(e){
+      if(!e.target.hasClass('highlighted'))
+        e.target.style('label', '');
+    });
+    cy.on('tap', 'node', function(e){
+      let n = e.target;
+      cy.elements().removeClass('highlighted dimmed');
+      let hood = n.neighborhood().add(n);
+      hood.addClass('highlighted');
+      cy.elements().not(hood).addClass('dimmed');
+      let info = '<b>' + n.data('id').split('#').pop().split('/').pop() + '</b><br>';
+      n.connectedEdges().forEach(e => {
+        let other = e.source().id() === n.id() ? e.target() : e.source();
+        info += '<i>' + e.data('label').split('#').pop().split('/').pop() + '</i> → '
+          + other.data('label') + '<br>';
+      });
+      let el = document.getElementById('info');
+      el.innerHTML = info; el.style.display = 'block';
+    });
+    cy.on('tap', function(e){ if(e.target===cy){
+      cy.elements().removeClass('highlighted dimmed');
+      document.getElementById('info').style.display='none';
+    }});
+  });
+}
 function searchNodes(){
   let q = document.getElementById('search').value.toLowerCase();
   cy.elements().removeClass('highlighted dimmed');
@@ -182,6 +222,11 @@ function searchNodes(){
 }
 function changeLayout(){
   cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
+}
+function selectAll(){
+  let sel = document.getElementById('predicates');
+  Array.from(sel.options).forEach(o => o.selected = true);
+  loadGraph();
 }
 </script>
 </body></html>"))
@@ -217,8 +262,14 @@ function changeLayout(){
             (length (all-predicates *web-graph*))))
   (ht:define-easy-handler (handle-predicates-api :uri "/api/predicates") ()
     (setf (ht:content-type*) "application/json")
-    (format nil "[~{\"~A\"~^,~}]"
-            (mapcar #'json-escape (all-predicates *web-graph*))))
+    ;; Return predicates sorted by frequency (most common first)
+    (let* ((preds (all-predicates *web-graph*))
+           (sorted (sort (mapcar (lambda (p)
+                                   (cons p (length (get-triples *web-graph* :predicate p))))
+                                 preds)
+                         #'> :key #'cdr)))
+      (format nil "[~{\"~A\"~^,~}]"
+              (mapcar (lambda (pc) (json-escape (car pc))) sorted))))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)
