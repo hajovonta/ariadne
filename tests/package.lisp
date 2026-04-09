@@ -242,6 +242,10 @@
   :description "JSON-LD import"
   :in :ariadne)
 
+(def-suite :profiling
+  :description "Query profiling and graph statistics"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

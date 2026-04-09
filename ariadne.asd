@@ -29,4 +29,5 @@
                (:file "web-server")
                (:file "owl")
                (:file "schema")
-               (:file "rdf-xml")))
+               (:file "rdf-xml")
+               (:file "profiling")))

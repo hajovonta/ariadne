@@ -125,4 +125,7 @@
    #:sparql-update
    ;; RDF/XML
    #:import-rdf-xml
-   #:import-json-ld))
+   #:import-json-ld
+   ;; Profiling
+   #:profile-query
+   #:graph-statistics))
