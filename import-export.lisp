@@ -550,6 +550,14 @@ Handles quoted strings, URIs, and punctuation (; , .)."
 
 (defun import-nquads (g data)
   "Import N-Quads format (triples with optional graph name)."
-  ;; N-Quads is N-Triples with an optional 4th element (graph name)
-  ;; We import the triples and ignore the graph name for now
-  (import-ntriples g data))
+  (with-input-from-string (s data)
+    (loop for line = (read-line s nil nil)
+          while line do
+          (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
+            (when (and (> (length trimmed) 0)
+                       (char/= #\# (char trimmed 0)))
+              (let ((tokens (tokenize-ntriple trimmed)))
+                (when (>= (length tokens) 3)
+                  (if (>= (length tokens) 4)
+                      (add-quad g (first tokens) (second tokens) (third tokens) (fourth tokens))
+                      (add-triple g (first tokens) (second tokens) (third tokens))))))))))

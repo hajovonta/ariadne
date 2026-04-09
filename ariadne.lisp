@@ -34,7 +34,10 @@
   (pos (make-hash-table :test 'equal) :type hash-table)
   (osp (make-hash-table :test 'equal) :type hash-table)
   (count 0 :type fixnum)
-  (extra nil :type list))
+  (extra nil :type list)
+  ;; Named graph support: triple -> graph-name, graph-name -> set of triples
+  (triple-graph (make-hash-table :test 'equal) :type hash-table)
+  (graph-index (make-hash-table :test 'equal) :type hash-table))
 
 (defun make-graph (&key name)
   (%make-graph :name name))
@@ -192,3 +195,34 @@
 (defun all-predicates (g) (collect-keys (graph-pos g)))
 
 (defun all-objects (g) (collect-keys (graph-osp g)))
+
+;;; ==========================================================================
+;;; Named Graphs (Quads)
+;;; ==========================================================================
+
+(defun add-quad (g subject predicate object graph-name)
+  "Add a triple associated with a named graph."
+  (let ((tr (add-triple g subject predicate object)))
+    (when graph-name
+      (let ((key (list subject predicate object)))
+        (setf (gethash key (graph-triple-graph g)) graph-name)
+        (pushnew key (gethash graph-name (graph-graph-index g)) :test #'equal)))
+    tr))
+
+(defun get-quads (g &key graph subject predicate object)
+  "Query triples, optionally filtered by graph name."
+  (if graph
+      (let ((keys (gethash graph (graph-graph-index g)))
+            (results nil))
+        (dolist (key keys results)
+          (destructuring-bind (s p o) key
+            (when (and (or (null subject) (equal subject s))
+                       (or (null predicate) (equal predicate p))
+                       (or (null object) (equal object o)))
+              (let ((trs (get-triples g :subject s :predicate p :object o)))
+                (dolist (tr trs) (push tr results)))))))
+      (get-triples g :subject subject :predicate predicate :object object)))
+
+(defun named-graphs (g)
+  "List all named graph URIs."
+  (collect-keys (graph-graph-index g)))

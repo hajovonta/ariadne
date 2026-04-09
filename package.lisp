@@ -90,4 +90,8 @@
    ;; Reactive
    #:on-match
    #:remove-trigger
-   #:graph-triggers))
+   #:graph-triggers
+   ;; Named graphs
+   #:add-quad
+   #:get-quads
+   #:named-graphs))

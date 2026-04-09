@@ -177,6 +177,10 @@
   :description "Reactive queries: triggers on pattern match"
   :in :ariadne)
 
+(def-suite :named-graphs
+  :description "Named graphs: quads, GRAPH clause"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

@@ -34,6 +34,7 @@
                              (:file "suite-examples")
                              (:file "suite-graph-analytics")
                              (:file "suite-remaining-sparql")
-                             (:file "suite-reactive"))))
+                             (:file "suite-reactive")
+                             (:file "suite-named-graphs"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

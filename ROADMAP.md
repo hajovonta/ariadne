@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- **446 tests passing** across 26 test suites
-- ~90% SPARQL 1.1 feature coverage
+- **458 tests passing** across 27 test suites
+- ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
 - Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
@@ -52,7 +52,7 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Sequence paths `/` — `(seq "knows" "name")`
 - [x] GROUP_CONCAT aggregation
 - [x] SAMPLE aggregation
-- [ ] Named graphs — GRAPH clause, FROM / FROM NAMED
+- [x] Named graphs — GRAPH clause, add-quad, get-quads, named-graphs, N-Quads with graph names
 
 ## Phase 5 — Differentiation
 
@@ -104,3 +104,4 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Sequence paths (seq "p1" "p2" ...)
 - [x] GROUP_CONCAT and SAMPLE aggregations
 - [x] Reactive triggers: on-match, remove-trigger, graph-triggers
+- [x] Named graphs: add-quad, get-quads, GRAPH clause, N-Quads import with graph names
