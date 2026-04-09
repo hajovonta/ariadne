@@ -25,6 +25,7 @@
                              (:file "suite-subqueries")
                              (:file "suite-inference")
                              (:file "suite-graph-export")
-                             (:file "suite-turtle-real-world"))))
+                             (:file "suite-turtle-real-world")
+                             (:file "suite-w3c-turtle"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

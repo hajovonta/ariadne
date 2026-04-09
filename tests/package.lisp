@@ -141,6 +141,10 @@
   :description "Real-world Turtle parsing: 'a' shorthand, comments, booleans, complex patterns"
   :in :ariadne)
 
+(def-suite :w3c-turtle
+  :description "W3C Turtle conformance tests"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
