@@ -145,6 +145,22 @@
   :description "W3C Turtle conformance tests"
   :in :ariadne)
 
+(def-suite :repl-formatting
+  :description "REPL result formatting as aligned tables"
+  :in :ariadne)
+
+(def-suite :turtle-export
+  :description "Proper Turtle export with prefixes and shorthand"
+  :in :ariadne)
+
+(def-suite :error-handling
+  :description "Graceful error handling for malformed input and bad queries"
+  :in :ariadne)
+
+(def-suite :streaming-import
+  :description "Streaming import for large files"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

@@ -76,4 +76,9 @@
    #:apply-rules
    #:graph-rules
    ;; Export
-   #:export-dot))
+   #:export-dot
+   ;; REPL formatting
+   #:format-results
+   ;; Streaming import
+   #:stream-import-ntriples
+   #:stream-import-nquads))
