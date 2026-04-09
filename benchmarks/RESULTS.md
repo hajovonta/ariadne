@@ -78,3 +78,14 @@ consumer is the 3-level nested hash table indexes (SPO/POS/OSP), not string dupl
 
 Bottleneck: each triple creates entries in 3 nested hash tables. At 4.2M triples,
 the hash table overhead (headers, buckets) exceeds the default SBCL heap.
+
+## Scale Test: Clinical Trials 1M lines (2026-04-09)
+
+| Dataset              | Lines     | Triples | Time (s) | Triples/sec | GC %  | Memory  | Unique Strings |
+|----------------------|-----------|---------|----------|-------------|-------|---------|----------------|
+| drugbank 500K        |   500,000 | 435,412 |    3.490 |     125,000 |  35%  | 3,007MB |        189,001 |
+| clinicaltrials 1M    | 1,000,000 | 856,971 |    7.817 |     110,000 |  29%  | 7,146MB |        318,505 |
+
+New high water mark: 857K triples on default SBCL heap.
+Throughput stable at ~110-125K triples/sec for large N-Quads.
+Interning ratio: 37% unique strings (clinicaltrials) vs 43% (drugbank).
