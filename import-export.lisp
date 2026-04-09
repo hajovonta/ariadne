@@ -595,15 +595,17 @@ Handles quoted strings, URIs, and punctuation (; , .)."
           ((or (string= tok "]") (string= tok ")"))
            (pop toks)
            (setf had-predicate t))
-          ;; "[" — blank node: if followed by "]", anonymous blank node subject
-          ;; otherwise skip (property list content handled as regular tokens)
+          ;; "[" — blank node: if followed by "]", anonymous blank node
           ((string= tok "[")
            (pop toks)
            (when (and toks (string= "]" (car toks)))
              ;; [] = anonymous blank node
              (pop toks)
-             (when (null subject)
-               (setf subject (format nil "_:anon~A" (incf anon-counter))))))
+             (cond
+               ((null subject)
+                (setf subject (format nil "_:anon~A" (incf anon-counter))))
+               ((null predicate)
+                (error "Blank nodes cannot be predicates")))))
           ;; "(" — collection start, skip
           ((string= tok "(")
            (pop toks))
