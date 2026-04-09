@@ -191,22 +191,25 @@
   "Signal error on invalid escape sequences in string content."
   (let ((i start))
     (loop while (< i end) do
-      (when (char= #\\ (char str i))
-        (if (>= (1+ i) end)
-            (error "Trailing backslash in string")
-            (let ((next (char str (1+ i))))
-              (unless (member next '(#\t #\n #\r #\\ #\" #\' #\u #\U #\b #\f))
-                (error "Invalid escape sequence: \\~C" next))
-              (when (char= next #\u)
-                (when (or (> (+ i 6) end)
-                          (not (every (lambda (c) (digit-char-p c 16))
-                                      (coerce (subseq str (+ i 2) (min (+ i 6) end)) 'list))))
-                  (error "Bad \\u escape")))
-              (when (char= next #\U)
-                (when (or (> (+ i 10) end)
-                          (not (every (lambda (c) (digit-char-p c 16))
-                                      (coerce (subseq str (+ i 2) (min (+ i 10) end)) 'list))))
-                  (error "Bad \\U escape"))))))
+      (cond
+        ((char= #\\ (char str i))
+         (if (>= (1+ i) end)
+             (error "Trailing backslash in string")
+             (let ((next (char str (1+ i))))
+               (unless (member next '(#\t #\n #\r #\\ #\" #\' #\u #\U #\b #\f))
+                 (error "Invalid escape sequence: \\~C" next))
+               (when (char= next #\u)
+                 (when (or (> (+ i 6) end)
+                           (not (every (lambda (c) (digit-char-p c 16))
+                                       (coerce (subseq str (+ i 2) (min (+ i 6) end)) 'list))))
+                   (error "Bad \\u escape")))
+               (when (char= next #\U)
+                 (when (or (> (+ i 10) end)
+                           (not (every (lambda (c) (digit-char-p c 16))
+                                       (coerce (subseq str (+ i 2) (min (+ i 10) end)) 'list))))
+                   (error "Bad \\U escape")))
+               (incf i))))  ; skip past escaped char
+        (t nil))
       (incf i))))
 
 (defun validate-number-token (tok)
@@ -315,7 +318,7 @@ Handles quoted strings, URIs, and punctuation (; , .)."
               ;; Comment
               ((char= ch #\#) (skip-comment))
               ;; Punctuation (. is only punctuation if followed by whitespace/EOF/newline)
-              ((member ch '(#\; #\,))
+              ((member ch '(#\; #\, #\( #\) #\[ #\]))
                (push (string ch) tokens)
                (incf pos))
               ((char= ch #\.)
@@ -477,7 +480,7 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                  (loop while (and (< pos len)
                                   (not (member (char data pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\. #\; #\,))))
+                                                 #\. #\; #\, #\( #\) #\[ #\]))))
                        do (incf pos))
                  (push (subseq data start pos) tokens)))
               ;; Other token (prefixed name, number, etc.)
@@ -486,7 +489,7 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                  (loop while (and (< pos len)
                                   (not (member (char data pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\. #\; #\,))))
+                                                 #\. #\; #\, #\( #\) #\[ #\]))))
                        do (incf pos))
                  (when (> pos start)
                    (push (subseq data start pos) tokens)))))))))
@@ -497,7 +500,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
   (let ((toks tokens)
         (subject nil)
         (predicate nil)
-        (base-uri nil))
+        (base-uri nil)
+        (anon-counter 0))
     ;; Reject N3/TriG tokens at top level
     (dolist (tok tokens)
       (when (or (string= tok "=") (string= tok "=>") (string= tok "<=")
@@ -569,6 +573,21 @@ Handles quoted strings, URIs, and punctuation (; , .)."
            (when (or (null toks) (string= "." (car toks)))
              ;; Trailing ; before . is allowed in Turtle
              nil))
+          ;; "]" and ")" — closing brackets, skip
+          ((or (string= tok "]") (string= tok ")"))
+           (pop toks))
+          ;; "[" — blank node: if followed by "]", anonymous blank node subject
+          ;; otherwise skip (property list content handled as regular tokens)
+          ((string= tok "[")
+           (pop toks)
+           (when (and toks (string= "]" (car toks)))
+             ;; [] = anonymous blank node
+             (pop toks)
+             (when (null subject)
+               (setf subject (format nil "_:anon~A" (incf anon-counter))))))
+          ;; "(" — collection start, skip
+          ((string= tok "(")
+           (pop toks))
           ;; "," — same subject and predicate, new object
           ((string= tok ",")
            (pop toks)
@@ -601,13 +620,11 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                                (char= #\' (char tok 0))))
                   (error "Literals cannot be predicates: ~A" tok))
                 ;; Reject blank nodes as predicates
-                (when (and (> (length tok) 1)
-                           (char= #\_ (char tok 0))
-                           (char= #\: (char tok 1)))
+                (when (or (and (> (length tok) 1)
+                               (char= #\_ (char tok 0))
+                               (char= #\: (char tok 1)))
+                          (string= tok "["))
                   (error "Blank nodes cannot be predicates: ~A" tok))
-                ;; Reject [] as predicate
-                (when (string= tok "[]")
-                  (error "Blank nodes cannot be predicates"))
                 ;; Reject bare keywords as predicates (except 'a')
                 (when (and (member tok '("true" "false") :test #'string=)
                            (not (position #\: tok)))
@@ -618,12 +635,12 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                 (setf predicate (turtle-resolve tok prefixes))))
              ;; Have both — this is the object
              (t
-              (let ((obj-tok (pop toks)))
-                ;; Reject bare 'a' as object
+              (let* ((obj-tok (pop toks))
+                     (obj (turtle-resolve obj-tok prefixes)))
+                ;; 'a' is only valid as predicate
                 (when (string= obj-tok "a")
-                  (error "'a' shorthand only valid as predicate"))
-                (let ((obj (turtle-resolve obj-tok prefixes)))
-                  (add-triple g subject predicate obj))))))))
+                  (error "'a' is only valid as predicate, not object"))
+                (add-triple g subject predicate obj)))))))
       )
     ;; If we have a subject but no dot was seen, that's an error
     (when subject
