@@ -23,4 +23,5 @@
                (:file "streaming")
                (:file "analytics")
                (:file "reactive")
-               (:file "sparql-parser")))
+               (:file "sparql-parser")
+               (:file "graph-ops")))

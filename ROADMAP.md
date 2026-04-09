@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **501 tests passing** across 32 test suites
+- **518 tests passing** across 33 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -81,10 +81,10 @@ Target: 78/78 negative tests correctly rejected.
 
 ## Phase 8 — Graph Operations & Export Formats
 
-- [ ] merge-graphs — merge two graphs, deduplicating triples
-- [ ] diff-graphs — find triples in one graph but not the other
-- [ ] copy-graph — deep copy a graph
-- [ ] export-nquads — N-Quads export with graph names
+- [x] merge-graphs — merge two graphs, deduplicating triples
+- [x] diff-graphs — find triples in one graph but not the other
+- [x] copy-graph — deep copy a graph
+- [x] export-nquads — N-Quads export with graph names
 - [ ] export-json-ld — JSON-LD export
 - [ ] export-cytoscape-json — Cytoscape.js compatible JSON
 

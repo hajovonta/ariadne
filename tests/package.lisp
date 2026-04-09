@@ -202,6 +202,10 @@
   :description "Graph visualization via Graphviz"
   :in :ariadne)
 
+(def-suite :graph-operations
+  :description "Graph operations: merge, diff, copy, export formats"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

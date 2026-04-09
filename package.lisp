@@ -100,4 +100,10 @@
    #:sparql
    ;; Visualization
    #:visualize-graph
-   #:describe-graph))
+   #:describe-graph
+   ;; Graph operations
+   #:merge-graphs
+   #:merge-graphs-into
+   #:diff-graphs
+   #:copy-graph
+   #:export-nquads))
