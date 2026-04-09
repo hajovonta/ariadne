@@ -324,6 +324,12 @@ Handles quoted strings, URIs, and punctuation (; , .)."
     ;; Prefixed name
     ((position #\: token)
      (expand-prefix token))
+    ;; 'a' shorthand for rdf:type
+    ((string= token "a")
+     "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+    ;; Boolean literals
+    ((string= token "true") t)
+    ((string= token "false") nil)
     (t token))))
 
 ;;; ==========================================================================
