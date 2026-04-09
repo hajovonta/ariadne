@@ -1,0 +1,19 @@
+image: debian/stable
+packages:
+  - sbcl
+  - curl
+sources:
+  - https://git.sr.ht/~hajovonta/ariadne
+tasks:
+  - setup-quicklisp: |
+      curl -sL https://beta.quicklisp.org/quicklisp.lisp -o /tmp/quicklisp.lisp
+      sbcl --noinform --non-interactive \
+        --load /tmp/quicklisp.lisp \
+        --eval '(quicklisp-quickstart:install)' \
+        --eval '(ql:add-to-init-file)'
+  - test: |
+      ln -s ~/ariadne ~/quicklisp/local-projects/ariadne
+      sbcl --noinform --non-interactive \
+        --eval '(require :asdf)' \
+        --eval '(asdf:load-system :ariadne-tests)' \
+        --eval '(let ((results (5am:run :ariadne))) (format t "~%~A~%" (if (5am:results-status results) "ALL TESTS PASSED" "TESTS FAILED")) (unless (5am:results-status results) (uiop:quit 1)))'
