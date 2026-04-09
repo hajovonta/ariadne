@@ -218,6 +218,10 @@
   :description "SPARQL HTTP endpoint"
   :in :ariadne)
 
+(def-suite :schema-validation
+  :description "Schema validation and constraint checking"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

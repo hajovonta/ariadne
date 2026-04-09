@@ -112,4 +112,9 @@
    #:start-web-server
    #:stop-web-server
    ;; OWL/RDFS reasoning
-   #:apply-owl-rules))
+   #:apply-owl-rules
+   ;; Schema validation
+   #:define-schema
+   #:graph-schema
+   #:validate-graph
+   #:find-similar-entities))

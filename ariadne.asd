@@ -27,4 +27,5 @@
                (:file "sparql-parser")
                (:file "graph-ops")
                (:file "web-server")
-               (:file "owl")))
+               (:file "owl")
+               (:file "schema")))
