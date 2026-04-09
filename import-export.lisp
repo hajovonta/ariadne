@@ -571,9 +571,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
           ;; "."  — end of statement
           ((string= tok ".")
            (pop toks)
-           ;; Extra dot with no statement?
-           (when (and toks (string= "." (car toks)) (null subject))
-             (error "Unexpected extra dot"))
+           (when (and (null subject) (null predicate))
+             (error "Unexpected dot without statement"))
            (setf subject nil predicate nil))
           ;; ";" — same subject, new predicate
           ((string= tok ";")
