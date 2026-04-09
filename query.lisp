@@ -18,7 +18,10 @@
       ((sym-name-equal form "ASK") (execute-ask g expr))
       ((sym-name-equal form "CONSTRUCT") (execute-construct g expr))
       ((sym-name-equal form "DESCRIBE") (execute-describe g expr))
-      (t (execute-select g expr)))))
+      ((or (sym-name-equal form "SELECT")
+           (sym-name-equal form "SELECT-DISTINCT"))
+       (execute-select g expr))
+      (t (error "Unknown query form: ~A" form)))))
 
 ;;; ==========================================================================
 ;;; ASK

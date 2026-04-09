@@ -230,7 +230,9 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                        (loop while (and (< pos len) (char/= #\" (char data pos)))
                              do (when (char= #\\ (char data pos)) (incf pos))
                                 (incf pos))
-                       (when (< pos len) (incf pos)))) ; skip closing "
+                       (if (< pos len)
+                           (incf pos) ; skip closing "
+                           (error "Unclosed string literal in Turtle input"))))
                  ;; Check for ^^type or @lang suffix
                  (when (and (< (1+ pos) len)
                             (char= #\^ (char data pos))
@@ -428,8 +430,119 @@ Handles quoted strings, URIs, and punctuation (; , .)."
 ;;; ==========================================================================
 
 (defun export-turtle (g)
-  "Export graph as Turtle format string (simplified)."
-  (export-ntriples g))  ; Fallback to N-Triples for now
+  "Export graph as Turtle format string with prefix detection and shorthand."
+  (let ((prefixes (detect-prefixes g))
+        (rdf-type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+    (with-output-to-string (s)
+      ;; Emit prefix declarations
+      (maphash (lambda (prefix uri)
+                 (format s "@prefix ~A: <~A> .~%" prefix uri))
+               prefixes)
+      (when (> (hash-table-count prefixes) 0)
+        (format s "~%"))
+      ;; Group triples by subject
+      (let ((by-subject (make-hash-table :test 'equal)))
+        (dolist (tr (get-triples g))
+          (push tr (gethash (triple-subject tr) by-subject)))
+        ;; Emit each subject group
+        (maphash
+         (lambda (subj triples)
+           ;; Group by predicate within subject
+           (let ((by-pred (make-hash-table :test 'equal)))
+             (dolist (tr triples)
+               (push (triple-object tr) (gethash (triple-predicate tr) by-pred)))
+             ;; Emit subject
+             (format s "~A" (shorten-uri subj prefixes))
+             (let ((first-pred t))
+               (maphash
+                (lambda (pred objects)
+                  (if first-pred
+                      (setf first-pred nil)
+                      (format s " ;~%   "))
+                  ;; Use 'a' for rdf:type
+                  (format s " ~A"
+                          (if (equal pred rdf-type) "a"
+                              (shorten-uri pred prefixes)))
+                  ;; Emit objects with comma shorthand
+                  (let ((first-obj t))
+                    (dolist (obj objects)
+                      (if first-obj
+                          (setf first-obj nil)
+                          (format s ","))
+                      (format s " ~A" (format-turtle-object obj prefixes)))))
+                by-pred))
+             (format s " .~%")))
+         by-subject)))))
+
+(defun detect-prefixes (g)
+  "Detect common URI prefixes in the graph."
+  (let ((uri-counts (make-hash-table :test 'equal))
+        (prefixes (make-hash-table :test 'equal))
+        (prefix-id 0))
+    ;; Count URI bases
+    (dolist (tr (get-triples g))
+      (dolist (term (list (triple-subject tr) (triple-predicate tr) (triple-object tr)))
+        (when (and (stringp term) (search "://" term))
+          (let ((base (uri-base term)))
+            (when base (incf (gethash base uri-counts 0)))))))
+    ;; Assign prefixes to frequently used bases
+    (maphash (lambda (base count)
+               (when (>= count 2)
+                 (let ((name (or (known-prefix base)
+                                 (format nil "ns~A" (incf prefix-id)))))
+                   (setf (gethash name prefixes) base))))
+             uri-counts)
+    prefixes))
+
+(defun uri-base (uri)
+  "Extract the base of a URI (up to last / or #)."
+  (let ((hash-pos (position #\# uri :from-end t))
+        (slash-pos (position #\/ uri :from-end t)))
+    (let ((split (or hash-pos slash-pos)))
+      (when (and split (> split 8))  ; skip http://
+        (subseq uri 0 (1+ split))))))
+
+(defun known-prefix (base)
+  "Return a well-known prefix name for a URI base, or nil."
+  (cond
+    ((search "www.w3.org/1999/02/22-rdf-syntax-ns#" base) "rdf")
+    ((search "www.w3.org/2000/01/rdf-schema#" base) "rdfs")
+    ((search "www.w3.org/2002/07/owl#" base) "owl")
+    ((search "www.w3.org/2001/XMLSchema#" base) "xsd")
+    ((search "xmlns.com/foaf/0.1/" base) "foaf")
+    ((search "purl.org/dc/terms/" base) "dct")
+    ((search "purl.org/dc/elements/1.1/" base) "dc")
+    ((search "schema.org/" base) "schema")
+    ((search "example.org/" base) "ex")
+    ((search "example.com/" base) "ex")
+    (t nil)))
+
+(defun shorten-uri (uri prefixes)
+  "Shorten a URI using known prefixes, or wrap in <...>."
+  (when (not (stringp uri))
+    (return-from shorten-uri (format nil "~A" uri)))
+  (maphash (lambda (prefix base)
+             (when (and (>= (length uri) (length base))
+                        (string= base (subseq uri 0 (length base))))
+               (return-from shorten-uri
+                 (format nil "~A:~A" prefix (subseq uri (length base))))))
+           prefixes)
+  (if (search "://" uri)
+      (format nil "<~A>" uri)
+      (format nil "~A" uri)))
+
+(defun format-turtle-object (obj prefixes)
+  "Format an object for Turtle output."
+  (cond
+    ((stringp obj)
+     (if (search "://" obj)
+         (shorten-uri obj prefixes)
+         (format nil "\"~A\"" obj)))
+    ((integerp obj) (format nil "~A" obj))
+    ((floatp obj) (format nil "~A" obj))
+    ((eq obj t) "true")
+    ((null obj) "false")
+    (t (shorten-uri (princ-to-string obj) prefixes))))
 
 ;;; ==========================================================================
 ;;; N-Quads Import

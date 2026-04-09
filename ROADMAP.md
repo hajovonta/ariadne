@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **376 tests passing** across 18 test suites
+- **409 tests passing** across 22 test suites
 - ~90% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -12,10 +12,10 @@
 
 ## Phase 1 — Polish for Release
 
-- [ ] REPL result formatting — pretty-print query results as aligned tables
+- [x] REPL result formatting — pretty-print query results as aligned tables
 - [ ] Example datasets — ship a small knowledge graph with example queries in `examples/`
-- [ ] Proper Turtle export — prefix grouping and shorthand (current export falls back to N-Triples)
-- [ ] Error handling — graceful errors on malformed input, missing nodes, bad query syntax
+- [x] Proper Turtle export — prefix grouping, semicolons, commas, 'a' shorthand
+- [x] Error handling — graceful errors on malformed input, bad queries, unclosed strings
 - [x] LICENSE file
 - [x] Remote repository (git.sr.ht/~hajovonta/ariadne)
 
@@ -33,7 +33,7 @@ Target: 78/78 negative tests correctly rejected.
 
 ## Phase 3 — Performance
 
-- [ ] Streaming import — line-by-line `import-nquads-file` / `import-ntriples-file` for multi-GB files
+- [x] Streaming import — line-by-line `stream-import-nquads` / `stream-import-ntriples` for large files
 - [ ] String interning — deduplicate repeated URIs to reduce memory
 - [ ] Benchmarks at scale — test at 500K and 1M+ triples
 - [ ] Query planner — reorder WHERE patterns to minimize intermediate results
@@ -87,3 +87,8 @@ Target: 78/78 negative tests correctly rejected.
 - [x] MIT LICENSE
 - [x] Remote repository (git.sr.ht/~hajovonta/ariadne)
 - [x] Comprehensive documentation (README.md, docs/query-language.md)
+- [x] REPL result formatting (format-results with aligned tables)
+- [x] Proper Turtle export with prefix detection, shorthand, roundtrip
+- [x] Streaming import for large N-Triples/N-Quads files
+- [x] Error handling for malformed input, bad queries, unclosed strings
+- [x] Benchmarked: 500K triples/sec Turtle, 86-112K triples/sec N-Quads

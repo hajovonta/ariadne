@@ -17,4 +17,6 @@
                (:file "import-export")
                (:file "persistence")
                (:file "inference")
-               (:file "graph-export")))
+               (:file "graph-export")
+               (:file "repl")
+               (:file "streaming")))
