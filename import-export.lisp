@@ -203,15 +203,78 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                      (progn (push (subseq data pos (1+ end)) tokens)
                             (setf pos (1+ end)))
                      (incf pos))))
-              ;; String "..."
+              ;; String — check for long literals first (""" or ''')
               ((char= ch #\")
                (let ((start pos))
-                 (incf pos)
-                 (loop while (and (< pos len) (char/= #\" (char data pos)))
-                       do (when (char= #\\ (char data pos)) (incf pos))
-                          (incf pos))
-                 (when (< pos len) (incf pos)) ; closing quote
-                 ;; Check for ^^type or @lang
+                 (if (and (< (+ pos 2) len)
+                          (char= #\" (char data (1+ pos)))
+                          (char= #\" (char data (+ pos 2))))
+                     ;; Long literal """..."""
+                     (progn
+                       (incf pos 3) ; skip opening """
+                       (loop while (< pos len) do
+                         (if (and (<= (+ pos 2) len)
+                                  (char= #\" (char data pos))
+                                  (< (1+ pos) len)
+                                  (char= #\" (char data (1+ pos)))
+                                  (< (+ pos 2) len)
+                                  (char= #\" (char data (+ pos 2))))
+                             (progn (incf pos 3) (return)) ; skip closing """
+                             (progn
+                               (when (and (< pos len) (char= #\\ (char data pos)))
+                                 (incf pos))
+                               (incf pos)))))
+                     ;; Short literal "..."
+                     (progn
+                       (incf pos) ; skip opening "
+                       (loop while (and (< pos len) (char/= #\" (char data pos)))
+                             do (when (char= #\\ (char data pos)) (incf pos))
+                                (incf pos))
+                       (when (< pos len) (incf pos)))) ; skip closing "
+                 ;; Check for ^^type or @lang suffix
+                 (when (and (< (1+ pos) len)
+                            (char= #\^ (char data pos))
+                            (char= #\^ (char data (1+ pos))))
+                   (incf pos 2)
+                   (when (and (< pos len) (char= #\< (char data pos)))
+                     (let ((end (position #\> data :start pos)))
+                       (when end (setf pos (1+ end))))))
+                 (when (and (< pos len) (char= #\@ (char data pos)))
+                   (loop while (and (< pos len)
+                                    (not (member (char data pos)
+                                                 '(#\Space #\Tab #\Newline #\Return
+                                                   #\. #\; #\,))))
+                         do (incf pos)))
+                 (push (subseq data start pos) tokens)))
+              ;; Single-quoted strings (also check for long ''')
+              ((char= ch #\')
+               (let ((start pos))
+                 (if (and (< (+ pos 2) len)
+                          (char= #\' (char data (1+ pos)))
+                          (char= #\' (char data (+ pos 2))))
+                     ;; Long literal '''...'''
+                     (progn
+                       (incf pos 3)
+                       (loop while (< pos len) do
+                         (if (and (<= (+ pos 2) len)
+                                  (char= #\' (char data pos))
+                                  (< (1+ pos) len)
+                                  (char= #\' (char data (1+ pos)))
+                                  (< (+ pos 2) len)
+                                  (char= #\' (char data (+ pos 2))))
+                             (progn (incf pos 3) (return))
+                             (progn
+                               (when (and (< pos len) (char= #\\ (char data pos)))
+                                 (incf pos))
+                               (incf pos)))))
+                     ;; Short literal '...'
+                     (progn
+                       (incf pos)
+                       (loop while (and (< pos len) (char/= #\' (char data pos)))
+                             do (when (char= #\\ (char data pos)) (incf pos))
+                                (incf pos))
+                       (when (< pos len) (incf pos))))
+                 ;; Check for ^^type or @lang suffix
                  (when (and (< (1+ pos) len)
                             (char= #\^ (char data pos))
                             (char= #\^ (char data (1+ pos))))
@@ -319,11 +382,21 @@ Handles quoted strings, URIs, and punctuation (; , .)."
      (subseq token 1 (1- (length token))))
     ;; Quoted string (possibly with type/lang)
     ((and (> (length token) 0)
-          (char= #\" (char token 0)))
-     (let ((end-quote (position #\" token :start 1)))
-       (if end-quote
-           (let ((str (subseq token 1 end-quote))
-                 (rest (subseq token (1+ end-quote))))
+          (or (char= #\" (char token 0))
+              (char= #\' (char token 0))))
+     (let* ((long-p (and (>= (length token) 6)
+                         (let ((q (char token 0)))
+                           (and (char= q (char token 1))
+                                (char= q (char token 2))))))
+            (delim-len (if long-p 3 1))
+            (q (char token 0))
+            ;; Find closing delimiter
+            (end (if long-p
+                     (search (make-string 3 :initial-element q) token :start2 3)
+                     (position q token :start 1))))
+       (if end
+           (let ((str (subseq token delim-len end))
+                 (rest (subseq token (+ end delim-len))))
              (cond
                ((and (>= (length rest) 2)
                      (string= "^^" (subseq rest 0 2)))
