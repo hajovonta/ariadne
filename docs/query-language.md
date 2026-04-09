@@ -344,7 +344,24 @@ Return all triples about a resource:
            (having (> (count ?person) 1))))
 ```
 
-Supported aggregation functions: `count`, `sum`, `avg`, `min`, `max`.
+Supported aggregation functions: `count`, `sum`, `avg`, `min`, `max`, `group_concat`, `sample`.
+
+### GROUP_CONCAT / SAMPLE
+
+```lisp
+;; Concatenate all names in a group
+(query g '(select (?team (group_concat ?name))
+           (where (?person "team" ?team)
+                  (?person "name" ?name))
+           (group-by ?team)))
+;; => (("red" "Alice,Bob") ("blue" "Charlie"))
+
+;; Pick an arbitrary value from a group
+(query g '(select (?team (sample ?name))
+           (where (?person "team" ?team)
+                  (?person "name" ?name))
+           (group-by ?team)))
+```
 
 ### ORDER BY / LIMIT / OFFSET
 
@@ -399,6 +416,7 @@ Supported aggregation functions: `count`, `sum`, `avg`, `min`, `max`.
 | Inverse transitive | `(inv+ "pred")` | Backwards, one or more hops |
 | Alternative | `(alt "p1" "p2")` | Match any of the predicates |
 | Bounded | `(range "pred" min max)` | Between min and max hops |
+| Sequence | `(seq "p1" "p2")` | Follow p1 then p2 in order |
 
 ```lisp
 ;; Transitive: all reachable nodes
@@ -418,6 +436,9 @@ Supported aggregation functions: `count`, `sum`, `avg`, `min`, `max`.
 
 ;; Bounded: 1 to 2 hops
 (query g '(select (?node) (where ("a" (range "knows" 1 2) ?node))))
+
+;; Sequence: follow "knows" then "name"
+(query g '(select (?name) (where ("alice" (seq "knows" "name") ?name))))
 ```
 
 ### Comparison with SPARQL
@@ -438,10 +459,11 @@ WHERE {                              (where (?person "name" ?name)
 Key differences from SPARQL:
 - S-expression syntax instead of string-based grammar — composable, macroexpandable
 - Filter expressions use a safe, whitelisted evaluator — no arbitrary code execution
-- No SPARQL string parser required
-- No PREFIX declarations needed (use CL strings or keywords directly)
-- ~80% of SPARQL 1.1 features implemented
-- Federated queries (SERVICE) and named graphs (GRAPH) are not yet implemented
+- SPARQL string parser also available via `(sparql g "SELECT ...")`
+- No PREFIX declarations needed in DSL (use CL strings or keywords directly)
+- ~95% of SPARQL 1.1 features implemented
+- Named graphs supported via GRAPH clause and add-quad/get-quads
+- Federated queries (SERVICE) not yet implemented
 
 ---
 
@@ -874,120 +896,245 @@ dot -Tsvg graph.dot -o graph.svg
 
 ---
 
-## Complete API Reference
+## 11. Named Graphs
 
-### Graph
+Named graphs allow partitioning triples into separate contexts, useful for provenance tracking and dataset management.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `make-graph` | `(&key name)` | Create a new empty graph |
-| `graphp` | `(x)` | Test if x is a graph |
-| `graph-name` | `(graph)` | Get graph name |
-| `triple-count` | `(graph)` | Number of triples |
-| `clear-graph` | `(graph)` | Remove all triples |
+### Adding Quads
 
-### Triples
+```lisp
+;; Add a triple with a graph name (quad)
+(add-quad g "alice" "knows" "bob" "http://example.org/social")
+(add-quad g "alice" "age" 30 "http://example.org/personal")
+```
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `add-triple` | `(g s p o)` | Add a triple (deduplicates) |
-| `remove-triple` | `(g s p o)` | Remove a specific triple |
-| `remove-triples` | `(g &key subject predicate object)` | Remove matching triples |
-| `get-triples` | `(g &key subject predicate object)` | Query triples |
-| `has-triple-p` | `(g s p o)` | Check existence |
-| `triplep` | `(x)` | Test if x is a triple |
-| `triple-subject` | `(triple)` | Get subject |
-| `triple-predicate` | `(triple)` | Get predicate |
-| `triple-object` | `(triple)` | Get object |
-| `all-subjects` | `(g)` | All unique subjects |
-| `all-predicates` | `(g)` | All unique predicates |
-| `all-objects` | `(g)` | All unique objects |
+### Querying
 
-### Query DSL
+```lisp
+;; Get all triples in a named graph
+(get-quads g :graph "http://example.org/social")
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `query` | `(g expr)` | Execute a query expression |
+;; List all named graphs
+(named-graphs g)
+;; => ("http://example.org/social" "http://example.org/personal")
 
-### Pattern Matching
+;; GRAPH clause in queries
+(query g '(select (?who)
+           (where (graph "http://example.org/social"
+                         (?who "knows" "bob")))))
+```
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `variable-p` | `(x)` | Test if x is a `?variable` |
-| `lookup-binding` | `(var env)` | Look up variable in bindings |
-| `unify` | `(pattern value env)` | Unify pattern with value |
-| `match-pattern` | `(g pattern)` | Match single triple pattern |
-| `match-patterns` | `(g patterns)` | Match and join multiple patterns |
+---
 
-### Property Graph
+## 12. SPARQL String Parser
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `add-node` | `(g id &key properties labels)` | Create a node |
-| `get-node` | `(g id)` | Get node or NIL |
-| `remove-node` | `(g id)` | Remove node and its edges |
-| `node-id` | `(node)` | Get node ID |
-| `node-property` | `(g id prop)` | Get a node property |
-| `set-node-property` | `(g id prop value)` | Set a node property |
-| `remove-node-property` | `(g id prop)` | Remove a node property |
-| `node-properties` | `(g id)` | All properties as alist |
-| `node-labels` | `(g id)` | All labels |
-| `find-nodes` | `(g &key label)` | Find nodes by label |
-| `add-edge` | `(g from to type &key properties)` | Create a typed edge |
-| `remove-edge` | `(g from to type)` | Remove an edge |
-| `get-edges` | `(g &key from to type)` | Query edges |
-| `edge-from` | `(edge)` | Edge source |
-| `edge-to` | `(edge)` | Edge target |
-| `edge-type` | `(edge)` | Edge type |
-| `edge-property` | `(g edge prop)` | Get an edge property |
-| `neighbors` | `(g id &key direction type)` | Get neighbor nodes |
+Execute standard SPARQL query strings directly, without converting to the DSL manually.
 
-### Traversal
+```lisp
+;; SELECT query
+(sparql g "SELECT ?name WHERE { ?person <http://xmlns.com/foaf/0.1/name> ?name }")
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `traverse` | `(g start &rest steps)` | Chainable graph traversal |
-| `traverse-with-path` | `(g start &rest steps)` | Traversal returning full paths |
-| `traverse-depth` | `(g start pred &key max-depth)` | Depth-limited traversal |
-| `shortest-path` | `(g from to &key edge-type)` | BFS shortest path |
+;; With PREFIX
+(sparql g "PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+           SELECT ?name WHERE { ?person foaf:name ?name }")
 
-### Transactions
+;; ASK query
+(sparql g "ASK { <http://example.org/alice> <http://example.org/knows> <http://example.org/bob> }")
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `with-transaction` | `((graph) &body body)` | Macro: auto-rollback on error |
-| `begin-transaction` | `(g)` | Start a transaction |
-| `rollback-transaction` | `(tx)` | Rollback to snapshot |
+;; FILTER, DISTINCT, LIMIT, ORDER BY
+(sparql g "SELECT DISTINCT ?name WHERE {
+             ?person foaf:name ?name .
+             ?person foaf:age ?age .
+             FILTER(?age > 30)
+           } ORDER BY ?name LIMIT 10")
+```
 
-### Import / Export
+---
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `import-ntriples` | `(g string)` | Import N-Triples from string |
-| `import-ntriples-file` | `(g path)` | Import N-Triples from file |
-| `export-ntriples` | `(g)` | Export as N-Triples string |
-| `import-turtle` | `(g string)` | Import Turtle from string |
-| `export-turtle` | `(g)` | Export as Turtle string |
-| `import-nquads` | `(g string)` | Import N-Quads from string |
+## 13. Reactive Triggers
 
-### Persistence
+Register callbacks that fire when triples matching a pattern are added.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `save-graph` | `(g path)` | Save graph to file |
-| `load-graph` | `(path)` | Load graph from file |
+```lisp
+;; Register a trigger
+(on-match g :alert-new-person
+  :pattern '(?person "type" "person")
+  :callback (lambda (triple env)
+              (format t "New person: ~A~%" (cdr (assoc '?person env)))))
 
-### Inference
+;; Now adding a matching triple fires the callback
+(add-triple g "alice" "type" "person")
+;; prints: New person: alice
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `defrule` | `(g name &key when then)` | Define an inference rule |
-| `remove-rule` | `(g name)` | Remove a rule by name |
-| `apply-rules` | `(g)` | Apply all rules to fixed point |
-| `graph-rules` | `(g)` | List all defined rules |
+;; Remove a trigger
+(remove-trigger g :alert-new-person)
+```
 
-### Graph Export
+---
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `export-dot` | `(g &key predicates center depth file)` | Export as DOT/Graphviz |
+## 14. Graph Analytics
+
+Built-in graph algorithms operating on the triple store.
+
+### PageRank
+
+```lisp
+(let ((g (make-graph)))
+  (add-triple g "a" "links" "b")
+  (add-triple g "b" "links" "c")
+  (add-triple g "c" "links" "a")
+  (pagerank g :predicate "links" :iterations 20 :damping 0.85))
+;; => (("a" . 0.33) ("b" . 0.33) ("c" . 0.33))
+```
+
+### Connected Components
+
+```lisp
+(connected-components g :predicate "knows")
+;; => (("alice" "bob" "charlie") ("dave" "eve"))
+```
+
+### Degree Centrality
+
+```lisp
+(degree-centrality g :predicate "knows")
+;; => (("bob" . 4) ("alice" . 3) ("charlie" . 2))
+```
+
+### Clustering Coefficient
+
+```lisp
+(clustering-coefficient g :predicate "knows")
+;; => (("alice" . 0.67) ("bob" . 0.33) ...)
+```
+
+---
+
+## 15. Streaming Import
+
+Line-by-line import for large files that don't fit in memory as strings.
+
+```lisp
+;; Stream N-Triples from file
+(stream-import-ntriples g #p"/path/to/large-file.nt")
+
+;; Stream N-Quads from file
+(stream-import-nquads g #p"/path/to/large-file.nq")
+```
+
+Tested at 3.6M triples (drugbank, 34 seconds) and 1.7M triples (clinical trials, 18 seconds).
+
+---
+
+## 16. Visualization
+
+### Graphviz Rendering
+
+Render graphs directly to PNG/SVG/PDF using Graphviz layout engines.
+
+```lisp
+;; Basic rendering
+(visualize-graph g :file #p"graph.png")
+
+;; Choose layout engine
+(visualize-graph g :file #p"graph.png" :engine :neato)    ; force-directed
+(visualize-graph g :file #p"graph.svg" :engine :twopi)    ; radial
+(visualize-graph g :file #p"graph.pdf" :engine :circo)    ; circular
+
+;; With filtering
+(visualize-graph g :file #p"orbits.png"
+                    :predicates '("orbits" "hasMoon")
+                    :center "Sol" :depth 2
+                    :engine :twopi)
+
+;; Open in viewer
+(visualize-graph g :file #p"graph.png" :open t)
+```
+
+Available engines: `:dot` (hierarchical), `:neato` (force-directed), `:fdp` (spring), `:circo` (circular), `:twopi` (radial), `:sfdp` (scalable).
+
+### Graph Summary
+
+```lisp
+(format t "~A" (describe-graph g))
+;; Perihelion Knowledge Graph
+;; 1551 triples, 245 subjects, 28 predicates, 892 unique objects
+;; Top predicates:
+;;   rdf:type (332)
+;;   rdfs:label (280)
+;;   p:definedIn (120)
+```
+
+### REPL Table Formatting
+
+```lisp
+(format-results
+  '(("alice" 30) ("bob" 25) ("charlie" 35))
+  '("name" "age"))
+;; +---------+-----+
+;; | name    | age |
+;; +---------+-----+
+;; | alice   |  30 |
+;; | bob     |  25 |
+;; | charlie |  35 |
+;; +---------+-----+
+```
+
+---
+
+## 17. Graph Operations
+
+### Merge
+
+```lisp
+;; Create a new merged graph
+(let ((merged (merge-graphs g1 g2)))
+  (triple-count merged))
+
+;; Merge into an existing graph
+(merge-graphs-into target source)
+```
+
+### Diff
+
+```lisp
+;; Triples in g1 but not g2
+(diff-graphs g1 g2)
+;; => list of triple objects
+```
+
+### Copy
+
+```lisp
+;; Independent deep copy
+(let ((g2 (copy-graph g1)))
+  (add-triple g1 "new" "triple" "here")
+  (triple-count g2))  ; unchanged
+```
+
+### N-Quads Export
+
+```lisp
+;; Export with graph names preserved
+(export-nquads g)
+```
+
+---
+
+## 18. Thread Safety
+
+All graph mutations (`add-triple`, `remove-triple`) are protected by a lock. Multiple threads can safely read and write to the same graph concurrently.
+
+```lisp
+;; Safe concurrent writes from multiple threads
+(let ((threads (loop for i below 4
+                     collect (bt:make-thread
+                              (lambda ()
+                                (dotimes (j 1000)
+                                  (add-triple g (format nil "node-~A" j) "type" "node")))))))
+  (mapc #'bt:join-thread threads))
+```
+
+---
+
+For the complete function reference, see [API Reference](api-reference.md).
