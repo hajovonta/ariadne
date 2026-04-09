@@ -246,6 +246,10 @@
   :description "Query profiling and graph statistics"
   :in :ariadne)
 
+(def-suite :sparql-parser-paths
+  :description "SPARQL parser: property paths and BIND"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

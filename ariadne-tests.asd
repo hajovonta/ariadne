@@ -52,6 +52,7 @@
                              (:file "suite-sparql-parser-extended")
                              (:file "suite-rdf-xml")
                              (:file "suite-json-ld-import")
-                             (:file "suite-profiling"))))
+                             (:file "suite-profiling")
+                             (:file "suite-sparql-parser-paths"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

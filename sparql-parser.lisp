@@ -33,7 +33,7 @@
           (let ((ch (char str pos)))
             (cond
               ;; Punctuation
-              ((member ch '(#\{ #\} #\( #\) #\.))
+              ((member ch '(#\{ #\} #\( #\) #\. #\+ #\* #\^))
                (push (string ch) tokens)
                (incf pos))
               ;; Variable ?name
@@ -141,7 +141,7 @@
     (when (and toks (string= (car toks) "{"))
       (pop toks))
     ;; Parse patterns and filters
-    (multiple-value-bind (patterns filters toks-rest optionals unions)
+    (multiple-value-bind (patterns filters toks-rest optionals unions binds)
         (sparql-parse-body toks prefixes)
       (setf toks toks-rest)
       ;; Expect }
@@ -193,6 +193,8 @@
             (setf expr (append expr (list u))))
           (when filters
             (setf expr (append expr (list (cons 'filter filters)))))
+          (dolist (b binds)
+            (setf expr (append expr (list b))))
           (dolist (c clauses)
             (setf expr (append expr (list c))))
           expr)))))
@@ -212,7 +214,8 @@
   (let ((patterns nil)
         (filters nil)
         (optionals nil)
-        (unions nil))
+        (unions nil)
+        (binds nil))
     (loop while (and toks (not (string= (car toks) "}"))) do
       (cond
         ;; FILTER
@@ -226,6 +229,23 @@
            (push (list op left right) filters))
          (when (and toks (string= (car toks) ")"))
            (pop toks)))
+        ;; BIND (?var AS expr)
+        ((string-equal (car toks) "BIND")
+         (pop toks)
+         (when (and toks (string= (car toks) "("))
+           (pop toks))
+         (let ((var (pop toks)))  ; ?var
+           (when (and toks (string-equal (princ-to-string (car toks)) "AS"))
+             (pop toks))
+           ;; Read expression: val op val
+           (let* ((left (sparql-resolve-term (pop toks) prefixes))
+                  (op (when (and toks (not (string= (car toks) ")")))
+                        (intern (string-upcase (princ-to-string (pop toks))))))
+                  (right (when op (sparql-resolve-term (pop toks) prefixes)))
+                  (expr (if op (list op left right) left)))
+             (push (list 'bind var expr) binds))
+           (when (and toks (string= (car toks) ")"))
+             (pop toks))))
         ;; OPTIONAL { ... }
         ((string-equal (car toks) "OPTIONAL")
          (pop toks)
@@ -264,16 +284,32 @@
                          unions)))
                ;; Not UNION, just nested block — treat as patterns
                (dolist (p u-patterns) (push p patterns)))))
-        ;; Triple pattern: s p o .
+        ;; Triple pattern: s p o .  (with property path detection)
         (t
-         (let ((s (sparql-resolve-term (pop toks) prefixes))
-               (p (sparql-resolve-term (pop toks) prefixes))
-               (o (sparql-resolve-term (pop toks) prefixes)))
+         (let* ((s (sparql-resolve-term (pop toks) prefixes))
+                ;; Check for inverse path: ^pred
+                (inverse-p (when (and toks (stringp (car toks)) (string= (car toks) "^"))
+                             (pop toks) t))
+                (p-raw (pop toks))
+                ;; Check for path modifier suffix: + or *
+                (modifier (when (and toks (stringp (car toks))
+                                     (member (car toks) '("+" "*") :test #'string=))
+                            (pop toks)))
+                (p-resolved (sparql-resolve-term p-raw prefixes))
+                (p (cond
+                     ((and inverse-p modifier (string= modifier "+"))
+                      (list 'inv+ p-resolved))
+                     (inverse-p (list 'inv p-resolved))
+                     ((and modifier (string= modifier "+"))
+                      (list '+ p-resolved))
+                     ((and modifier (string= modifier "*"))
+                      (list '* p-resolved))
+                     (t p-resolved)))
+                (o (sparql-resolve-term (pop toks) prefixes)))
            (push (list s p o) patterns))
-         ;; Skip optional .
          (when (and toks (string= (car toks) "."))
            (pop toks)))))
-    (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions))))
+    (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions) (nreverse binds))))
 
 (defun sparql-resolve-term (term prefixes)
   "Resolve a SPARQL term: expand prefixed names, keep variables as symbols."
