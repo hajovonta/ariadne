@@ -2,7 +2,8 @@
 
 (defpackage #:ariadne
   (:use #:cl)
-  (:local-nicknames (#:bt #:bordeaux-threads))
+  (:local-nicknames (#:bt #:bordeaux-threads)
+                    (#:ht #:hunchentoot))
   (:export
    ;; Graph
    #:make-graph
@@ -106,4 +107,7 @@
    #:merge-graphs-into
    #:diff-graphs
    #:copy-graph
-   #:export-nquads))
+   #:export-nquads
+   ;; Web visualization
+   #:start-web-server
+   #:stop-web-server))

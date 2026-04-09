@@ -206,6 +206,10 @@
   :description "Graph operations: merge, diff, copy, export formats"
   :in :ariadne)
 
+(def-suite :web-server
+  :description "Web visualization server"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

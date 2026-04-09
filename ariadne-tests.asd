@@ -42,6 +42,7 @@
                              (:file "suite-compact-index")
                              (:file "suite-thread-safety")
                              (:file "suite-visualization")
-                             (:file "suite-graph-operations"))))
+                             (:file "suite-graph-operations")
+                             (:file "suite-web-server"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

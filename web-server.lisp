@@ -1,0 +1,232 @@
+;;;; web-server.lisp
+;;;; Interactive graph visualization with Hunchentoot + Cytoscape.js
+
+(in-package #:ariadne)
+
+(defvar *web-server* nil)
+(defvar *web-graph* nil)
+
+;;; ==========================================================================
+;;; JSON conversion
+;;; ==========================================================================
+
+(defun json-escape (str)
+  (with-output-to-string (s)
+    (loop for c across (princ-to-string str) do
+      (case c
+        (#\" (write-string "\\\"" s))
+        (#\\ (write-string "\\\\" s))
+        (#\Newline (write-string "\\n" s))
+        (#\Tab (write-string "\\t" s))
+        (t (write-char c s))))))
+
+(defun graph-to-cytoscape-json (g &key predicates center depth)
+  "Convert graph to Cytoscape.js elements JSON string."
+  (let ((triples (if (or predicates center)
+                     (let ((trs (get-triples g)))
+                       (when predicates
+                         (setf trs (remove-if-not
+                                    (lambda (tr)
+                                      (member (triple-predicate tr) predicates
+                                              :test #'equal))
+                                    trs)))
+                       (when (and center depth)
+                         (let ((reachable (make-hash-table :test 'equal)))
+                           (labels ((walk (node d)
+                                      (when (and (> d 0) (not (gethash node reachable)))
+                                        (setf (gethash node reachable) t)
+                                        (dolist (tr trs)
+                                          (when (equal (triple-subject tr) node)
+                                            (walk (triple-object tr) (1- d)))
+                                          (when (equal (triple-object tr) node)
+                                            (walk (triple-subject tr) (1- d)))))))
+                             (setf (gethash center reachable) t)
+                             (walk center depth))
+                           (setf trs (remove-if-not
+                                      (lambda (tr)
+                                        (and (gethash (triple-subject tr) reachable)
+                                             (gethash (triple-object tr) reachable)))
+                                      trs))))
+                       trs)
+                     (get-triples g)))
+        (nodes (make-hash-table :test 'equal))
+        (edges nil))
+    ;; Collect nodes and edges
+    (dolist (tr triples)
+      (setf (gethash (triple-subject tr) nodes) t)
+      (when (stringp (triple-object tr))
+        (setf (gethash (triple-object tr) nodes) t))
+      (push tr edges))
+    ;; Build JSON
+    (with-output-to-string (s)
+      (write-string "[" s)
+      (let ((first t))
+        ;; Nodes
+        (maphash (lambda (id v)
+                   (declare (ignore v))
+                   (if first (setf first nil) (write-string "," s))
+                   (format s "{\"data\":{\"id\":\"~A\",\"label\":\"~A\"}}"
+                           (json-escape id)
+                           (json-escape (node-label id))))
+                 nodes)
+        ;; Edges
+        (let ((eid 0))
+          (dolist (tr edges)
+            (write-string "," s)
+            (format s "{\"data\":{\"id\":\"e~A\",\"source\":\"~A\",\"target\":\"~A\",\"label\":\"~A\"}}"
+                    (incf eid)
+                    (json-escape (triple-subject tr))
+                    (json-escape (triple-object tr))
+                    (json-escape (triple-predicate tr))))))
+      (write-string "]" s))))
+
+(defun node-label (id)
+  "Short label for a node: strip URI prefix."
+  (let ((s (princ-to-string id)))
+    (or (let ((hash (position #\# s :from-end t)))
+          (when hash (subseq s (1+ hash))))
+        (let ((slash (position #\/ s :from-end t)))
+          (when (and slash (> slash 8)) (subseq s (1+ slash))))
+        s)))
+
+;;; ==========================================================================
+;;; HTML page
+;;; ==========================================================================
+
+(defun graph-page-html ()
+  "Return the HTML page with Cytoscape.js graph viewer."
+  (format nil "<!DOCTYPE html>
+<html><head>
+<title>Ariadne Graph Explorer</title>
+<script src='https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js'></script>
+<style>
+  body { margin: 0; font-family: sans-serif; background: #1a1a2e; color: #eee; }
+  #cy { width: 100%%; height: calc(100vh - 50px); }
+  #toolbar { height: 50px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: #16213e; }
+  #toolbar input, #toolbar select, #toolbar button {
+    padding: 6px 10px; border-radius: 4px; border: 1px solid #444; background: #0f3460; color: #eee; }
+  #toolbar button { cursor: pointer; }
+  #toolbar button:hover { background: #e94560; }
+  #info { position: fixed; bottom: 16px; right: 16px; background: #16213e; padding: 12px;
+    border-radius: 8px; max-width: 350px; font-size: 13px; display: none; }
+</style>
+</head><body>
+<div id='toolbar'>
+  <strong>Ariadne</strong>
+  <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
+  <select id='layout' onchange='changeLayout()'>
+    <option value='cose'>Force-directed</option>
+    <option value='breadthfirst'>Hierarchical</option>
+    <option value='circle'>Circular</option>
+    <option value='grid'>Grid</option>
+    <option value='concentric'>Concentric</option>
+  </select>
+  <button onclick='cy.fit()'>Fit</button>
+  <span id='stats'></span>
+</div>
+<div id='cy'></div>
+<div id='info'></div>
+<script>
+let cy;
+fetch('/api/graph').then(r=>r.json()).then(data=>{
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: data,
+    style: [
+      { selector: 'node', style: {
+        'label': 'data(label)', 'background-color': '#e94560',
+        'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom',
+        'text-margin-y': 4, 'width': 20, 'height': 20 }},
+      { selector: 'edge', style: {
+        'label': 'data(label)', 'curve-style': 'bezier',
+        'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
+        'target-arrow-color': '#0f3460', 'color': '#888',
+        'font-size': '9px', 'width': 2 }},
+      { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
+      { selector: '.highlighted', style: { 'background-color': '#ffd700' }},
+      { selector: '.dimmed', style: { opacity: 0.2 }}
+    ],
+    layout: { name: 'cose', animate: false }
+  });
+  document.getElementById('stats').textContent =
+    cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+  cy.on('tap', 'node', function(e){
+    let n = e.target;
+    cy.elements().removeClass('highlighted dimmed');
+    let hood = n.neighborhood().add(n);
+    hood.addClass('highlighted');
+    cy.elements().not(hood).addClass('dimmed');
+    let info = '<b>' + n.data('id') + '</b><br>';
+    n.connectedEdges().forEach(e => {
+      let other = e.source().id() === n.id() ? e.target() : e.source();
+      info += e.data('label') + ' → ' + other.data('label') + '<br>';
+    });
+    let el = document.getElementById('info');
+    el.innerHTML = info; el.style.display = 'block';
+  });
+  cy.on('tap', function(e){ if(e.target===cy){
+    cy.elements().removeClass('highlighted dimmed');
+    document.getElementById('info').style.display='none';
+  }});
+});
+function searchNodes(){
+  let q = document.getElementById('search').value.toLowerCase();
+  cy.elements().removeClass('highlighted dimmed');
+  if(!q) return;
+  let matches = cy.nodes().filter(n => n.data('label').toLowerCase().includes(q));
+  if(matches.length > 0){
+    matches.addClass('highlighted');
+    cy.elements().not(matches).addClass('dimmed');
+    cy.fit(matches, 50);
+  }
+}
+function changeLayout(){
+  cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
+}
+</script>
+</body></html>"))
+
+;;; ==========================================================================
+;;; Server
+;;; ==========================================================================
+
+(defun start-web-server (graph &key (port 8080))
+  "Start the web visualization server for GRAPH on PORT."
+  (when *web-server* (stop-web-server))
+  (setf *web-graph* graph)
+  ;; Define handlers
+  (ht:define-easy-handler (handle-index :uri "/") ()
+    (setf (ht:content-type*) "text/html")
+    (graph-page-html))
+  (ht:define-easy-handler (handle-graph-api :uri "/api/graph")
+      ((predicates :parameter-type 'string)
+       (center :parameter-type 'string)
+       (depth :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (graph-to-cytoscape-json *web-graph*
+                             :predicates (when predicates
+                                           (cl-ppcre:split "," predicates))
+                             :center center
+                             :depth (when depth (parse-integer depth :junk-allowed t))))
+  (ht:define-easy-handler (handle-graph-info :uri "/api/info") ()
+    (setf (ht:content-type*) "application/json")
+    (format nil "{\"name\":\"~A\",\"triples\":~A,\"subjects\":~A,\"predicates\":~A}"
+            (json-escape (or (graph-name *web-graph*) "unnamed"))
+            (triple-count *web-graph*)
+            (length (all-subjects *web-graph*))
+            (length (all-predicates *web-graph*))))
+  (ht:define-easy-handler (handle-predicates-api :uri "/api/predicates") ()
+    (setf (ht:content-type*) "application/json")
+    (format nil "[~{\"~A\"~^,~}]"
+            (mapcar #'json-escape (all-predicates *web-graph*))))
+  (setf *web-server*
+        (make-instance 'ht:easy-acceptor :port port))
+  (ht:start *web-server*)
+  (format t "Ariadne web explorer at http://localhost:~A/~%" port)
+  *web-server*)
+
+(defun stop-web-server ()
+  "Stop the web visualization server."
+  (when *web-server*
+    (ht:stop *web-server*)
+    (setf *web-server* nil *web-graph* nil)))

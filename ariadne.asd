@@ -6,7 +6,8 @@
   :license "MIT"
   :version "0.1.0"
   :depends-on (#:cl-ppcre
-               #:bordeaux-threads)
+               #:bordeaux-threads
+               #:hunchentoot)
   :serial t
   :components ((:file "package")
                (:file "ariadne")
@@ -24,4 +25,5 @@
                (:file "analytics")
                (:file "reactive")
                (:file "sparql-parser")
-               (:file "graph-ops")))
+               (:file "graph-ops")
+               (:file "web-server")))
