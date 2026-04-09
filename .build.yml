@@ -14,5 +14,5 @@ tasks:
       ln -s ~/ariadne ~/quicklisp/local-projects/ariadne
       sbcl --noinform --non-interactive \
         --load ~/quicklisp/setup.lisp \
-        --eval '(asdf:load-system :ariadne-tests)' \
+        --eval '(ql:quickload :ariadne-tests)' \
         --eval '(let ((results (5am:run :ariadne))) (format t "~%~A~%" (if (5am:results-status results) "ALL TESTS PASSED" "TESTS FAILED")) (unless (5am:results-status results) (uiop:quit 1)))'
