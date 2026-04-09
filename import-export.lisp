@@ -486,11 +486,21 @@ Handles quoted strings, URIs, and punctuation (; , .)."
               ;; Other token (prefixed name, number, etc.)
               (t
                (let ((start pos))
-                 (loop while (and (< pos len)
-                                  (not (member (char data pos)
-                                               '(#\Space #\Tab #\Newline #\Return
-                                                 #\. #\; #\, #\( #\) #\[ #\]))))
-                       do (incf pos))
+                 (loop while (< pos len) do
+                   (let ((c (char data pos)))
+                     (cond
+                       ((member c '(#\Space #\Tab #\Newline #\Return
+                                    #\; #\, #\( #\) #\[ #\]))
+                        (return))
+                       ;; Dot: stop only if followed by ws/punct/EOF
+                       ((char= c #\.)
+                        (if (or (>= (1+ pos) len)
+                                (member (char data (1+ pos))
+                                        '(#\Space #\Tab #\Newline #\Return
+                                          #\; #\, #\( #\) #\[ #\])))
+                            (return)
+                            (incf pos)))
+                       (t (incf pos)))))
                  (when (> pos start)
                    (push (subseq data start pos) tokens)))))))))
     (nreverse tokens)))
