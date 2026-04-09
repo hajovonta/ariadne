@@ -131,6 +131,22 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 - [ ] Quicklisp submission
 - [ ] Documentation site with tutorials
 
+## Phase 15 — Usability & Query Completeness
+
+- [ ] Prefix registry — `register-prefix` so queries don't need full URIs
+- [ ] DELETE WHERE — bulk delete by pattern matching
+- [ ] SPARQL parser: DESCRIBE support
+- [ ] Blank node skolemization — stable IDs for blank nodes
+- [ ] Memory usage reporting — RAM per graph
+
+## Phase 16 — Advanced Features
+
+- [ ] Full-text search — index literals, search by keyword
+- [ ] Graph versioning / temporal queries — query graph at point in time
+- [ ] SPARQL SERVICE — federated queries to remote endpoints
+- [ ] SHACL validation — W3C standard shape constraints
+- [ ] Graph events / webhooks — notify external systems on changes
+
 ## Completed
 
 - [x] Core triple store with SPO/POS/OSP indexes
