@@ -28,7 +28,8 @@
 ;;; Graph
 ;;; ==========================================================================
 
-(defstruct (graph (:constructor %make-graph))
+(defstruct (graph (:constructor %make-graph)
+                  (:copier nil))
   (name nil)
   (spo (make-hash-table :test 'equal) :type hash-table)
   (sp  (make-hash-table :test 'equal) :type hash-table)

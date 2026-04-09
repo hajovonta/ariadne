@@ -147,6 +147,146 @@
 ;;; Turtle Import (simplified)
 ;;; ==========================================================================
 
+;;; ==========================================================================
+;;; Turtle Validation
+;;; ==========================================================================
+
+(defun validate-uri-token (tok)
+  "Signal error if URI token contains invalid characters or escapes."
+  (let ((uri (subseq tok 1 (1- (length tok)))))
+    ;; No character escapes allowed in URIs (only \uXXXX and \UXXXXXXXX)
+    (let ((i 0))
+      (loop while (< i (length uri)) do
+        (let ((c (char uri i)))
+          (when (member c '(#\Space #\{ #\} #\| #\^ #\` #\< #\>))
+            (error "Invalid character in URI: ~A" tok))
+          (when (char= c #\\)
+            (if (>= (1+ i) (length uri))
+                (error "Trailing backslash in URI: ~A" tok)
+                (let ((next (char uri (1+ i))))
+                  (cond
+                    ((char= next #\u)
+                     (when (or (> (+ i 6) (length uri))
+                               (not (every (lambda (c) (digit-char-p c 16))
+                                           (coerce (subseq uri (+ i 2) (min (+ i 6) (length uri))) 'list))))
+                       (error "Bad \\u escape in URI: ~A" tok))
+                     ;; Check resolved char is valid in URI
+                     (let ((code (parse-integer (subseq uri (+ i 2) (+ i 6)) :radix 16)))
+                       (when (member (code-char code) '(#\Space #\< #\>))
+                         (error "URI escape resolves to invalid character: ~A" tok)))
+                     (incf i 5))
+                    ((char= next #\U)
+                     (when (or (> (+ i 10) (length uri))
+                               (not (every (lambda (c) (digit-char-p c 16))
+                                           (coerce (subseq uri (+ i 2) (min (+ i 10) (length uri))) 'list))))
+                       (error "Bad \\U escape in URI: ~A" tok))
+                     (let ((code (parse-integer (subseq uri (+ i 2) (+ i 10)) :radix 16)))
+                       (when (member (code-char code) '(#\Space #\< #\>))
+                         (error "URI escape resolves to invalid character: ~A" tok)))
+                     (incf i 9))
+                    (t (error "Only \\u and \\U escapes allowed in URIs: ~A" tok)))))))
+        (incf i)))))
+
+(defun validate-escape-sequences (str start end)
+  "Signal error on invalid escape sequences in string content."
+  (let ((i start))
+    (loop while (< i end) do
+      (when (char= #\\ (char str i))
+        (if (>= (1+ i) end)
+            (error "Trailing backslash in string")
+            (let ((next (char str (1+ i))))
+              (unless (member next '(#\t #\n #\r #\\ #\" #\' #\u #\U #\b #\f))
+                (error "Invalid escape sequence: \\~C" next))
+              (when (char= next #\u)
+                (when (or (> (+ i 6) end)
+                          (not (every (lambda (c) (digit-char-p c 16))
+                                      (coerce (subseq str (+ i 2) (min (+ i 6) end)) 'list))))
+                  (error "Bad \\u escape")))
+              (when (char= next #\U)
+                (when (or (> (+ i 10) end)
+                          (not (every (lambda (c) (digit-char-p c 16))
+                                      (coerce (subseq str (+ i 2) (min (+ i 10) end)) 'list))))
+                  (error "Bad \\U escape"))))))
+      (incf i))))
+
+(defun validate-number-token (tok)
+  "Signal error if token looks like a number but is malformed."
+  ;; Reject double signs like +-1
+  (when (and (>= (length tok) 2)
+             (member (char tok 0) '(#\+ #\-))
+             (member (char tok 1) '(#\+ #\-)))
+    (error "Malformed numeric literal: ~A" tok))
+  (unless (or (cl-ppcre:scan "^[+-]?[0-9]+$" tok)
+              (cl-ppcre:scan "^[+-]?[0-9]*\\.[0-9]+$" tok)
+              (cl-ppcre:scan "^[+-]?[0-9]+\\.[0-9]*$" tok)
+              (cl-ppcre:scan "^[+-]?(?:[0-9]+\\.?[0-9]*|\\.[0-9]+)[eE][+-]?[0-9]+$" tok))
+    (error "Malformed numeric literal: ~A" tok)))
+
+(defun validate-lang-tag (tag)
+  "Signal error if language tag is invalid."
+  (unless (cl-ppcre:scan "^[a-zA-Z]+(-[a-zA-Z0-9]+)*$" tag)
+    (error "Invalid language tag: @~A" tag)))
+
+(defun validate-pname (token prefixes)
+  "Signal error if prefixed name is invalid."
+  (let ((colon-pos (position #\: token)))
+    (when colon-pos
+      (let ((prefix-part (subseq token 0 colon-pos))
+            (local-part (subseq token (1+ colon-pos))))
+        ;; Prefix must not start or end with dot
+        (when (and (> (length prefix-part) 0)
+                   (or (char= #\. (char prefix-part 0))
+                       (char= #\. (char prefix-part (1- (length prefix-part))))))
+          (error "Invalid prefix name: ~A" token))
+        ;; Local name must not start with dash
+        (when (and (> (length local-part) 0)
+                   (char= #\- (char local-part 0)))
+          (error "Local name cannot start with dash: ~A" token))
+        ;; Reject ~ unescaped in local name (but \~ is valid escape)
+        (let ((i 0))
+          (loop while (< i (length local-part)) do
+            (cond
+              ((char= #\\ (char local-part i)) (incf i)) ; skip escaped char
+              ((or (char= #\~ (char local-part i))
+                   (char= #\^ (char local-part i)))
+               (error "Unescaped special char in local name: ~A" token)))
+            (incf i)))
+        ;; Reject \\u in local name (not valid pname escape)
+        (when (search "\\u" local-part)
+          (error "\\u escape not valid in prefixed name: ~A" token))
+        ;; Validate %-escapes: must be %HH
+        (let ((i 0))
+          (loop while (< i (length local-part)) do
+            (when (char= #\% (char local-part i))
+              (when (or (> (+ i 3) (length local-part))
+                        (not (digit-char-p (char local-part (+ i 1)) 16))
+                        (not (digit-char-p (char local-part (+ i 2)) 16)))
+                (error "Bad %%-escape in local name: ~A" token)))
+            (incf i)))
+        ;; Check prefix is defined (only when prefixes table provided)
+        (when prefixes
+          (let ((prefix-key (concatenate 'string prefix-part ":")))
+            (when (and (not (gethash prefix-key prefixes))
+                       (not (string= prefix-part ""))
+                       (not (string= prefix-part "_")))  ; _: is blank node, not prefix
+              (error "Undefined prefix: ~A" prefix-key))))))))
+
+(defun validate-prefix-decl (name)
+  "Validate a prefix name in @prefix declaration."
+  (let ((body (if (and (> (length name) 0)
+                       (char= #\: (char name (1- (length name)))))
+                  (subseq name 0 (1- (length name)))
+                  name)))
+    (when (> (length body) 0)
+      (when (not (alpha-char-p (char body 0)))
+        (error "Prefix name must start with letter: ~A" name))
+      (when (char= #\. (char body (1- (length body))))
+        (error "Prefix name cannot end with dot: ~A" name)))))
+
+;;; ==========================================================================
+;;; Turtle Import
+;;; ==========================================================================
+
 (defun import-turtle (g data)
   "Import Turtle format string into graph G.
 Tokenizes the entire input then processes token stream."
@@ -200,9 +340,11 @@ Handles quoted strings, URIs, and punctuation (; , .)."
               ((char= ch #\<)
                (let ((end (position #\> data :start (1+ pos))))
                  (if end
-                     (progn (push (subseq data pos (1+ end)) tokens)
-                            (setf pos (1+ end)))
-                     (incf pos))))
+                     (let ((tok (subseq data pos (1+ end))))
+                       (validate-uri-token tok)
+                       (push tok tokens)
+                       (setf pos (1+ end)))
+                     (error "Unterminated URI"))))
               ;; String — check for long literals first (""" or ''')
               ((char= ch #\")
                (let ((start pos))
@@ -212,18 +354,21 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                      ;; Long literal """..."""
                      (progn
                        (incf pos 3) ; skip opening """
-                       (loop while (< pos len) do
-                         (if (and (<= (+ pos 2) len)
-                                  (char= #\" (char data pos))
-                                  (< (1+ pos) len)
-                                  (char= #\" (char data (1+ pos)))
-                                  (< (+ pos 2) len)
-                                  (char= #\" (char data (+ pos 2))))
-                             (progn (incf pos 3) (return)) ; skip closing """
-                             (progn
-                               (when (and (< pos len) (char= #\\ (char data pos)))
-                                 (incf pos))
-                               (incf pos)))))
+                       (let ((found nil))
+                         (loop while (< pos len) do
+                           (if (and (<= (+ pos 2) len)
+                                    (char= #\" (char data pos))
+                                    (< (1+ pos) len)
+                                    (char= #\" (char data (1+ pos)))
+                                    (< (+ pos 2) len)
+                                    (char= #\" (char data (+ pos 2))))
+                               (progn (incf pos 3) (setf found t) (return))
+                               (progn
+                                 (when (and (< pos len) (char= #\\ (char data pos)))
+                                   (incf pos))
+                                 (incf pos))))
+                         (unless found
+                           (error "Unterminated long string literal"))))
                      ;; Short literal "..."
                      (progn
                        (incf pos) ; skip opening "
@@ -233,6 +378,12 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                        (if (< pos len)
                            (incf pos) ; skip closing "
                            (error "Unclosed string literal in Turtle input"))))
+                 ;; Validate escape sequences in the string body
+                 (let ((q-len (if (and (>= (- pos start) 6)
+                                       (char= #\" (char data (1+ start)))
+                                       (char= #\" (char data (+ start 2))))
+                                  3 1)))
+                   (validate-escape-sequences data (+ start q-len) (- pos q-len)))
                  ;; Check for ^^type or @lang suffix
                  (when (and (< (1+ pos) len)
                             (char= #\^ (char data pos))
@@ -242,12 +393,20 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                      (let ((end (position #\> data :start pos)))
                        (when end (setf pos (1+ end))))))
                  (when (and (< pos len) (char= #\@ (char data pos)))
-                   (loop while (and (< pos len)
-                                    (not (member (char data pos)
-                                                 '(#\Space #\Tab #\Newline #\Return
-                                                   #\. #\; #\,))))
-                         do (incf pos)))
-                 (push (subseq data start pos) tokens)))
+                   ;; Check not also ^^
+                   (let ((lang-start (1+ pos)))
+                     (loop while (and (< pos len)
+                                      (not (member (char data pos)
+                                                   '(#\Space #\Tab #\Newline #\Return
+                                                     #\. #\; #\,))))
+                           do (incf pos))
+                     (validate-lang-tag (subseq data lang-start pos))))
+                 ;; Reject both @lang and ^^type
+                 (let ((tok (subseq data start pos)))
+                   (when (and (search "@" tok) (search "^^" tok)
+                              (< (position #\@ tok :start 1) (search "^^" tok)))
+                     (error "Literal cannot have both language tag and datatype: ~A" tok))
+                   (push tok tokens))))
               ;; Single-quoted strings (also check for long ''')
               ((char= ch #\')
                (let ((start pos))
@@ -257,25 +416,36 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                      ;; Long literal '''...'''
                      (progn
                        (incf pos 3)
-                       (loop while (< pos len) do
-                         (if (and (<= (+ pos 2) len)
-                                  (char= #\' (char data pos))
-                                  (< (1+ pos) len)
-                                  (char= #\' (char data (1+ pos)))
-                                  (< (+ pos 2) len)
-                                  (char= #\' (char data (+ pos 2))))
-                             (progn (incf pos 3) (return))
-                             (progn
-                               (when (and (< pos len) (char= #\\ (char data pos)))
-                                 (incf pos))
-                               (incf pos)))))
+                       (let ((found nil))
+                         (loop while (< pos len) do
+                           (if (and (<= (+ pos 2) len)
+                                    (char= #\' (char data pos))
+                                    (< (1+ pos) len)
+                                    (char= #\' (char data (1+ pos)))
+                                    (< (+ pos 2) len)
+                                    (char= #\' (char data (+ pos 2))))
+                               (progn (incf pos 3) (setf found t) (return))
+                               (progn
+                                 (when (and (< pos len) (char= #\\ (char data pos)))
+                                   (incf pos))
+                                 (incf pos))))
+                         (unless found
+                           (error "Unterminated long string literal"))))
                      ;; Short literal '...'
                      (progn
                        (incf pos)
                        (loop while (and (< pos len) (char/= #\' (char data pos)))
                              do (when (char= #\\ (char data pos)) (incf pos))
                                 (incf pos))
-                       (when (< pos len) (incf pos))))
+                       (if (< pos len)
+                           (incf pos)
+                           (error "Unclosed string literal"))))
+                 ;; Validate escapes
+                 (let ((q-len (if (and (>= (- pos start) 6)
+                                       (char= #\' (char data (1+ start)))
+                                       (char= #\' (char data (+ start 2))))
+                                  3 1)))
+                   (validate-escape-sequences data (+ start q-len) (- pos q-len)))
                  ;; Check for ^^type or @lang suffix
                  (when (and (< (1+ pos) len)
                             (char= #\^ (char data pos))
@@ -285,11 +455,13 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                      (let ((end (position #\> data :start pos)))
                        (when end (setf pos (1+ end))))))
                  (when (and (< pos len) (char= #\@ (char data pos)))
-                   (loop while (and (< pos len)
-                                    (not (member (char data pos)
-                                                 '(#\Space #\Tab #\Newline #\Return
-                                                   #\. #\; #\,))))
-                         do (incf pos)))
+                   (let ((lang-start (1+ pos)))
+                     (loop while (and (< pos len)
+                                      (not (member (char data pos)
+                                                   '(#\Space #\Tab #\Newline #\Return
+                                                     #\. #\; #\,))))
+                           do (incf pos))
+                     (validate-lang-tag (subseq data lang-start pos))))
                  (push (subseq data start pos) tokens)))
               ;; @prefix / @base
               ((char= ch #\@)
@@ -324,49 +496,138 @@ Handles quoted strings, URIs, and punctuation (; , .)."
   "Parse a token stream into triples."
   (let ((toks tokens)
         (subject nil)
-        (predicate nil))
+        (predicate nil)
+        (base-uri nil))
+    ;; Reject N3/TriG tokens at top level
+    (dolist (tok tokens)
+      (when (or (string= tok "=") (string= tok "=>") (string= tok "<=")
+                (and (> (length tok) 0) (char= #\{ (char tok 0)))
+                (string-equal tok "@forSome") (string-equal tok "@forAll")
+                (string-equal tok "@keywords")
+                (string= tok "is") (string= tok "of"))
+        (error "N3/TriG syntax not valid in Turtle: ~A" tok)))
     (loop while toks do
       (let ((tok (car toks)))
         (cond
           ;; @prefix
           ((string-equal tok "@prefix")
+           (unless (string= tok "@prefix")
+             (error "@prefix must be lowercase: ~A" tok))
            (pop toks)
            (let ((prefix-name (pop toks))
                  (uri (pop toks)))
-             ;; prefix-name is like "ex:" and uri is like "<http://...>"
+             (unless (and prefix-name (> (length prefix-name) 0)
+                          (char= #\: (char prefix-name (1- (length prefix-name)))))
+               (error "Malformed @prefix declaration"))
+             (unless (and uri (> (length uri) 1) (char= #\< (char uri 0)))
+               (error "Malformed @prefix: missing URI"))
+             (validate-prefix-decl prefix-name)
              (setf (gethash prefix-name prefixes)
                    (subseq uri 1 (1- (length uri))))
-             ;; skip the "."
              (when (and toks (string= "." (car toks)))
                (pop toks))))
+          ;; @base
+          ((string-equal tok "@base")
+           (unless (string= tok "@base")
+             (error "@base must be lowercase: ~A" tok))
+           (pop toks)
+           (let ((uri (pop toks)))
+             (unless (and uri (> (length uri) 1) (char= #\< (char uri 0)))
+               (error "Malformed @base: missing URI"))
+             (setf base-uri (subseq uri 1 (1- (length uri))))
+             (when (and toks (string= "." (car toks)))
+               (pop toks))))
+          ;; SPARQL-style PREFIX (no dot after)
+          ((string-equal tok "PREFIX")
+           (pop toks)
+           (let ((prefix-name (pop toks))
+                 (uri (pop toks)))
+             (when (and prefix-name uri)
+               (setf (gethash prefix-name prefixes)
+                     (subseq uri 1 (1- (length uri)))))))
+          ;; SPARQL-style BASE (no dot after)
+          ((string-equal tok "BASE")
+           (pop toks)
+           (let ((uri (pop toks)))
+             (when uri
+               (setf base-uri (subseq uri 1 (1- (length uri)))))
+             ;; SPARQL BASE must NOT have trailing dot
+             (when (and toks (string= "." (car toks)))
+               (error "SPARQL BASE must not end with dot"))))
           ;; "."  — end of statement
           ((string= tok ".")
            (pop toks)
+           ;; Extra dot with no statement?
+           (when (and toks (string= "." (car toks)) (null subject))
+             (error "Unexpected extra dot"))
            (setf subject nil predicate nil))
           ;; ";" — same subject, new predicate
           ((string= tok ";")
            (pop toks)
-           (setf predicate nil))
+           (setf predicate nil)
+           ;; Trailing ; without next predicate — check for dot or EOF
+           (when (or (null toks) (string= "." (car toks)))
+             ;; Trailing ; before . is allowed in Turtle
+             nil))
           ;; "," — same subject and predicate, new object
           ((string= tok ",")
            (pop toks)
            (when (and subject predicate toks)
-             (let ((obj (turtle-resolve (pop toks) prefixes)))
-               (add-triple g subject predicate obj))))
+             (let ((obj-tok (pop toks)))
+               (let ((obj (turtle-resolve obj-tok prefixes)))
+                 (add-triple g subject predicate obj)))))
           ;; Regular token
           (t
            (cond
              ;; Need subject
              ((null subject)
-              (setf subject (turtle-resolve (pop toks) prefixes)))
+              (let ((tok (pop toks)))
+                ;; Reject literals as subjects
+                (when (and (> (length tok) 0)
+                           (or (char= #\" (char tok 0))
+                               (char= #\' (char tok 0))))
+                  (error "Literals cannot be subjects: ~A" tok))
+                ;; Reject bare keywords as subjects
+                (when (member tok '("true" "false" "a") :test #'string=)
+                  (when (not (position #\: tok))
+                    (error "Keywords cannot be subjects: ~A" tok)))
+                (setf subject (turtle-resolve tok prefixes))))
              ;; Need predicate
              ((null predicate)
-              (setf predicate (turtle-resolve (pop toks) prefixes)))
+              (let ((tok (pop toks)))
+                ;; Reject literals as predicates
+                (when (and (> (length tok) 0)
+                           (or (char= #\" (char tok 0))
+                               (char= #\' (char tok 0))))
+                  (error "Literals cannot be predicates: ~A" tok))
+                ;; Reject blank nodes as predicates
+                (when (and (> (length tok) 1)
+                           (char= #\_ (char tok 0))
+                           (char= #\: (char tok 1)))
+                  (error "Blank nodes cannot be predicates: ~A" tok))
+                ;; Reject [] as predicate
+                (when (string= tok "[]")
+                  (error "Blank nodes cannot be predicates"))
+                ;; Reject bare keywords as predicates (except 'a')
+                (when (and (member tok '("true" "false") :test #'string=)
+                           (not (position #\: tok)))
+                  (error "Keywords cannot be predicates: ~A" tok))
+                ;; Reject uppercase A
+                (when (string= tok "A")
+                  (error "'a' shorthand must be lowercase"))
+                (setf predicate (turtle-resolve tok prefixes))))
              ;; Have both — this is the object
              (t
-              (let ((obj (turtle-resolve (pop toks) prefixes)))
-                (add-triple g subject predicate obj))))))))))
-
+              (let ((obj-tok (pop toks)))
+                ;; Reject bare 'a' as object
+                (when (string= obj-tok "a")
+                  (error "'a' shorthand only valid as predicate"))
+                (let ((obj (turtle-resolve obj-tok prefixes)))
+                  (add-triple g subject predicate obj))))))))
+      )
+    ;; If we have a subject but no dot was seen, that's an error
+    (when subject
+      (error "Unterminated triple statement"))))
 (defun turtle-resolve (token prefixes)
   "Resolve a Turtle token to a value."
   (flet ((expand-prefix (term)
@@ -375,7 +636,9 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                  (let* ((prefix (concatenate 'string (subseq term 0 (1+ colon-pos))))
                         (local (subseq term (1+ colon-pos)))
                         (base (gethash prefix prefixes)))
-                   (if base (concatenate 'string base local) term))
+                   (if base
+                       (concatenate 'string base local)
+                       (error "Undefined prefix: ~A" prefix)))
                  term))))
     (cond
     ;; URI: <http://...>
@@ -410,12 +673,20 @@ Handles quoted strings, URIs, and punctuation (; , .)."
     ((and (> (length token) 0)
           (or (digit-char-p (char token 0))
               (and (> (length token) 1)
-                   (char= #\- (char token 0))
-                   (digit-char-p (char token 1)))))
-     (let ((val (read-from-string token)))
+                   (member (char token 0) '(#\+ #\-))
+                   (or (digit-char-p (char token 1))
+                       (char= #\. (char token 1))))))
+     (validate-number-token token)
+     (let ((val (ignore-errors (read-from-string token))))
        (if (numberp val) val token)))
+    ;; Blank node _:...
+    ((and (> (length token) 1)
+          (char= #\_ (char token 0))
+          (char= #\: (char token 1)))
+     token)
     ;; Prefixed name
     ((position #\: token)
+     (validate-pname token prefixes)
      (expand-prefix token))
     ;; 'a' shorthand for rdf:type
     ((string= token "a")
@@ -423,6 +694,10 @@ Handles quoted strings, URIs, and punctuation (; , .)."
     ;; Boolean literals
     ((string= token "true") t)
     ((string= token "false") nil)
+    ;; Reject N3 keywords
+    ((member token '("{" "}" "=" "=>" "<=" "is" "of" "@forSome" "@forAll" "@keywords")
+             :test #'string=)
+     (error "N3 syntax not valid in Turtle: ~A" token))
     (t token))))
 
 ;;; ==========================================================================
