@@ -35,16 +35,17 @@ Target: 78/78 negative tests correctly rejected.
 
 - [x] Streaming import — line-by-line `stream-import-nquads` / `stream-import-ntriples` for large files
 - [x] String interning — deduplicate repeated URIs to reduce memory
-- [ ] Compact index — replace nested hash tables with flat structures for lower memory overhead
+- [x] Compact index — flat composite-key hash tables (41-63% less GC)
 - [ ] Benchmarks at scale — test at 1M+ triples with `--dynamic-space-size 16384`
 - [x] Query planner — reorder WHERE patterns by selectivity for optimal execution
 - [ ] Thread safety — read-write locks for concurrent access (bordeaux-threads)
 
 ### Current Scale Limits
 
-- ~500K triples: comfortable on default SBCL heap (8GB)
-- ~1-2M triples: possible with `--dynamic-space-size 16384`
-- 4M+ triples: needs compact index or disk-backed storage
+- ~500K triples: comfortable on default SBCL heap
+- ~1.7M triples: 18 seconds (clinicaltrials 2M lines)
+- ~3.6M triples: 34 seconds (drugbank full 4.2M lines)
+- Throughput stable at ~100K triples/sec across all scales
 
 ## Phase 4 — Remaining SPARQL Features
 

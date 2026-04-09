@@ -30,12 +30,17 @@
 
 (defstruct (graph (:constructor %make-graph))
   (name nil)
-  (spo (make-hash-table :test 'equal) :type hash-table)
-  (pos (make-hash-table :test 'equal) :type hash-table)
-  (osp (make-hash-table :test 'equal) :type hash-table)
+  ;; Flat indexes with composite keys — one hash table per index
+  (spo (make-hash-table :test 'equal) :type hash-table)  ; (s p o) -> triple
+  (sp  (make-hash-table :test 'equal) :type hash-table)  ; (s p) -> list of triples
+  (s   (make-hash-table :test 'equal) :type hash-table)  ; s -> list of triples
+  (p   (make-hash-table :test 'equal) :type hash-table)  ; p -> list of triples
+  (po  (make-hash-table :test 'equal) :type hash-table)  ; (p o) -> list of triples
+  (o   (make-hash-table :test 'equal) :type hash-table)  ; o -> list of triples
+  (os  (make-hash-table :test 'equal) :type hash-table)  ; (o s) -> list of triples
+  (all nil :type list)                                     ; all triples
   (count 0 :type fixnum)
   (extra nil :type list)
-  ;; Named graph support: triple -> graph-name, graph-name -> set of triples
   (triple-graph (make-hash-table :test 'equal) :type hash-table)
   (graph-index (make-hash-table :test 'equal) :type hash-table))
 
@@ -54,62 +59,13 @@
 ;;; Index helpers
 ;;; ==========================================================================
 
-(defun ensure-nested (ht key)
-  "Get or create a nested hash-table at KEY in HT."
-  (or (gethash key ht)
-      (setf (gethash key ht) (make-hash-table :test 'equal))))
+(defun index-push (ht key triple)
+  (push triple (gethash key ht)))
 
-(defun index-add (ht k1 k2 k3 triple)
-  (setf (gethash k3 (ensure-nested (ensure-nested ht k1) k2)) triple))
-
-(defun index-remove (ht k1 k2 k3)
-  (let ((l1 (gethash k1 ht)))
-    (when l1
-      (let ((l2 (gethash k2 l1)))
-        (when l2
-          (remhash k3 l2)
-          (when (= 0 (hash-table-count l2))
-            (remhash k2 l1)
-            (when (= 0 (hash-table-count l1))
-              (remhash k1 ht))))))))
-
-(defun index-lookup (ht &optional k1 k2 k3)
-  "Collect triples from a 3-level nested hash-table with 0-3 keys bound."
-  (let (results)
-    (flet ((collect-all (inner)
-             (maphash (lambda (k v)
-                        (declare (ignore k))
-                        (if (triple-p v)
-                            (push v results)
-                            (maphash (lambda (k2 v2)
-                                       (declare (ignore k2))
-                                       (if (triple-p v2)
-                                           (push v2 results)
-                                           (maphash (lambda (k3 v3)
-                                                      (declare (ignore k3))
-                                                      (push v3 results))
-                                                    v2)))
-                                     v)))
-                      inner)))
-      (cond
-        ((and k1 k2 k3)
-         (let* ((l1 (gethash k1 ht))
-                (l2 (and l1 (gethash k2 l1)))
-                (tr (and l2 (gethash k3 l2))))
-           (when tr (push tr results))))
-        ((and k1 k2)
-         (let* ((l1 (gethash k1 ht))
-                (l2 (and l1 (gethash k2 l1))))
-           (when l2 (maphash (lambda (k v) (declare (ignore k)) (push v results)) l2))))
-        (k1
-         (let ((l1 (gethash k1 ht)))
-           (when l1
-             (maphash (lambda (k v)
-                        (declare (ignore k))
-                        (maphash (lambda (k2 v2) (declare (ignore k2)) (push v2 results)) v))
-                      l1))))
-        (t (collect-all ht))))
-    results))
+(defun index-delete (ht key triple)
+  (setf (gethash key ht) (delete triple (gethash key ht) :test #'eq))
+  (when (null (gethash key ht))
+    (remhash key ht)))
 
 ;;; ==========================================================================
 ;;; Add / Remove / Query
@@ -120,31 +76,41 @@
 (defun add-triple (g subject predicate object)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
-  ;; Intern strings to deduplicate
   (when (stringp subject) (setf subject (intern-string subject)))
   (when (stringp predicate) (setf predicate (intern-string predicate)))
   (when (stringp object) (setf object (intern-string object)))
-  ;; Check for duplicate
-  (when (has-triple-p g subject predicate object)
-    (return-from add-triple
-      (first (index-lookup (graph-spo g) subject predicate object))))
-  (let ((tr (%make-triple subject predicate object)))
-    (index-add (graph-spo g) subject predicate object tr)
-    (index-add (graph-pos g) predicate object subject tr)
-    (index-add (graph-osp g) object subject predicate tr)
-    (incf (graph-count g))
-    ;; Check reactive triggers
-    (when (graph-triggers g)
-      (check-triggers g tr))
-    tr))
+  (let ((key (list subject predicate object)))
+    ;; Dedup
+    (when (gethash key (graph-spo g))
+      (return-from add-triple (gethash key (graph-spo g))))
+    (let ((tr (%make-triple subject predicate object)))
+      (setf (gethash key (graph-spo g)) tr)
+      (index-push (graph-sp g) (list subject predicate) tr)
+      (index-push (graph-s g) subject tr)
+      (index-push (graph-p g) predicate tr)
+      (index-push (graph-po g) (list predicate object) tr)
+      (index-push (graph-o g) object tr)
+      (index-push (graph-os g) (list object subject) tr)
+      (push tr (graph-all g))
+      (incf (graph-count g))
+      (when (graph-triggers g)
+        (check-triggers g tr))
+      tr)))
 
 (defun remove-triple (g subject predicate object)
-  (when (has-triple-p g subject predicate object)
-    (index-remove (graph-spo g) subject predicate object)
-    (index-remove (graph-pos g) predicate object subject)
-    (index-remove (graph-osp g) object subject predicate)
-    (decf (graph-count g))
-    t))
+  (let* ((key (list subject predicate object))
+         (tr (gethash key (graph-spo g))))
+    (when tr
+      (remhash key (graph-spo g))
+      (index-delete (graph-sp g) (list subject predicate) tr)
+      (index-delete (graph-s g) subject tr)
+      (index-delete (graph-p g) predicate tr)
+      (index-delete (graph-po g) (list predicate object) tr)
+      (index-delete (graph-o g) object tr)
+      (index-delete (graph-os g) (list object subject) tr)
+      (setf (graph-all g) (delete tr (graph-all g) :test #'eq))
+      (decf (graph-count g))
+      t)))
 
 (defun remove-triples (g &key subject predicate object)
   "Remove all triples matching the given constraints."
@@ -152,36 +118,34 @@
     (remove-triple g (triple-subject tr) (triple-predicate tr) (triple-object tr))))
 
 (defun get-triples (g &key subject predicate object)
-  "Query triples. Uses the best index based on which keys are provided."
+  "Query triples using the best flat index."
   (cond
-    ;; Use SPO index when subject is known
-    (subject
-     (if predicate
-         (if object
-             (index-lookup (graph-spo g) subject predicate object)
-             (index-lookup (graph-spo g) subject predicate))
-         (if object
-             ;; s + o: use OSP
-             (index-lookup (graph-osp g) object subject)
-             (index-lookup (graph-spo g) subject))))
-    ;; Use POS index when predicate is known
-    (predicate
-     (if object
-         (index-lookup (graph-pos g) predicate object)
-         (index-lookup (graph-pos g) predicate)))
-    ;; Use OSP index when only object is known
-    (object
-     (index-lookup (graph-osp g) object))
-    ;; No constraints: return all
-    (t (index-lookup (graph-spo g)))))
+    ((and subject predicate object)
+     (let ((tr (gethash (list subject predicate object) (graph-spo g))))
+       (when tr (list tr))))
+    ((and subject predicate)
+     (copy-list (gethash (list subject predicate) (graph-sp g))))
+    ((and predicate object)
+     (copy-list (gethash (list predicate object) (graph-po g))))
+    ((and object subject)
+     (copy-list (gethash (list object subject) (graph-os g))))
+    (subject (copy-list (gethash subject (graph-s g))))
+    (predicate (copy-list (gethash predicate (graph-p g))))
+    (object (copy-list (gethash object (graph-o g))))
+    (t (copy-list (graph-all g)))))
 
 (defun has-triple-p (g subject predicate object)
-  (not (null (index-lookup (graph-spo g) subject predicate object))))
+  (not (null (gethash (list subject predicate object) (graph-spo g)))))
 
 (defun clear-graph (g)
   (clrhash (graph-spo g))
-  (clrhash (graph-pos g))
-  (clrhash (graph-osp g))
+  (clrhash (graph-sp g))
+  (clrhash (graph-s g))
+  (clrhash (graph-p g))
+  (clrhash (graph-po g))
+  (clrhash (graph-o g))
+  (clrhash (graph-os g))
+  (setf (graph-all g) nil)
   (setf (graph-count g) 0))
 
 ;;; ==========================================================================
@@ -191,10 +155,9 @@
 (defun collect-keys (ht)
   (let (keys) (maphash (lambda (k v) (declare (ignore v)) (push k keys)) ht) keys))
 
-(defun all-subjects (g) (collect-keys (graph-spo g)))
-(defun all-predicates (g) (collect-keys (graph-pos g)))
-
-(defun all-objects (g) (collect-keys (graph-osp g)))
+(defun all-subjects (g) (collect-keys (graph-s g)))
+(defun all-predicates (g) (collect-keys (graph-p g)))
+(defun all-objects (g) (collect-keys (graph-o g)))
 
 ;;; ==========================================================================
 ;;; Named Graphs (Quads)

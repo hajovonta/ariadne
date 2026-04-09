@@ -189,6 +189,10 @@
   :description "Query planner and optimization"
   :in :ariadne)
 
+(def-suite :compact-index
+  :description "Compact index correctness verification"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

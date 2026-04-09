@@ -89,3 +89,32 @@ the hash table overhead (headers, buckets) exceeds the default SBCL heap.
 New high water mark: 857K triples on default SBCL heap.
 Throughput stable at ~110-125K triples/sec for large N-Quads.
 Interning ratio: 37% unique strings (clinicaltrials) vs 43% (drugbank).
+
+## Compact Index Results (2026-04-09)
+
+Replaced 3 nested hash tables with 7 flat hash tables using composite keys.
+
+| Dataset           | Metric    | Nested    | Compact   | Change        |
+|-------------------|-----------|-----------|-----------|---------------|
+| drugbank 500K     | Time      | 3.490s    | 3.217s    | 8% faster     |
+|                   | GC        | 1.104s    | 0.403s    | 63% less GC   |
+|                   | Memory    | 3,007MB   | 2,601MB   | 14% less mem  |
+| clinicaltrials 1M | Time      | 7.817s    | 8.185s    | ~same         |
+|                   | GC        | 2.246s    | 1.328s    | 41% less GC   |
+|                   | Memory    | 7,146MB   | 6,377MB   | 11% less mem  |
+
+Key win: GC pressure reduced 41-63% by eliminating nested hash table overhead.
+
+## MILESTONE: Full Drugbank Loaded (2026-04-09)
+
+Previously OOM'd. Compact index made it possible.
+
+| Metric         | Value          |
+|----------------|----------------|
+| File           | drugbank-full.nq (979MB, 4.2M lines) |
+| Triples loaded | 3,649,531      |
+| Time           | 33.8 seconds   |
+| Throughput     | 108K triples/sec |
+| GC             | 6.85s (20%)    |
+| Memory consed  | 22.8GB         |
+| Unique strings | 1,495,729      |
