@@ -69,7 +69,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 
 - [ ] Quicklisp submission
 - [ ] Documentation site with tutorials
-- [ ] CI / automated test runs
+- [x] CI / automated test runs — builds.sr.ht with .build.yml
 
 ## Phase 7 — Interactive Web Visualization ✓
 
@@ -127,7 +127,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 
 ## Phase 14 — CI & Distribution
 
-- [ ] CI pipeline — automated test runs on push
+- [x] CI pipeline — builds.sr.ht, runs on every push
 - [ ] Quicklisp submission
 - [ ] Documentation site with tutorials
 
