@@ -50,6 +50,7 @@
                              (:file "suite-export-formats")
                              (:file "suite-sparql-update")
                              (:file "suite-sparql-parser-extended")
-                             (:file "suite-rdf-xml"))))
+                             (:file "suite-rdf-xml")
+                             (:file "suite-json-ld-import"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

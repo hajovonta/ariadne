@@ -238,6 +238,10 @@
   :description "RDF/XML import"
   :in :ariadne)
 
+(def-suite :json-ld-import
+  :description "JSON-LD import"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

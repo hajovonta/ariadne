@@ -124,4 +124,5 @@
    ;; SPARQL UPDATE
    #:sparql-update
    ;; RDF/XML
-   #:import-rdf-xml))
+   #:import-rdf-xml
+   #:import-json-ld))
