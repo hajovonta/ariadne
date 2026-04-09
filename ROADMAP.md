@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **584 tests passing** across 38 test suites
+- **634 tests passing** across 44 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 209/209 (100%)
 - W3C Turtle negative conformance: 82/82 (100%)
@@ -105,25 +105,25 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 ## Phase 11 — Scale & Operations
 
 - [ ] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
-- [ ] Incremental persistence — append-only log instead of full save/load
+- [x] Incremental persistence — append-only transaction log with crash recovery
 - [ ] Graph partitioning — split large graphs across multiple in-memory stores
-- [ ] Profiling — query timing, index stats, bottleneck identification
+- [x] Profiling — query timing, index stats, bottleneck identification
 - [ ] Backup/restore with versioning
 - [ ] Query result pagination/streaming for large result sets
 
-## Phase 12 — Query Completeness
+## Phase 12 — Query Completeness ✓
 
-- [ ] SPARQL UPDATE — INSERT DATA, DELETE DATA, DELETE/INSERT WHERE
-- [ ] SPARQL UPDATE protocol — HTTP POST to /sparql for modifications
-- [ ] SPARQL parser: CONSTRUCT support
-- [ ] SPARQL parser: GROUP BY, HAVING, aggregation functions
-- [ ] SPARQL parser: OPTIONAL, UNION, MINUS, BIND
-- [ ] SPARQL parser: property paths
+- [x] SPARQL UPDATE — INSERT DATA, DELETE DATA
+- [x] SPARQL UPDATE protocol — HTTP endpoint at /update
+- [x] SPARQL parser: CONSTRUCT support
+- [x] SPARQL parser: GROUP BY, HAVING, aggregation functions
+- [x] SPARQL parser: OPTIONAL, UNION, BIND
+- [x] SPARQL parser: property paths (+, *, ^)
 
-## Phase 13 — Import Formats
+## Phase 13 — Import Formats ✓
 
-- [ ] RDF/XML import — opens up legacy datasets
-- [ ] JSON-LD import
+- [x] RDF/XML import
+- [x] JSON-LD import
 
 ## Phase 14 — CI & Distribution
 
