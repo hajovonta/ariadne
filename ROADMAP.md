@@ -68,6 +68,17 @@ Target: 78/78 negative tests correctly rejected.
 - [ ] Documentation site with tutorials
 - [ ] CI / automated test runs
 
+## Phase 7 — Interactive Web Visualization
+
+- [ ] Hunchentoot web server serving graph explorer
+- [ ] Cytoscape.js frontend with interactive zoom, pan, drag
+- [ ] JSON endpoint exporting graph/subgraph as Cytoscape elements
+- [ ] Layout options: force-directed, hierarchical, circular
+- [ ] Predicate filtering — show/hide edge types
+- [ ] Node hover: show properties and connections
+- [ ] Subgraph extraction: explore neighborhood around a clicked node
+- [ ] Search: find nodes by label or URI
+
 ## Completed
 
 - [x] Core triple store with SPO/POS/OSP indexes
