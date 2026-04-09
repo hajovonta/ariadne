@@ -198,6 +198,10 @@
   :description "Thread safety: concurrent reads and writes"
   :in :ariadne)
 
+(def-suite :visualization
+  :description "Graph visualization via Graphviz"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

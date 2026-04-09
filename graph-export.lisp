@@ -83,3 +83,53 @@ OPTIONS:
 (defun dot-quote (str)
   "Quote a string for DOT."
   (format nil "\"~A\"" (remove #\" str)))
+
+
+;;; ==========================================================================
+;;; Visualization
+;;; ==========================================================================
+
+(defun visualize-graph (g &key file (engine :dot) predicates center depth open)
+  "Render graph to PNG/SVG using Graphviz.
+ENGINE: :dot, :neato, :fdp, :circo, :twopi, :sfdp
+FILE: output path (format detected from extension, default PNG)
+OPEN: if T, open the file with the system viewer"
+  (let* ((dot-str (export-dot g :predicates predicates :center center :depth depth))
+         (output (or file (merge-pathnames "ariadne-graph.png"
+                                            (user-homedir-pathname))))
+         (output-str (namestring output))
+         (format (cond ((search ".svg" output-str) "svg")
+                       ((search ".pdf" output-str) "pdf")
+                       (t "png")))
+         (engine-str (string-downcase (symbol-name engine))))
+    (let ((dot-file (make-pathname :type "dot" :defaults output)))
+      (with-open-file (s dot-file :direction :output :if-exists :supersede)
+        (write-string dot-str s))
+      (uiop:run-program (list engine-str
+                              (format nil "-T~A" format)
+                              (namestring dot-file)
+                              "-o" output-str))
+      (delete-file dot-file)
+      (when open
+        (uiop:run-program (list "xdg-open" output-str)))
+      output)))
+
+(defun describe-graph (g)
+  "Return a summary string describing the graph."
+  (let* ((tc (triple-count g))
+         (subjects (all-subjects g))
+         (predicates (all-predicates g))
+         (objects (all-objects g))
+         ;; Count per predicate
+         (pred-counts (mapcar (lambda (p)
+                                (cons p (length (get-triples g :predicate p))))
+                              predicates))
+         (sorted-preds (sort pred-counts #'> :key #'cdr))
+         (top-preds (subseq sorted-preds 0 (min 5 (length sorted-preds)))))
+    (with-output-to-string (s)
+      (format s "~A~%" (or (graph-name g) "Unnamed Graph"))
+      (format s "~A triples, ~A subjects, ~A predicates, ~A unique objects~%"
+              tc (length subjects) (length predicates) (length objects))
+      (format s "Top predicates:~%")
+      (dolist (pc top-preds)
+        (format s "  ~A (~A)~%" (car pc) (cdr pc))))))

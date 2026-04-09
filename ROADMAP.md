@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **494 tests passing** across 31 test suites
+- **501 tests passing** across 32 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 213/213 (100%)
 - W3C Turtle negative conformance: 4/78 (5%) — parser is too lenient with invalid input
@@ -60,7 +60,7 @@ Target: 78/78 negative tests correctly rejected.
 - [x] Reactive queries / triggers — `(on-match g :name :pattern '(...) :callback fn)`
 - [x] Graph analytics — PageRank, connected components, degree centrality, clustering coefficient
 - [x] SPARQL string parser — accept standard SPARQL query strings, translate to DSL
-- [ ] REPL integration — table formatting, graph visualization
+- [x] REPL integration — graph visualization via Graphviz, describe-graph summary
 
 ## Phase 6 — Distribution
 
