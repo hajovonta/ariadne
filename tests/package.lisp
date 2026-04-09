@@ -262,6 +262,10 @@
   :description "Backup/restore with versioning"
   :in :ariadne)
 
+(def-suite :prefix-registry
+  :description "Prefix registry for short URIs"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

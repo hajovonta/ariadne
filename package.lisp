@@ -140,4 +140,8 @@
    ;; Backup
    #:backup-graph
    #:restore-latest-backup
-   #:list-backups))
+   #:list-backups
+   ;; Prefix registry
+   #:register-prefix
+   #:register-common-prefixes
+   #:graph-prefixes))

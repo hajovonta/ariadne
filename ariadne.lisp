@@ -77,13 +77,14 @@
 
 (declaim (ftype function check-triggers))
 (declaim (ftype function txlog-write))
+(declaim (ftype function expand-if-prefixed))
 
 (defun add-triple (g subject predicate object)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
-  (when (stringp subject) (setf subject (intern-string subject)))
-  (when (stringp predicate) (setf predicate (intern-string predicate)))
-  (when (stringp object) (setf object (intern-string object)))
+  (when (stringp subject) (setf subject (intern-string (expand-if-prefixed g subject))))
+  (when (stringp predicate) (setf predicate (intern-string (expand-if-prefixed g predicate))))
+  (when (stringp object) (setf object (intern-string (expand-if-prefixed g object))))
   (bt:with-lock-held ((graph-lock g))
     (let ((key (list subject predicate object)))
       (when (gethash key (graph-spo g))
@@ -127,6 +128,9 @@
 
 (defun get-triples (g &key subject predicate object)
   "Query triples using the best flat index."
+  (when (stringp subject) (setf subject (expand-if-prefixed g subject)))
+  (when (stringp predicate) (setf predicate (expand-if-prefixed g predicate)))
+  (when (stringp object) (setf object (expand-if-prefixed g object)))
   (cond
     ((and subject predicate object)
      (let ((tr (gethash (list subject predicate object) (graph-spo g))))
@@ -143,6 +147,9 @@
     (t (copy-list (graph-all g)))))
 
 (defun has-triple-p (g subject predicate object)
+  (when (stringp subject) (setf subject (expand-if-prefixed g subject)))
+  (when (stringp predicate) (setf predicate (expand-if-prefixed g predicate)))
+  (when (stringp object) (setf object (expand-if-prefixed g object)))
   (not (null (gethash (list subject predicate object) (graph-spo g)))))
 
 (defun clear-graph (g)

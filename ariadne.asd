@@ -11,6 +11,7 @@
   :serial t
   :components ((:file "package")
                (:file "ariadne")
+               (:file "prefix")
                (:file "pattern")
                (:file "query")
                (:file "property-graph")

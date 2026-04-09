@@ -48,6 +48,13 @@ Returns two values: the updated ENV and a success boolean."
   "Match a single triple pattern against the graph.
 Returns a list of binding environments."
   (destructuring-bind (ps pp po) pattern
+    ;; Expand prefixed strings
+    (when (and (stringp ps) (not (variable-p ps)))
+      (setf ps (expand-if-prefixed g ps)))
+    (when (and (stringp pp) (not (variable-p pp)))
+      (setf pp (expand-if-prefixed g pp)))
+    (when (and (stringp po) (not (variable-p po)))
+      (setf po (expand-if-prefixed g po)))
     (let ((bound-s (and (not (variable-p ps)) ps))
           (bound-p (and (not (variable-p pp)) pp))
           (bound-o (and (not (variable-p po)) po)))
@@ -76,6 +83,13 @@ Returns a list of binding environments."
     (let ((rs (resolve ps env))
           (rp (resolve pp env))
           (ro (resolve po env)))
+      ;; Expand prefixed strings
+      (when (and (stringp rs) (not (variable-p rs)))
+        (setf rs (expand-if-prefixed g rs)))
+      (when (and (stringp rp) (not (variable-p rp)))
+        (setf rp (expand-if-prefixed g rp)))
+      (when (and (stringp ro) (not (variable-p ro)))
+        (setf ro (expand-if-prefixed g ro)))
       (let ((bound-s (and (not (variable-p rs)) rs))
             (bound-p (and (not (variable-p rp)) rp))
             (bound-o (and (not (variable-p ro)) ro)))
