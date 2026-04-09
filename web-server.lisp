@@ -109,12 +109,19 @@
   #info { position: fixed; bottom: 16px; right: 16px; background: #16213e; padding: 12px;
     border-radius: 8px; max-width: 350px; font-size: 13px; display: none; border: 1px solid #333; }
   #predicates { max-width: 300px; }
+  #pred-panel { position: fixed; top: 50px; left: 0; background: #16213e; padding: 12px;
+    border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
+    max-height: 80vh; overflow-y: auto; display: none; min-width: 200px; z-index: 10; }
+  #pred-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
+  #pred-panel label:hover { color: #e94560; }
+  #pred-panel input { margin-right: 6px; }
 </style>
 </head><body>
 <div id='toolbar'>
   <strong>Ariadne</strong>
   <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
-  <select id='predicates' multiple title='Filter predicates (ctrl+click)'></select>
+  <select id='predicates' multiple title='Filter predicates (ctrl+click)' style='display:none'></select>
+  <button onclick='togglePredPanel()'>Predicates ▼</button>
   <button onclick='loadGraph()'>Apply</button>
   <select id='layout' onchange='changeLayout()'>
     <option value='cose'>Force-directed</option>
@@ -128,28 +135,37 @@
   <span id='stats'></span>
 </div>
 <div id='cy'></div>
+<div id='pred-panel'></div>
 <div id='info'></div>
 <script>
 let cy;
 // Load predicate list
 fetch('/api/predicates').then(r=>r.json()).then(preds=>{
-  let sel = document.getElementById('predicates');
-  preds.forEach(p => {
-    let opt = document.createElement('option');
-    opt.value = p; opt.textContent = p.split('#').pop().split('/').pop();
-    sel.appendChild(opt);
+  let panel = document.getElementById('pred-panel');
+  preds.forEach((p,i) => {
+    let label = document.createElement('label');
+    let cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = p;
+    cb.checked = i < 3;
+    cb.onchange = loadGraph;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(p.split('#').pop().split('/').pop()));
+    panel.appendChild(label);
   });
-  // Auto-select first 3 predicates for initial view
-  if(sel.options.length > 0) {
-    for(let i=0; i<Math.min(3, sel.options.length); i++) sel.options[i].selected = true;
-  }
   loadGraph();
 });
+function getSelectedPredicates(){
+  return Array.from(document.querySelectorAll('#pred-panel input:checked')).map(cb => cb.value);
+}
+function togglePredPanel(){
+  let p = document.getElementById('pred-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
 function loadGraph(){
-  let sel = document.getElementById('predicates');
-  let selected = Array.from(sel.selectedOptions).map(o => o.value);
+  let selected = getSelectedPredicates();
+  let total = document.querySelectorAll('#pred-panel input').length;
   let url = '/api/graph';
-  if(selected.length > 0 && selected.length < sel.options.length)
+  if(selected.length > 0 && selected.length < total)
     url += '?predicates=' + encodeURIComponent(selected.join(','));
   fetch(url).then(r=>r.json()).then(data=>{
     if(cy) cy.destroy();
@@ -227,8 +243,7 @@ function changeLayout(){
   cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
 }
 function selectAll(){
-  let sel = document.getElementById('predicates');
-  Array.from(sel.options).forEach(o => o.selected = true);
+  document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   loadGraph();
 }
 </script>
