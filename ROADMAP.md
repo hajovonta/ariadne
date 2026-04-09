@@ -4,8 +4,8 @@
 
 - **518 tests passing** across 33 test suites
 - ~95% SPARQL 1.1 feature coverage
-- W3C Turtle positive conformance: 202/209 (97%) — 7 edge cases with Unicode prefixes, pname escapes, collection syntax
-- W3C Turtle negative conformance: 74/82 (90%) — 8 edge cases remaining
+- W3C Turtle positive conformance: 209/209 (100%)
+- W3C Turtle negative conformance: 81/82 (99%) — 1 edge case (NQuads-in-Turtle)
 - Successfully imports real-world Turtle files (perihelion-kg.ttl — 604 lines, 1551 triples)
 - Import throughput: ~500K triples/sec (Turtle), ~80-360K triples/sec (N-Triples/N-Quads)
 - Published at [git.sr.ht/~hajovonta/ariadne](https://git.sr.ht/~hajovonta/ariadne)
