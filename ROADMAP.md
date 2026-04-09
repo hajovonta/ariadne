@@ -2,7 +2,7 @@
 
 ## Current Status
 
-- **634 tests passing** across 44 test suites
+- **647 tests passing** across 46 test suites
 - ~95% SPARQL 1.1 feature coverage
 - W3C Turtle positive conformance: 209/209 (100%)
 - W3C Turtle negative conformance: 82/82 (100%)
@@ -108,7 +108,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 - [x] Incremental persistence — append-only transaction log with crash recovery
 - [ ] Graph partitioning — split large graphs across multiple in-memory stores
 - [x] Profiling — query timing, index stats, bottleneck identification
-- [ ] Backup/restore with versioning
+- [x] Backup/restore with versioning — timestamped snapshots
 - [x] Query result pagination — cursor-based iteration over large result sets
 
 ## Phase 12 — Query Completeness ✓
