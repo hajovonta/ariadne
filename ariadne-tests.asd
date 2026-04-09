@@ -59,6 +59,7 @@
                              (:file "suite-backup")
                              (:file "suite-prefix-registry")
                              (:file "suite-memory-usage")
-                             (:file "suite-skolemization"))))
+                             (:file "suite-skolemization")
+                             (:file "suite-delete-where"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

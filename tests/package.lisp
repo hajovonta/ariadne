@@ -274,6 +274,10 @@
   :description "Blank node skolemization"
   :in :ariadne)
 
+(def-suite :delete-where
+  :description "DELETE WHERE and SPARQL DESCRIBE"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

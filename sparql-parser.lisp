@@ -110,6 +110,8 @@
          (sparql-parse-ask toks prefixes))
         ((string-equal form "CONSTRUCT")
          (sparql-parse-construct toks prefixes))
+        ((string-equal form "DESCRIBE")
+         (sparql-parse-describe toks prefixes))
         (t (error "Unknown SPARQL query form: ~A" form))))))
 
 (defun sparql-parse-select (toks prefixes distinct-p)
@@ -358,6 +360,11 @@
         (pop toks))
       (list 'construct (first (nreverse template)) (cons 'where patterns)))))
 
+(defun sparql-parse-describe (toks prefixes)
+  "Parse DESCRIBE <resource>."
+  (let ((resource (sparql-resolve-term (pop toks) prefixes)))
+    (list 'describe resource)))
+
 ;;; ==========================================================================
 ;;; SPARQL UPDATE
 ;;; ==========================================================================
@@ -390,6 +397,44 @@
          (dolist (tr triples)
            (remove-triple g (first tr) (second tr) (third tr)))
          (length triples)))
+      ((and (>= (length s) 12) (string-equal "DELETE WHERE" (subseq s 0 12)))
+       (let* ((body (subseq s 12))
+              (trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) body))
+              (inner (if (and (> (length trimmed) 1)
+                              (char= #\{ (char trimmed 0)))
+                         (subseq trimmed 1 (position #\} trimmed :from-end t))
+                         trimmed))
+              (tokens (sparql-tokenize inner))
+              (count 0))
+         ;; Parse pattern triples, keeping ?vars as-is
+         (let ((patterns nil))
+           (loop while (>= (length tokens) 3) do
+             (let ((s-tok (pop tokens))
+                   (p-tok (pop tokens))
+                   (o-tok (pop tokens)))
+               (flet ((to-pat (tok)
+                        (if (and (symbolp tok)
+                                 (char= #\? (char (symbol-name tok) 0)))
+                            tok
+                            (resolve-sparql-token tok prefixes))))
+                 (push (list (to-pat s-tok) (to-pat p-tok) (to-pat o-tok)) patterns)))
+             (when (and tokens (stringp (car tokens)) (string= "." (car tokens)))
+               (pop tokens)))
+           (dolist (pat (nreverse patterns))
+             (let ((matches (match-pattern g pat)))
+               (dolist (bindings matches)
+                 (let ((ms (if (variable-p (first pat))
+                               (cdr (assoc (first pat) bindings))
+                               (first pat)))
+                       (mp (if (variable-p (second pat))
+                               (cdr (assoc (second pat) bindings))
+                               (second pat)))
+                       (mo (if (variable-p (third pat))
+                               (cdr (assoc (third pat) bindings))
+                               (third pat))))
+                   (when (remove-triple g ms mp mo)
+                     (incf count)))))))
+         count))
       (t (error "Unsupported SPARQL UPDATE operation")))))
 
 (defun parse-update-triples (body prefixes)
