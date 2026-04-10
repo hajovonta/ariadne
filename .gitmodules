@@ -1,0 +1,3 @@
+[submodule "test-data/shacl/data-shapes"]
+	path = test-data/shacl/data-shapes
+	url = https://github.com/w3c/data-shapes.git
