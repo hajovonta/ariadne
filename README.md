@@ -111,7 +111,12 @@ git clone <repository-url> ariadne
 
 ## Dependencies
 
-- **cl-ppcre** — Regular expressions for REGEX filter support
+- **cl-ppcre** — Regular expressions (SPARQL REGEX, Turtle parsing, SHACL pattern matching)
+- **bordeaux-threads** — Thread-safe concurrent access
+- **hunchentoot** — SPARQL HTTP endpoint
+- **drakma** — SPARQL SERVICE federation, graph event webhooks
+- **com.inuoe.jzon** — JSON-LD import/export, SPARQL JSON results
+- **local-time** — xsd:dateTime handling in SHACL and typed literals
 
 ## Running Tests
 
@@ -145,7 +150,7 @@ git clone <repository-url> ariadne
 | `:import-export` | N-Triples, Turtle, N-Quads parsing and serialization |
 | `:turtle-real-world` | Real-world Turtle: 'a' shorthand, booleans, long literals, comments |
 | `:turtle-export` | Proper Turtle export with prefixes, semicolons, commas |
-| `:w3c-turtle` | W3C Turtle conformance (213/213 positive tests) |
+| `:w3c-turtle` | W3C Turtle conformance (209/209 positive, 82/82 negative) |
 | `:streaming-import` | Line-by-line N-Triples/N-Quads import for large files |
 | `:repl-formatting` | Pretty-print query results as aligned tables |
 | `:error-handling` | Graceful errors for malformed input, bad queries, persistence |
