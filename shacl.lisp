@@ -9,6 +9,19 @@
 
 (defun sh-uri (name) (concatenate 'string *sh* name))
 
+(defun all-subclasses (g class)
+  "Return all classes that are rdfs:subClassOf CLASS (transitive)."
+  (let ((result nil)
+        (rdfs-subclass "http://www.w3.org/2000/01/rdf-schema#subClassOf"))
+    (labels ((walk (c)
+               (dolist (tr (get-triples g :predicate rdfs-subclass :object c))
+                 (let ((sub (triple-subject tr)))
+                   (unless (member sub result :test #'equal)
+                     (push sub result)
+                     (walk sub))))))
+      (walk class))
+    result))
+
 ;;; ==========================================================================
 ;;; Shape extraction
 ;;; ==========================================================================
@@ -21,15 +34,25 @@
 (defun shape-targets (g shape)
   "Return list of focus nodes for SHAPE."
   (let ((nodes nil))
-    ;; sh:targetClass
+    ;; sh:targetClass (including subclasses)
     (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetClass")))
-      (dolist (inst (get-triples g :predicate *rdf-type* :object (triple-object tr)))
-        (pushnew (triple-subject inst) nodes :test #'equal)))
+      (let ((cls (triple-object tr)))
+        (dolist (inst (get-triples g :predicate *rdf-type* :object cls))
+          (pushnew (triple-subject inst) nodes :test #'equal))
+        (dolist (sc (all-subclasses g cls))
+          (dolist (inst (get-triples g :predicate *rdf-type* :object sc))
+            (pushnew (triple-subject inst) nodes :test #'equal)))))
     ;; Implicit target class: shape is also an rdfs:Class or owl:Class
     (when (or (has-triple-p g shape *rdf-type* "http://www.w3.org/2000/01/rdf-schema#Class")
               (has-triple-p g shape *rdf-type* "http://www.w3.org/2002/07/owl#Class"))
+      ;; Direct instances
       (dolist (inst (get-triples g :predicate *rdf-type* :object shape))
-        (pushnew (triple-subject inst) nodes :test #'equal)))
+        (pushnew (triple-subject inst) nodes :test #'equal))
+      ;; Instances of subclasses
+      (let ((subclasses (all-subclasses g shape)))
+        (dolist (sc subclasses)
+          (dolist (inst (get-triples g :predicate *rdf-type* :object sc))
+            (pushnew (triple-subject inst) nodes :test #'equal)))))
     ;; sh:targetNode
     (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetNode")))
       (pushnew (triple-object tr) nodes :test #'equal))
