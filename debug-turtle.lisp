@@ -1,0 +1,8 @@
+(require :asdf)
+(asdf:load-system :ariadne)
+(in-package :ariadne)
+(let ((g (make-graph :name "test")))
+  (import-turtle g "<http://ex.org/s> <http://ex.org/p> [ <http://ex.org/a> \"1\" ] .")
+  (format t "Triples (~A):~%" (triple-count g))
+  (dolist (tr (get-triples g))
+    (format t "  ~S ~S ~S~%" (triple-subject tr) (triple-predicate tr) (triple-object tr))))

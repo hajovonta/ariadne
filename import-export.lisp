@@ -525,8 +525,69 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                    (push (subseq data start pos) tokens)))))))))
     (nreverse tokens)))
 
+(defun parse-collection (g toks prefixes anon-counter)
+  "Parse an RDF collection from token stream (after opening paren consumed).
+Returns (remaining-toks anon-counter list-head-node)."
+  (let* ((rdf-first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+         (rdf-rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+         (rdf-nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
+         (head nil)
+         (prev nil))
+    (loop while (and toks (not (string= ")" (car toks)))) do
+      (let ((node (format nil "_:list~A" (incf anon-counter)))
+            (item nil))
+        (unless head (setf head node))
+        (when prev (add-triple g prev rdf-rest node))
+        (cond
+          ;; Nested collection
+          ((string= "(" (car toks))
+           (pop toks)
+           (let ((result (parse-collection g toks prefixes anon-counter)))
+             (setf toks (first result) anon-counter (second result) item (third result))))
+          ;; Blank node property list inside collection
+          ((string= "[" (car toks))
+           (pop toks)
+           (let ((bnode (format nil "_:anon~A" (incf anon-counter))))
+             (setf item bnode)
+             (if (and toks (string= "]" (car toks)))
+                 (pop toks) ; empty []
+                 ;; Non-empty: parse predicate-object pairs
+                 (loop while (and toks (not (string= "]" (car toks)))) do
+                   (let ((bp (turtle-resolve (pop toks) prefixes))
+                         (bo nil))
+                     (cond
+                       ((and toks (string= "(" (car toks)))
+                        (pop toks)
+                        (let ((r (parse-collection g toks prefixes anon-counter)))
+                          (setf toks (first r) anon-counter (second r) bo (third r))))
+                       ((and toks (string= "[" (car toks)))
+                        (pop toks)
+                        (let ((inner (format nil "_:anon~A" (incf anon-counter))))
+                          (setf bo inner)
+                          (if (and toks (string= "]" (car toks)))
+                              (pop toks)
+                              (progn
+                                (loop while (and toks (not (string= "]" (car toks)))) do
+                                  (let ((ip (turtle-resolve (pop toks) prefixes))
+                                        (io (turtle-resolve (pop toks) prefixes)))
+                                    (add-triple g inner ip io)
+                                    (when (and toks (string= ";" (car toks))) (pop toks))))
+                                (when (and toks (string= "]" (car toks))) (pop toks))))))
+                       (toks (setf bo (turtle-resolve (pop toks) prefixes))))
+                     (when (and bp bo) (add-triple g bnode bp bo))
+                     (when (and toks (string= ";" (car toks))) (pop toks)))
+                   (when (and toks (string= "]" (car toks))) (pop toks))))))
+          ;; Simple value
+          (t (setf item (turtle-resolve (pop toks) prefixes))))
+        (add-triple g node rdf-first item)
+        (setf prev node)))
+    (when prev (add-triple g prev rdf-rest rdf-nil))
+    (unless head (setf head rdf-nil))
+    (when (and toks (string= ")" (car toks))) (pop toks))
+    (list toks anon-counter head)))
+
 (defun turtle-parse-tokens (g tokens prefixes)
-  "Parse a token stream into triples."
+  "Parse a token stream into triples. Uses a context stack for nested blank nodes."
   (let ((toks tokens)
         (subject nil)
         (predicate nil)
@@ -534,7 +595,8 @@ Handles quoted strings, URIs, and punctuation (; , .)."
         (anon-counter 0)
         (had-predicate nil)
         (expect-punct nil)
-        (bracket-depth 0))
+        (bracket-depth 0)
+        (context-stack nil))
     ;; Reject N3/TriG tokens at top level
     (dolist (tok tokens)
       (when (or (string= tok "=") (string= tok "=>") (string= tok "<=")
@@ -594,7 +656,10 @@ Handles quoted strings, URIs, and punctuation (; , .)."
           ;; "."  — end of statement
           ((string= tok ".")
            (pop toks)
-           (when (and (null subject) (null predicate))
+           ;; Dot is not valid inside blank node property lists
+           (when (> bracket-depth 0)
+             (error "Unexpected dot inside blank node property list"))
+           (when (and (null subject) (null predicate) (not had-predicate))
              (error "Unexpected dot without statement"))
            (when (and subject (null predicate) (not had-predicate))
              (error "Incomplete statement: subject without predicate"))
@@ -607,29 +672,66 @@ Handles quoted strings, URIs, and punctuation (; , .)."
            (when (or (null toks) (string= "." (car toks)))
              ;; Trailing ; before . is allowed in Turtle
              nil))
-          ;; "]" and ")" — closing brackets, skip
-          ((or (string= tok "]") (string= tok ")"))
+          ;; "]" — closing blank node, restore context
+          ((string= tok "]")
            (pop toks)
            (decf bracket-depth)
-           (setf predicate nil had-predicate t expect-punct nil))
-          ;; "[" — blank node: if followed by "]", anonymous blank node
+           (let ((bnode subject))
+             (if context-stack
+                 (let ((ctx (pop context-stack)))
+                   (setf subject (first ctx)
+                         predicate (second ctx)
+                         had-predicate (third ctx))
+                   ;; The blank node fills the role in the outer context
+                   (cond
+                     ;; Was in subject position
+                     ((and (null subject) (null predicate))
+                      (setf subject bnode had-predicate t expect-punct nil))
+                     ;; Was in object position (subject+predicate were set)
+                     ((and subject predicate)
+                      (add-triple g subject predicate bnode)
+                      (setf expect-punct t))
+                     ;; Subject set but no predicate — blank node is done as subject
+                     (t (setf subject bnode expect-punct nil))))
+                 ;; No context to restore — top-level blank node subject
+                 (setf expect-punct nil))))
+          ;; ")" — stray close paren (collections handle their own)
+          ((string= tok ")")
+           (pop toks)
+           (decf bracket-depth))
+          ;; "[" — blank node property list
           ((string= tok "[")
            (pop toks)
            (incf bracket-depth)
            (setf expect-punct nil)
-           (when (and toks (string= "]" (car toks)))
-             ;; [] = anonymous blank node
-             (pop toks)
+           (let ((bnode (format nil "_:anon~A" (incf anon-counter))))
              (cond
-               ((null subject)
-                (setf subject (format nil "_:anon~A" (incf anon-counter))))
-               ((null predicate)
-                (error "Blank nodes cannot be predicates")))))
-          ;; "(" — collection start, skip
+               ;; [] empty blank node
+               ((and toks (string= "]" (car toks)))
+                (pop toks)
+                (decf bracket-depth)
+                (cond
+                  ((null subject) (setf subject bnode))
+                  ((null predicate) (error "Blank nodes cannot be predicates"))
+                  (t (add-triple g subject predicate bnode)
+                     (setf expect-punct t))))
+               ;; Non-empty: push context, parse contents with bnode as subject
+               (t
+                (push (list subject predicate had-predicate) context-stack)
+                (setf subject bnode predicate nil had-predicate nil expect-punct nil)))))
+          ;; "(" — RDF collection
           ((string= tok "(")
            (pop toks)
-           (incf bracket-depth)
-           (setf expect-punct nil))
+           (setf expect-punct nil)
+           (let ((result (parse-collection g toks prefixes anon-counter)))
+             (setf toks (first result)
+                   anon-counter (second result))
+             (let ((list-node (third result)))
+               (cond
+                 ((null subject) (setf subject list-node))
+                 ((null predicate) (error "Collection cannot be a predicate"))
+                 (t (add-triple g subject predicate list-node)
+                    (setf expect-punct t))))))
           ;; "," — same subject and predicate, new object
           ((string= tok ",")
            (pop toks)
