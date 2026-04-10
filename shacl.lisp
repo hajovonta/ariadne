@@ -170,7 +170,40 @@
             (push (make-violation focus-node path shape
                                   (format nil "~A is not an instance of ~A" val cls)
                                   :value val)
-                  violations)))))
+                  violations))))
+      ;; sh:not — value must NOT satisfy the sub-shape
+      (let ((not-shape (prop-shape-value g prop-shape "not")))
+        (when (and not-shape (check-value-against-subshape g val not-shape))
+          (push (make-violation focus-node path shape
+                                "value satisfies sh:not constraint (should not)"
+                                :value val)
+                violations)))
+      ;; sh:and — value must satisfy ALL sub-shapes
+      (let ((and-shapes (prop-shape-values g prop-shape "and")))
+        (when and-shapes
+          (unless (every (lambda (ss) (check-value-against-subshape g val ss)) and-shapes)
+            (push (make-violation focus-node path shape
+                                  "value does not satisfy all sh:and constraints"
+                                  :value val)
+                  violations))))
+      ;; sh:or — value must satisfy AT LEAST ONE sub-shape
+      (let ((or-shapes (prop-shape-values g prop-shape "or")))
+        (when or-shapes
+          (unless (some (lambda (ss) (check-value-against-subshape g val ss)) or-shapes)
+            (push (make-violation focus-node path shape
+                                  "value does not satisfy any sh:or constraint"
+                                  :value val)
+                  violations))))
+      ;; sh:xone — value must satisfy EXACTLY ONE sub-shape
+      (let ((xone-shapes (prop-shape-values g prop-shape "xone")))
+        (when xone-shapes
+          (let ((pass-count (count-if (lambda (ss) (check-value-against-subshape g val ss))
+                                      xone-shapes)))
+            (unless (= 1 pass-count)
+              (push (make-violation focus-node path shape
+                                    (format nil "sh:xone expects exactly 1 match, got ~A" pass-count)
+                                    :value val)
+                    violations))))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
@@ -208,6 +241,27 @@
      (and (stringp val) (>= (length val) 2)
           (char= #\_ (char val 0)) (char= #\: (char val 1))))
     (t t)))
+
+;;; ==========================================================================
+;;; Sub-shape checking (for logical operators)
+;;; ==========================================================================
+
+(defun check-value-against-subshape (g val sub-shape)
+  "Check a single value against a sub-shape's constraints. Returns T if valid."
+  (let ((dt (prop-shape-value g sub-shape "datatype"))
+        (pat (prop-shape-value g sub-shape "pattern"))
+        (nk (prop-shape-value g sub-shape "nodeKind"))
+        (mini (prop-shape-value g sub-shape "minInclusive"))
+        (maxi (prop-shape-value g sub-shape "maxInclusive"))
+        (mine (prop-shape-value g sub-shape "minExclusive"))
+        (maxe (prop-shape-value g sub-shape "maxExclusive")))
+    (and (or (null dt) (value-matches-datatype-p val dt))
+         (or (null pat) (not (stringp val)) (cl-ppcre:scan pat val))
+         (or (null nk) (value-matches-node-kind-p val nk))
+         (or (null mini) (not (numberp val)) (not (numberp mini)) (>= val mini))
+         (or (null maxi) (not (numberp val)) (not (numberp maxi)) (<= val maxi))
+         (or (null mine) (not (numberp val)) (not (numberp mine)) (> val mine))
+         (or (null maxe) (not (numberp val)) (not (numberp maxe)) (< val maxe)))))
 
 ;;; ==========================================================================
 ;;; Main validation entry point

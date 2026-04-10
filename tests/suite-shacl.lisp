@@ -359,3 +359,123 @@
     (add-triple g (ex "fido") (rdf "type") (ex "Dog"))
     (let ((report (shacl-validate g)))
       (is-false (getf report :conforms)))))
+
+;;; ==========================================================================
+;;; Phase 3: Logical operators
+;;; ==========================================================================
+
+(test shacl-not
+  "sh:not inverts a shape constraint"
+  (let ((g (make-graph :name "shacl-not")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "status"))
+    ;; Must NOT have datatype integer (i.e. must be a string)
+    (add-triple g (ex "P1") (sh "not") (ex "NotShape"))
+    (add-triple g (ex "NotShape") (sh "datatype") (xsd "integer"))
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "status") 42)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-not-pass
+  "sh:not passes when inner constraint fails"
+  (let ((g (make-graph :name "shacl-not-ok")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "status"))
+    (add-triple g (ex "P1") (sh "not") (ex "NotShape"))
+    (add-triple g (ex "NotShape") (sh "datatype") (xsd "integer"))
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "status") "active")
+    (let ((report (shacl-validate g)))
+      (is-true (getf report :conforms)))))
+
+(test shacl-and
+  "sh:and requires all sub-shapes to pass"
+  (let ((g (make-graph :name "shacl-and")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "age"))
+    ;; AND: must be integer AND >= 0
+    (add-triple g (ex "P1") (sh "and") (ex "And1"))
+    (add-triple g (ex "P1") (sh "and") (ex "And2"))
+    (add-triple g (ex "And1") (sh "datatype") (xsd "integer"))
+    (add-triple g (ex "And2") (sh "minInclusive") 0)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "age") -5)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-or
+  "sh:or requires at least one sub-shape to pass"
+  (let ((g (make-graph :name "shacl-or")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "contact"))
+    ;; OR: must match email pattern OR be an IRI
+    (add-triple g (ex "P1") (sh "or") (ex "Or1"))
+    (add-triple g (ex "P1") (sh "or") (ex "Or2"))
+    (add-triple g (ex "Or1") (sh "pattern") "^.+@.+$")
+    (add-triple g (ex "Or2") (sh "nodeKind") (sh "IRI"))
+    ;; "hello" matches neither
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "contact") "hello")
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-or-pass
+  "sh:or passes when at least one sub-shape matches"
+  (let ((g (make-graph :name "shacl-or-ok")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "contact"))
+    (add-triple g (ex "P1") (sh "or") (ex "Or1"))
+    (add-triple g (ex "P1") (sh "or") (ex "Or2"))
+    (add-triple g (ex "Or1") (sh "pattern") "^.+@.+$")
+    (add-triple g (ex "Or2") (sh "nodeKind") (sh "IRI"))
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "contact") "alice@example.org")
+    (let ((report (shacl-validate g)))
+      (is-true (getf report :conforms)))))
+
+(test shacl-xone
+  "sh:xone requires exactly one sub-shape to pass"
+  (let ((g (make-graph :name "shacl-xone")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "id"))
+    ;; XONE: must be integer XOR match pattern (not both)
+    (add-triple g (ex "P1") (sh "xone") (ex "X1"))
+    (add-triple g (ex "P1") (sh "xone") (ex "X2"))
+    (add-triple g (ex "X1") (sh "datatype") (xsd "integer"))
+    (add-triple g (ex "X2") (sh "datatype") (xsd "string"))
+    ;; 42 is integer — matches X1 only — should pass
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "id") 42)
+    (let ((report (shacl-validate g)))
+      (is-true (getf report :conforms)))))
+
+(test shacl-xone-fail-both
+  "sh:xone fails when more than one sub-shape passes"
+  (let ((g (make-graph :name "shacl-xone-f")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "val"))
+    ;; Both sub-shapes accept integers
+    (add-triple g (ex "P1") (sh "xone") (ex "X1"))
+    (add-triple g (ex "P1") (sh "xone") (ex "X2"))
+    (add-triple g (ex "X1") (sh "datatype") (xsd "integer"))
+    (add-triple g (ex "X2") (sh "minInclusive") 0)
+    ;; 42 matches both — should fail
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "val") 42)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
