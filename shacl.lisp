@@ -793,7 +793,8 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                       (setf all-violations (nconc all-violations violations))))))
               ;; SPARQL constraints
               (dolist (sc sparql-constraints)
-                (let ((violations (check-sparql-constraint g focus sc shape)))
+                (let* ((path-uri (prop-shape-path g shape))
+                       (violations (check-sparql-constraint g focus sc shape :path path-uri)))
                   (setf all-violations (nconc all-violations violations)))))))))
     (list :conforms (null all-violations)
           :results all-violations)))
@@ -825,15 +826,38 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
     (when (cl-ppcre:scan "\\bBIND\\b.*\\bAS\\b.*\\$" upper)
       (error "SHACL-SPARQL: BIND cannot reassign pre-bound variables"))
     ;; Unresolved pre-bound variables other than $this
-    (let ((cleaned (cl-ppcre:regex-replace-all "(?i)\\$this\\b" query-str "")))
+    (let ((cleaned (cl-ppcre:regex-replace-all "(?i)\\$this\\b|\\$PATH\\b" query-str "")))
       (when (cl-ppcre:scan "\\$[A-Za-z]" cleaned)
         (error "SHACL-SPARQL: unresolved pre-bound variable")))))
 
-(defun check-sparql-constraint (g focus-node constraint shape)
+(defun collect-shacl-prefixes (g resource)
+  "Collect sh:prefixes declarations from resource, following owl:imports."
+  (let ((prefix-strs nil)
+        (visited nil))
+    (labels ((collect-from (node)
+               (unless (member node visited :test #'equal)
+                 (push node visited)
+                 ;; Direct sh:declare on this node
+                 (dolist (dt (get-triples g :subject node :predicate (sh-uri "declare")))
+                   (let* ((decl (triple-object dt))
+                          (pfx (prop-shape-value g decl "prefix"))
+                          (ns (prop-shape-value g decl "namespace")))
+                     (when (and pfx ns)
+                       (push (format nil "PREFIX ~A: <~A>" pfx ns) prefix-strs))))
+                 ;; Follow owl:imports
+                 (dolist (it (get-triples g :subject node :predicate "http://www.w3.org/2002/07/owl#imports"))
+                   (collect-from (triple-object it))))))
+      (dolist (pf-triple (get-triples g :subject resource :predicate (sh-uri "prefixes")))
+        (collect-from (triple-object pf-triple))))
+    (if prefix-strs (format nil "~{~A~%~}" (nreverse prefix-strs)) "")))
+
+(defun check-sparql-constraint (g focus-node constraint shape &key path)
   "Execute a sh:sparql constraint against focus-node. Returns list of violations."
   (let* ((select-query (prop-shape-value g constraint "select"))
          (ask-query (prop-shape-value g constraint "ask"))
          (message (or (prop-shape-value g constraint "message") "SPARQL constraint violation"))
+         (prefix-str (let ((p (collect-shacl-prefixes g constraint)))
+                       (if (string= p "") (collect-shacl-prefixes g shape) p)))
          (violations nil))
     (when select-query
       (let ((clean-query (remove #\Return select-query)))
@@ -843,15 +867,15 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
              (select-part (if where-pos (subseq clean-query 0 where-pos) ""))
              (where-part (if where-pos (subseq clean-query where-pos) clean-query))
              (fixed-select (cl-ppcre:regex-replace-all "\\$this" select-part "?SHACLthis"))
-             (fixed-where (cl-ppcre:regex-replace-all
-                           "\\$this"
-                           where-part
-                           (format nil "<~A>" focus-node)))
-             (fixed-query (concatenate 'string fixed-select fixed-where))
-             (results (handler-case (sparql g fixed-query)
-                       (error (e)
-                         (format *error-output* "SPARQL-ERR: ~A~%" e)
-                         nil))))
+             (fixed-where (let ((w (cl-ppcre:regex-replace-all
+                                   "\\$this"
+                                   where-part
+                                   (format nil "<~A>" focus-node))))
+                           (if path
+                               (cl-ppcre:regex-replace-all "\\$PATH" w (format nil "<~A>" path))
+                               w)))
+             (fixed-query (concatenate 'string prefix-str fixed-select fixed-where))
+             (results (sparql g fixed-query)))
         (with-open-file (dbg "/tmp/shacl-sparql-debug.txt" :direction :output :if-exists :supersede)
           (format dbg "~A" fixed-query))
         (when (and results (listp results))
@@ -870,7 +894,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                            "\\$this"
                            clean-ask
                            (format nil "<~A>" focus-node)))
-               (result (sparql g query-str)))
+               (result (sparql g (concatenate 'string prefix-str query-str))))
           (unless result
             (push (make-violation focus-node nil shape
                                   (if (stringp message) message (princ-to-string message)))
