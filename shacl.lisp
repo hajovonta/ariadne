@@ -450,6 +450,13 @@ PATH can be a simple URI or a blank node with path operators."
                                   (format nil "does not conform to ~A" node-shape)
                                   :value val)
                   violations)))))
+    ;; Nested sh:property — validate each value against nested property shapes
+    (let ((nested-props (shape-property-shapes g prop-shape)))
+      (when nested-props
+        (dolist (val values)
+          (dolist (nps nested-props)
+            (let ((nested-violations (check-property-shape g val nps shape)))
+              (setf violations (nconc violations nested-violations)))))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
@@ -462,19 +469,27 @@ PATH can be a simple URI or a blank node with path operators."
 
 (defun value-matches-datatype-p (val datatype)
   "Check if VAL matches the expected XSD datatype."
-  (let ((dt-local (subseq datatype (length *xsd*))))
-    (cond
-      ((equal dt-local "integer")
-       (or (integerp val)
-           (and (stringp val) (every #'digit-char-p val) (> (length val) 0))))
-      ((equal dt-local "decimal")
-       (or (numberp val)
-           (and (stringp val) (cl-ppcre:scan "^-?[0-9]+(\\.[0-9]+)?$" val))))
-      ((equal dt-local "string") (stringp val))
-      ((equal dt-local "boolean")
-       (or (member val '(t nil))
-           (member val '("true" "false") :test #'equal)))
-      (t t))))
+  (cond
+    ((search "integer" datatype)
+     (or (integerp val)
+         (and (stringp val) (every #'digit-char-p val) (> (length val) 0))))
+    ((search "decimal" datatype)
+     (or (numberp val)
+         (and (stringp val) (cl-ppcre:scan "^-?[0-9]+(\\.[0-9]+)?$" val))))
+    ((search "float" datatype) (numberp val))
+    ((search "double" datatype) (numberp val))
+    ((equal datatype (concatenate 'string *xsd* "string"))
+     (and (stringp val) (not (position #\@ val))))
+    ((equal datatype (concatenate 'string *xsd* "boolean"))
+     (or (member val '(t nil))
+         (member val '("true" "false") :test #'equal)))
+    ((equal datatype "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString")
+     (and (stringp val) (position #\@ val)))
+    ((equal datatype "http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML")
+     (and (stringp val) (search "<" val)))
+    ((search "dateTime" datatype) (stringp val))
+    ((search "date" datatype) (stringp val))
+    (t t)))
 
 (defun value-matches-node-kind-p (val node-kind)
   "Check if VAL matches the expected sh:nodeKind."
