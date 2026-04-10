@@ -93,12 +93,17 @@ PATH can be a simple URI or a blank node with path operators."
      (mapcar #'triple-object (get-triples g :subject focus-node :predicate path)))
     ;; Complex path (blank node)
     ((stringp path)
-     (let ((inverse (first (get-triples g :subject path :predicate (sh-uri "inversePath"))))
+     (let ((has-first (first (get-triples g :subject path :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")))
+           (inverse (first (get-triples g :subject path :predicate (sh-uri "inversePath"))))
            (alt-list (first (get-triples g :subject path :predicate (sh-uri "alternativePath"))))
            (zero-more (first (get-triples g :subject path :predicate (sh-uri "zeroOrMorePath"))))
            (one-more (first (get-triples g :subject path :predicate (sh-uri "oneOrMorePath"))))
            (zero-one (first (get-triples g :subject path :predicate (sh-uri "zeroOrOnePath")))))
        (cond
+         ;; Sequence path (RDF list) — check first, takes priority
+         (has-first
+          (let ((steps (rdf-list-to-list g path)))
+            (sequence-path-values g (list focus-node) steps)))
          ;; sh:inversePath
          (inverse
           (let ((pred (triple-object inverse)))
@@ -122,10 +127,6 @@ PATH can be a simple URI or a blank node with path operators."
          (zero-one
           (let ((pred (triple-object zero-one)))
             (cons focus-node (mapcar #'triple-object (get-triples g :subject focus-node :predicate pred)))))
-         ;; Sequence path (RDF list — path is a list head)
-         ((get-triples g :subject path :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
-          (let ((steps (rdf-list-to-list g path)))
-            (sequence-path-values g (list focus-node) steps)))
          ;; Unknown — treat as simple
          (t (mapcar #'triple-object (get-triples g :subject focus-node :predicate path))))))
     (t nil)))
@@ -403,11 +404,28 @@ PATH can be a simple URI or a blank node with path operators."
     ;; sh:qualifiedValueShape
     (let ((qvs (prop-shape-value g prop-shape "qualifiedValueShape")))
       (when qvs
-        (let ((qmin (prop-shape-value g prop-shape "qualifiedMinCount"))
-              (qmax (prop-shape-value g prop-shape "qualifiedMaxCount"))
-              (conforming (count-if (lambda (val)
-                                      (check-value-against-subshape g val qvs))
-                                    values)))
+        (let* ((qmin (prop-shape-value g prop-shape "qualifiedMinCount"))
+               (qmax (prop-shape-value g prop-shape "qualifiedMaxCount"))
+               (disjoint-p (let ((d (prop-shape-value g prop-shape "qualifiedValueShapesDisjoint")))
+                              (or (eq d t) (equal d "true"))))
+               ;; Find sibling qualified shapes (same parent, same path, different qualifiedValueShape)
+               (sibling-qvs (when disjoint-p
+                               (let ((parent shape)
+                                     (siblings nil))
+                                 (dolist (ps (shape-property-shapes g parent))
+                                   (when (and (not (equal ps prop-shape))
+                                              (equal (prop-shape-path g ps) path))
+                                     (let ((s-qvs (prop-shape-value g ps "qualifiedValueShape")))
+                                       (when s-qvs (push s-qvs siblings)))))
+                                 siblings)))
+               (conforming (count-if (lambda (val)
+                                       (and (check-value-against-subshape g val qvs)
+                                            ;; If disjoint, exclude values matching siblings
+                                            (or (not disjoint-p)
+                                                (not (some (lambda (sib)
+                                                             (check-value-against-subshape g val sib))
+                                                           sibling-qvs)))))
+                                     values)))
           (when qmin
             (let ((n (if (numberp qmin) qmin (parse-integer (princ-to-string qmin) :junk-allowed t))))
               (when (and n (< conforming n))
