@@ -28,13 +28,26 @@
 ;;; ==========================================================================
 
 (defun execute-ask (g expr)
-  "ASK returns T if the WHERE pattern has at least one match."
+  "ASK returns T if the WHERE pattern has at least one match (after filters)."
   (let ((body (cdr expr))
-        (where-patterns nil))
+        (where-patterns nil)
+        (filters nil)
+        (binds nil))
     (dolist (clause body)
-      (when (sym-name-equal (first clause) "WHERE")
-        (setf where-patterns (rest clause))))
-    (not (null (match-with-paths g (expand-property-paths g where-patterns))))))
+      (let ((tag (first clause)))
+        (cond
+          ((sym-name-equal tag "WHERE") (setf where-patterns (rest clause)))
+          ((sym-name-equal tag "FILTER") (setf filters (rest clause)))
+          ((sym-name-equal tag "BIND") (push (rest clause) binds)))))
+    (let ((envs (if where-patterns
+                    (match-with-paths g (expand-property-paths g where-patterns))
+                    (list nil))))
+      (dolist (bind (nreverse binds))
+        (setf envs (apply-bind envs (first bind) (second bind))))
+      (when filters
+        (let ((*query-graph* g))
+          (setf envs (apply-filters envs filters))))
+      (not (null envs)))))
 
 ;;; ==========================================================================
 ;;; CONSTRUCT
@@ -266,6 +279,8 @@
                        (and (> (length tag) (length range))
                             (char= #\- (char tag (length range)))
                             (string-equal (subseq tag 0 (length range)) range))))))
+           ((sym-name-equal op "CONCAT")
+            (apply #'concatenate 'string (mapcar #'princ-to-string args)))
            ((sym-name-equal op "REGEX")
             (apply #'ariadne-regex args))
            (t (error "Disallowed filter operation: ~A" op)))))))

@@ -212,7 +212,11 @@
         ;; Build DSL expression
         (let ((expr (list (if distinct-p 'select-distinct 'select)
                           vars
-                          (cons 'where patterns))))
+                          (cons 'where (remove-if (lambda (p) (and (consp p) (eq (car p) 'not-exists))) patterns)))))
+          ;; Extract NOT-EXISTS from patterns
+          (dolist (p patterns)
+            (when (and (consp p) (eq (car p) 'not-exists))
+              (setf expr (append expr (list p)))))
           (dolist (opt optionals)
             (setf expr (append expr (list opt))))
           (dolist (u unions)
@@ -227,13 +231,15 @@
 
 (defun sparql-parse-ask (toks prefixes)
   "Parse ASK query."
-  ;; Expect {
   (when (and toks (string= (car toks) "{"))
     (pop toks))
-  (multiple-value-bind (patterns filters toks-rest)
+  (multiple-value-bind (patterns filters toks-rest optionals unions binds)
       (sparql-parse-body toks prefixes)
-    (declare (ignore filters toks-rest))
-    (list 'ask (cons 'where patterns))))
+    (declare (ignore toks-rest optionals unions))
+    (let ((expr (list 'ask (cons 'where patterns))))
+      (when filters (nconc expr (list (cons 'filter filters))))
+      (dolist (b binds) (nconc expr (list (cons 'bind b))))
+      expr)))
 
 ;;; ==========================================================================
 ;;; FILTER expression parser
@@ -339,9 +345,24 @@
         ;; FILTER
         ((string-equal (car toks) "FILTER")
          (pop toks)
-         (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
-           (setf toks rest)
-           (when expr (push expr filters)))
+         ;; FILTER NOT EXISTS { ... }
+         (if (and toks (stringp (car toks)) (string-equal (car toks) "NOT")
+                  (cdr toks) (stringp (cadr toks)) (string-equal (cadr toks) "EXISTS"))
+             (progn
+               (pop toks) (pop toks)
+               (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+                 (pop toks))
+               (multiple-value-bind (ne-pats ne-filts ne-rest)
+                   (sparql-parse-body toks prefixes)
+                 (declare (ignore ne-filts))
+                 (setf toks ne-rest)
+                 (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+                   (pop toks))
+                 (push (cons 'not-exists ne-pats) patterns)))
+             ;; Regular FILTER expression
+             (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
+               (setf toks rest)
+               (when expr (push expr filters))))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
            (pop toks)))
         ;; BIND (expr AS ?var)

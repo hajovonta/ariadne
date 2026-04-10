@@ -770,6 +770,7 @@ PATH can be a simple URI or a blank node with path operators."
   "Validate graph G against all SHACL shapes defined within it.
 Returns a plist with :conforms (boolean) and :results (list of violations)."
   (let ((shapes (find-shapes g))
+        (components (find-constraint-components g))
         (all-violations nil))
     (dolist (shape shapes)
       (let ((deact (prop-shape-value g shape "deactivated")))
@@ -782,7 +783,6 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
             (dolist (focus targets)
               (let ((node-violations (check-node-constraints g focus shape)))
                 (setf all-violations (nconc all-violations node-violations)))
-              ;; If shape is itself a PropertyShape with sh:path, validate it directly
               (when (and is-prop-shape (prop-shape-path g shape))
                 (let ((violations (check-property-shape g focus shape shape)))
                   (setf all-violations (nconc all-violations violations))))
@@ -795,9 +795,157 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
               (dolist (sc sparql-constraints)
                 (let* ((path-uri (prop-shape-path g shape))
                        (violations (check-sparql-constraint g focus sc shape :path path-uri)))
-                  (setf all-violations (nconc all-violations violations)))))))))
+                  (setf all-violations (nconc all-violations violations))))
+              ;; Custom constraint components on the shape itself
+              (dolist (comp components)
+                (let ((params (component-parameters g comp))
+                      (bindings nil)
+                      (all-present t))
+                  ;; Check if shape has values for all required parameters
+                  (dolist (p params)
+                    (let* ((path-uri (second p))
+                           (optional-p (third p))
+                           (val (when path-uri
+                                  (let ((tr (first (get-triples g :subject shape :predicate path-uri))))
+                                    (when tr (triple-object tr))))))
+                      (if val
+                          (let ((local (let ((h (position #\# path-uri)))
+                                         (if h (subseq path-uri (1+ h))
+                                             (let ((s (position #\/ path-uri :from-end t)))
+                                               (if s (subseq path-uri (1+ s)) path-uri))))))
+                            (push (cons local val) bindings))
+                          (unless optional-p (setf all-present nil)))))
+                  (when all-present
+                    (let ((v (check-component-constraint g focus comp shape
+                                                         :param-bindings bindings)))
+                      (setf all-violations (nconc all-violations v))))))
+              ;; Custom constraint components on property shapes
+              (dolist (ps prop-shapes)
+                (dolist (comp components)
+                  (let ((params (component-parameters g comp))
+                        (bindings nil)
+                        (all-present t))
+                    (dolist (p params)
+                      (let* ((path-uri (second p))
+                             (optional-p (third p))
+                             (val (when path-uri
+                                    (let ((tr (first (get-triples g :subject ps :predicate path-uri))))
+                                      (when tr (triple-object tr))))))
+                        (if val
+                            (let ((local (let ((h (position #\# path-uri)))
+                                           (if h (subseq path-uri (1+ h))
+                                               (let ((s (position #\/ path-uri :from-end t)))
+                                                 (if s (subseq path-uri (1+ s)) path-uri))))))
+                              (push (cons local val) bindings))
+                            (unless optional-p (setf all-present nil)))))
+                    (when all-present
+                      (let* ((ps-path (prop-shape-path g ps))
+                             (v (check-component-constraint g focus comp ps
+                                                            :path ps-path
+                                                            :param-bindings bindings)))
+                        (setf all-violations (nconc all-violations v))))))))))))
     (list :conforms (null all-violations)
           :results all-violations)))
+
+;;; ==========================================================================
+;;; Custom constraint components
+;;; ==========================================================================
+
+(defun find-constraint-components (g)
+  "Find all SHACL constraint components (resources with sh:parameter)."
+  (remove-duplicates
+   (mapcar #'triple-subject (get-triples g :predicate (sh-uri "parameter")))
+   :test #'equal))
+
+(defun component-parameters (g component)
+  "Return list of (param-node path-uri optional-p) for a component."
+  (mapcar (lambda (tr)
+            (let* ((param (triple-object tr))
+                   (path (prop-shape-path g param))
+                   (opt (prop-shape-value g param "optional")))
+              (list param path (or (eq opt t) (equal opt "true")))))
+          (get-triples g :subject component :predicate (sh-uri "parameter"))))
+
+(defun component-validator (g component kind)
+  "Get validator node for component. KIND is :node, :property, or :any."
+  (let ((predicates (case kind
+                      (:node (list "nodeValidator" "validator"))
+                      (:property (list "propertyValidator" "validator"))
+                      (t (list "validator" "nodeValidator" "propertyValidator")))))
+    (dolist (pred predicates)
+      (let ((tr (first (get-triples g :subject component :predicate (sh-uri pred)))))
+        (when tr (return-from component-validator (triple-object tr)))))))
+
+(defun check-component-constraint (g focus-node component shape &key path param-bindings)
+  "Check a custom constraint component against a focus node."
+  (let* ((kind (if path :property :node))
+         (validator (component-validator g component kind))
+         (violations nil))
+    (when validator
+      (let ((select-q (prop-shape-value g validator "select"))
+            (ask-q (prop-shape-value g validator "ask"))
+            (message (or (prop-shape-value g validator "message")
+                         "Custom constraint violation")))
+        ;; Collect prefixes from validator
+        (let ((prefix-str (collect-shacl-prefixes g validator)))
+          (flet ((substitute-params (q)
+                   (let* ((result (remove #\Return q))
+                          (wp (search "WHERE" (string-upcase result)))
+                          (sel-part (if wp (subseq result 0 wp) ""))
+                          (whr-part (if wp (subseq result wp) result)))
+                     ;; Replace $this: dummy var in SELECT, URI in WHERE
+                     (setf sel-part (cl-ppcre:regex-replace-all "\\$this" sel-part "?SHACLthis"))
+                     (setf whr-part (cl-ppcre:regex-replace-all
+                                     "\\$this" whr-part (format nil "<~A>" focus-node)))
+                     (setf result (concatenate 'string sel-part whr-part))
+                     ;; Replace $PATH
+                     (when path
+                       (setf result (cl-ppcre:regex-replace-all
+                                     "\\$PATH" result (format nil "<~A>" path))))
+                     ;; Replace parameter variables ($name and ?name)
+                     (dolist (pb param-bindings)
+                       (let* ((name (car pb))
+                              (val (cdr pb))
+                              (replacement (if (stringp val)
+                                               (format nil "\"~A\"" val)
+                                               (princ-to-string val))))
+                         (setf result (cl-ppcre:regex-replace-all
+                                       (format nil "\\$~A\\b" name) result replacement))
+                         (setf result (cl-ppcre:regex-replace-all
+                                       (format nil "\\?~A\\b" name) result replacement))))
+                     (concatenate 'string prefix-str result))))
+            (when select-q
+              (let* ((q (substitute-params select-q))
+                     (results (handler-case (sparql g q) (error () nil))))
+                (when (and results (listp results))
+                  (dolist (row results)
+                    (let ((row-list (if (listp row) row (list row))))
+                      (push (make-violation focus-node
+                                            (when path path)
+                                            shape message
+                                            :value (first row-list))
+                            violations))))))
+            (when ask-q
+              (let* ((values-to-check
+                       (if path
+                           (mapcar #'triple-object
+                                   (get-triples g :subject focus-node :predicate path))
+                           (list focus-node)))
+                     (q-template (substitute-params ask-q)))
+                (dolist (val values-to-check)
+                  (let* ((q (cl-ppcre:regex-replace-all
+                             "\\?value" q-template
+                             (if (stringp val)
+                                 (format nil "\"~A\"" val)
+                                 (format nil "<~A>" val))))
+                         (result (handler-case (sparql g q) (error () t))))
+                    (unless result
+                      (push (make-violation focus-node
+                                            (when path path)
+                                            shape message
+                                            :value val)
+                            violations))))))))))
+    violations))
 
 ;;; ==========================================================================
 ;;; SPARQL-based constraints
