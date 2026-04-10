@@ -400,6 +400,26 @@ PATH can be a simple URI or a blank node with path operators."
                                               :value val)
                               violations)
                         (push lang seen))))))))))
+    ;; sh:qualifiedValueShape
+    (let ((qvs (prop-shape-value g prop-shape "qualifiedValueShape")))
+      (when qvs
+        (let ((qmin (prop-shape-value g prop-shape "qualifiedMinCount"))
+              (qmax (prop-shape-value g prop-shape "qualifiedMaxCount"))
+              (conforming (count-if (lambda (val)
+                                      (check-value-against-subshape g val qvs))
+                                    values)))
+          (when qmin
+            (let ((n (if (numberp qmin) qmin (parse-integer (princ-to-string qmin) :junk-allowed t))))
+              (when (and n (< conforming n))
+                (push (make-violation focus-node path shape
+                                      (format nil "qualifiedMinCount ~A but ~A conform" n conforming))
+                      violations))))
+          (when qmax
+            (let ((n (if (numberp qmax) qmax (parse-integer (princ-to-string qmax) :junk-allowed t))))
+              (when (and n (> conforming n))
+                (push (make-violation focus-node path shape
+                                      (format nil "qualifiedMaxCount ~A but ~A conform" n conforming))
+                      violations)))))))
     ;; sh:languageIn
     (let ((lang-list (prop-shape-list-value g prop-shape "languageIn")))
       (when lang-list
