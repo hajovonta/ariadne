@@ -525,6 +525,57 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                    (push (subseq data start pos) tokens)))))))))
     (nreverse tokens)))
 
+(defun parse-bnode-contents (g toks prefixes anon-counter bnode)
+  "Parse predicate-object pairs inside a blank node [...]. Returns (toks anon-counter)."
+  (loop while (and toks (not (string= "]" (car toks)))) do
+    (let ((bp (turtle-resolve (pop toks) prefixes))
+          (bo nil))
+      (cond
+        ;; Object is a collection
+        ((and toks (string= "(" (car toks)))
+         (pop toks)
+         (let ((r (parse-collection g toks prefixes anon-counter)))
+           (setf toks (first r) anon-counter (second r) bo (third r))))
+        ;; Object is a blank node
+        ((and toks (string= "[" (car toks)))
+         (pop toks)
+         (let ((inner (format nil "_:anon~A" (incf anon-counter))))
+           (setf bo inner)
+           (if (and toks (string= "]" (car toks)))
+               (pop toks)
+               (progn
+                 (multiple-value-bind (new-toks new-ac)
+                     (parse-bnode-contents g toks prefixes anon-counter inner)
+                   (setf toks new-toks anon-counter new-ac))
+                 (when (and toks (string= "]" (car toks))) (pop toks))))))
+        ;; Simple object
+        (toks (setf bo (turtle-resolve (pop toks) prefixes))))
+      (when (and bp bo) (add-triple g bnode bp bo))
+      ;; Handle , for multiple objects
+      (loop while (and toks (string= "," (car toks))) do
+        (pop toks)
+        (let ((extra nil))
+          (cond
+            ((and toks (string= "(" (car toks)))
+             (pop toks)
+             (let ((r (parse-collection g toks prefixes anon-counter)))
+               (setf toks (first r) anon-counter (second r) extra (third r))))
+            ((and toks (string= "[" (car toks)))
+             (pop toks)
+             (let ((inner (format nil "_:anon~A" (incf anon-counter))))
+               (setf extra inner)
+               (if (and toks (string= "]" (car toks)))
+                   (pop toks)
+                   (progn
+                     (multiple-value-bind (new-toks new-ac)
+                         (parse-bnode-contents g toks prefixes anon-counter inner)
+                       (setf toks new-toks anon-counter new-ac))
+                     (when (and toks (string= "]" (car toks))) (pop toks))))))
+            (toks (setf extra (turtle-resolve (pop toks) prefixes))))
+          (when (and bp extra) (add-triple g bnode bp extra))))
+      (when (and toks (string= ";" (car toks))) (pop toks))))
+  (values toks anon-counter))
+
 (defun parse-collection (g toks prefixes anon-counter)
   "Parse an RDF collection from token stream (after opening paren consumed).
 Returns (remaining-toks anon-counter list-head-node)."
@@ -544,38 +595,17 @@ Returns (remaining-toks anon-counter list-head-node)."
            (pop toks)
            (let ((result (parse-collection g toks prefixes anon-counter)))
              (setf toks (first result) anon-counter (second result) item (third result))))
-          ;; Blank node property list inside collection
+          ;; Blank node property list
           ((string= "[" (car toks))
            (pop toks)
            (let ((bnode (format nil "_:anon~A" (incf anon-counter))))
              (setf item bnode)
              (if (and toks (string= "]" (car toks)))
-                 (pop toks) ; empty []
-                 ;; Non-empty: parse predicate-object pairs
-                 (loop while (and toks (not (string= "]" (car toks)))) do
-                   (let ((bp (turtle-resolve (pop toks) prefixes))
-                         (bo nil))
-                     (cond
-                       ((and toks (string= "(" (car toks)))
-                        (pop toks)
-                        (let ((r (parse-collection g toks prefixes anon-counter)))
-                          (setf toks (first r) anon-counter (second r) bo (third r))))
-                       ((and toks (string= "[" (car toks)))
-                        (pop toks)
-                        (let ((inner (format nil "_:anon~A" (incf anon-counter))))
-                          (setf bo inner)
-                          (if (and toks (string= "]" (car toks)))
-                              (pop toks)
-                              (progn
-                                (loop while (and toks (not (string= "]" (car toks)))) do
-                                  (let ((ip (turtle-resolve (pop toks) prefixes))
-                                        (io (turtle-resolve (pop toks) prefixes)))
-                                    (add-triple g inner ip io)
-                                    (when (and toks (string= ";" (car toks))) (pop toks))))
-                                (when (and toks (string= "]" (car toks))) (pop toks))))))
-                       (toks (setf bo (turtle-resolve (pop toks) prefixes))))
-                     (when (and bp bo) (add-triple g bnode bp bo))
-                     (when (and toks (string= ";" (car toks))) (pop toks)))
+                 (pop toks)
+                 (progn
+                   (multiple-value-bind (new-toks new-ac)
+                       (parse-bnode-contents g toks prefixes anon-counter bnode)
+                     (setf toks new-toks anon-counter new-ac))
                    (when (and toks (string= "]" (car toks))) (pop toks))))))
           ;; Simple value
           (t (setf item (turtle-resolve (pop toks) prefixes))))
