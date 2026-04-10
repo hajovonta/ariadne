@@ -45,11 +45,22 @@
                        do (incf pos))
                  (push (intern (string-upcase (subseq str start pos))) tokens)))
               ;; URI <...>
+              ;; URI <...> or comparison operator <
               ((char= ch #\<)
-               (let ((end (position #\> str :start (1+ pos))))
-                 (when end
-                   (push (subseq str (1+ pos) end) tokens)
-                   (setf pos (1+ end)))))
+               (if (and (< (1+ pos) len)
+                        (or (alpha-char-p (char str (1+ pos)))
+                            (char= #\/ (char str (1+ pos)))))
+                   ;; URI
+                   (let ((end (position #\> str :start (1+ pos))))
+                     (when end
+                       (push (subseq str (1+ pos) end) tokens)
+                       (setf pos (1+ end))))
+                   ;; Comparison operator
+                   (let ((start pos))
+                     (incf pos)
+                     (when (and (< pos len) (char= #\= (char str pos)))
+                       (incf pos))
+                     (push (intern (subseq str start pos)) tokens))))
               ;; String "..."
               ((char= ch #\")
                (let ((start (1+ pos)))
@@ -69,13 +80,26 @@
                                       (char= #\. (char str pos))))
                        do (incf pos))
                  (push (read-from-string (subseq str start pos)) tokens)))
-              ;; Comparison operators
-              ((member ch '(#\> #\< #\= #\!))
+              ;; Comparison operators (>, >=, =, !=, !)
+              ((member ch '(#\> #\= #\!))
                (let ((start pos))
                  (incf pos)
                  (when (and (< pos len) (char= #\= (char str pos)))
                    (incf pos))
                  (push (intern (subseq str start pos)) tokens)))
+              ((char= ch #\&)
+               (incf pos)
+               (when (and (< pos len) (char= #\& (char str pos)))
+                 (incf pos))
+               (push "&&" tokens))
+              ((char= ch #\|)
+               (incf pos)
+               (when (and (< pos len) (char= #\| (char str pos)))
+                 (incf pos))
+               (push "||" tokens))
+              ((char= ch #\,)
+               (push "," tokens)
+               (incf pos))
               ;; Keyword or prefixed name
               (t
                (let ((start pos))
@@ -211,6 +235,98 @@
     (declare (ignore filters toks-rest))
     (list 'ask (cons 'where patterns))))
 
+;;; ==========================================================================
+;;; FILTER expression parser
+;;; ==========================================================================
+
+(defun parse-sparql-filter-expr (toks prefixes)
+  "Parse a FILTER expression. Returns (values expr remaining-toks)."
+  ;; Consume opening paren if present
+  (when (and toks (string= (car toks) "("))
+    (pop toks))
+  (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
+    ;; Consume closing paren if present
+    (when (and rest (stringp (car rest)) (string= (car rest) ")"))
+      (pop rest))
+    (values expr rest)))
+
+(defun parse-or-expr (toks prefixes)
+  "Parse OR expression: expr || expr"
+  (multiple-value-bind (left rest) (parse-and-expr toks prefixes)
+    (loop while (and rest (stringp (car rest)) (string= (car rest) "||")) do
+      (pop rest)
+      (multiple-value-bind (right rest2) (parse-and-expr rest prefixes)
+        (setf left (list 'or left right))
+        (setf rest rest2)))
+    (values left rest)))
+
+(defun parse-and-expr (toks prefixes)
+  "Parse AND expression: expr && expr"
+  (multiple-value-bind (left rest) (parse-compare-expr toks prefixes)
+    (loop while (and rest (stringp (car rest)) (string= (car rest) "&&")) do
+      (pop rest)
+      (multiple-value-bind (right rest2) (parse-compare-expr rest prefixes)
+        (setf left (list 'and left right))
+        (setf rest rest2)))
+    (values left rest)))
+
+(defun parse-compare-expr (toks prefixes)
+  "Parse comparison: expr op expr"
+  (multiple-value-bind (left rest) (parse-unary-expr toks prefixes)
+    (when (and rest (symbolp (car rest))
+                (member (car rest) '(= != < > <= >=) :test #'eq))
+      (let ((op (pop rest)))
+        (multiple-value-bind (right rest2) (parse-unary-expr rest prefixes)
+          (setf left (list op left right))
+          (setf rest rest2))))
+    (values left rest)))
+
+(defun parse-unary-expr (toks prefixes)
+  "Parse unary: !expr or primary"
+  (if (and toks (stringp (car toks)) (string= (car toks) "!"))
+      (progn
+        (pop toks)
+        (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
+          (values (list 'not expr) rest)))
+      (parse-primary-expr toks prefixes)))
+
+(defun parse-primary-expr (toks prefixes)
+  "Parse primary: (expr), function(args), variable, literal, URI, true, false"
+  (cond
+    ((null toks) (values nil nil))
+    ;; Parenthesized expression
+    ((string= (car toks) "(")
+     (pop toks)
+     (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
+       (when (and rest (stringp (car rest)) (string= (car rest) ")"))
+         (pop rest))
+       (values expr rest)))
+    ;; Boolean constants
+    ((and (stringp (car toks)) (string-equal (car toks) "true"))
+     (pop toks) (values t toks))
+    ((and (stringp (car toks)) (string-equal (car toks) "false"))
+     (pop toks) (values nil toks))
+    ;; Function call: name(args)
+    ((and (stringp (car toks))
+          (cdr toks)
+          (stringp (cadr toks))
+          (string= (cadr toks) "(")
+          (alpha-char-p (char (car toks) 0)))
+     (let ((fname (string-upcase (pop toks))))
+       (pop toks) ; consume (
+       (let ((args nil))
+         (loop until (or (null toks) (string= (car toks) ")")) do
+           (multiple-value-bind (arg rest) (parse-or-expr toks prefixes)
+             (push arg args)
+             (setf toks rest))
+           (when (and toks (stringp (car toks)) (string= (car toks) ","))
+             (pop toks)))
+         (when (and toks (string= (car toks) ")"))
+           (pop toks))
+         (values (cons (intern fname) (nreverse args)) toks))))
+    ;; Regular term (variable, URI, literal)
+    (t (values (sparql-resolve-term (pop toks) prefixes) toks))))
+
 (defun sparql-parse-body (toks prefixes)
   "Parse the body of a WHERE clause. Returns (values patterns filters remaining-toks optionals unions)."
   (let ((patterns nil)
@@ -223,14 +339,9 @@
         ;; FILTER
         ((string-equal (car toks) "FILTER")
          (pop toks)
-         (when (and toks (string= (car toks) "("))
-           (pop toks))
-         (let ((left (sparql-resolve-term (pop toks) prefixes))
-               (op (intern (string-upcase (princ-to-string (pop toks)))))
-               (right (sparql-resolve-term (pop toks) prefixes)))
-           (push (list op left right) filters))
-         (when (and toks (string= (car toks) ")"))
-           (pop toks)))
+         (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
+           (setf toks rest)
+           (when expr (push expr filters))))
         ;; BIND (?var AS expr)
         ((string-equal (car toks) "BIND")
          (pop toks)

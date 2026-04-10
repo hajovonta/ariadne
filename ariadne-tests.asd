@@ -68,6 +68,7 @@
                              (:file "suite-disk-backed")
                              (:file "suite-partitioned-graph")
                              (:file "suite-shacl")
-                             (:file "suite-shacl-w3c"))))
+                             (:file "suite-shacl-w3c")
+                             (:file "suite-sparql-filter-extended"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

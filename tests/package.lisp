@@ -310,6 +310,10 @@
   :description "W3C SHACL conformance tests"
   :in :ariadne)
 
+(def-suite :sparql-filter-extended
+  :description "Extended SPARQL FILTER: functions, boolean ops, URI comparison"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

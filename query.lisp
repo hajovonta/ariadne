@@ -226,16 +226,55 @@
     (t (let ((op (first expr))
              (args (mapcar #'safe-eval (rest expr))))
          (cond
-           ((member op '(< > <= >= = /= + - * /
+           ((member op '(+ - * /
                          equal equalp eql string= string-equal
                          search string< string>
                          numberp stringp symbolp integerp floatp
                          concatenate))
             (apply (symbol-function op) args))
+           ((eq op '=) (equal (first args) (second args)))
+           ((eq op '/=) (not (equal (first args) (second args))))
+           ((eq op '<) (shacl-safe-compare #'< #'string< (first args) (second args)))
+           ((eq op '>) (shacl-safe-compare #'> #'string> (first args) (second args)))
+           ((eq op '<=) (shacl-safe-compare #'<= #'string<= (first args) (second args)))
+           ((eq op '>=) (shacl-safe-compare #'>= #'string>= (first args) (second args)))
            ((eq op 'not) (not (first args)))
+           ((eq op 'and) (and (first args) (second args)))
+           ((eq op 'or) (or (first args) (second args)))
+           ((sym-name-equal op "BOUND") (not (null (first args))))
+           ((sym-name-equal op "ISLITERAL")
+            (let ((v (first args)))
+              (or (stringp v) (numberp v) (member v '(t nil)))))
+           ((sym-name-equal op "ISIRI")
+            (let ((v (first args)))
+              (and (stringp v) (search "://" v))))
+           ((sym-name-equal op "ISBLANK")
+            (let ((v (first args)))
+              (and (stringp v) (>= (length v) 2)
+                   (char= #\_ (char v 0)) (char= #\: (char v 1)))))
+           ((sym-name-equal op "LANG")
+            (let ((v (first args)))
+              (if (and (stringp v) (position #\@ v))
+                  (subseq v (1+ (position #\@ v)))
+                  "")))
+           ((sym-name-equal op "LANGMATCHES")
+            (let ((tag (first args))
+                  (range (second args)))
+              (and (stringp tag) (stringp range)
+                   (or (string= range "*")
+                       (string-equal tag range)
+                       (and (> (length tag) (length range))
+                            (char= #\- (char tag (length range)))
+                            (string-equal (subseq tag 0 (length range)) range))))))
            ((sym-name-equal op "REGEX")
             (apply #'ariadne-regex args))
            (t (error "Disallowed filter operation: ~A" op)))))))
+
+(defun shacl-safe-compare (num-fn str-fn a b)
+  (cond
+    ((and (numberp a) (numberp b)) (funcall num-fn a b))
+    ((and (stringp a) (stringp b)) (funcall str-fn a b))
+    (t nil)))
 
 (defun ariadne-regex (string pattern &optional mode)
   "Regex match using cl-ppcre."
