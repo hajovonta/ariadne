@@ -7,7 +7,8 @@
   :version "0.1.0"
   :depends-on (#:cl-ppcre
                #:bordeaux-threads
-               #:hunchentoot)
+               #:hunchentoot
+               #:drakma)
   :serial t
   :components ((:file "package")
                (:file "ariadne")
@@ -33,4 +34,5 @@
                (:file "rdf-xml")
                (:file "profiling")
                (:file "txlog")
-               (:file "text-search")))
+               (:file "text-search")
+               (:file "events")))

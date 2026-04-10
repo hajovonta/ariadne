@@ -157,4 +157,9 @@
    #:graph-checkpoint
    #:graph-restore
    #:graph-versions
-   #:query-at-version))
+   #:query-at-version
+   ;; Graph events / webhooks
+   #:on-graph-event
+   #:remove-graph-event
+   #:graph-events
+   #:event-to-json))

@@ -261,3 +261,12 @@ Complete function reference for the Ariadne graph database. Click section header
 | [`graph-restore`](api/graph-versioning.md#graph-restore) | `(g name)` | Restore to version |
 | [`graph-versions`](api/graph-versioning.md#graph-versions) | `(g)` | List all versions |
 | [`query-at-version`](api/graph-versioning.md#query-at-version) | `(g name expr)` | Query historical state |
+
+## [Graph Events & Webhooks](api/graph-events.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`on-graph-event`](api/graph-events.md#on-graph-event) | `(g name &key event callback url)` | Register event hook |
+| [`remove-graph-event`](api/graph-events.md#remove-graph-event) | `(g name)` | Unregister hook |
+| [`graph-events`](api/graph-events.md#graph-events) | `(g)` | List registered hooks |
+| [`event-to-json`](api/graph-events.md#event-to-json) | `(evt)` | Serialize event to JSON |

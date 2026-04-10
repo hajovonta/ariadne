@@ -286,6 +286,10 @@
   :description "Graph versioning and temporal queries"
   :in :ariadne)
 
+(def-suite :graph-events
+  :description "Graph events and webhooks"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

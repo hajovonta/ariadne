@@ -32,3 +32,4 @@ Detailed API documentation for each section. Each section has its own file in `d
 - [x] [Prefix Registry](api/prefix-registry.md)
 - [x] [Full-Text Search](api/full-text-search.md)
 - [x] [Graph Versioning](api/graph-versioning.md)
+- [x] [Graph Events & Webhooks](api/graph-events.md)
