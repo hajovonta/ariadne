@@ -4,36 +4,54 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 
 ## Key Features
 
-- **Triple Store** — Core storage with compact flat indexes for O(1) lookups. Scales to 3.6M triples.
-- **SPARQL-like Query DSL** — Declarative pattern matching with logic variables: `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, subqueries
-- **Aggregation** — `GROUP BY` with `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP_CONCAT`, `SAMPLE`
-- **Property Paths** — Transitive closure (`+`), Kleene star (`*`), zero-or-one (`?`), inverse (`inv`, `inv+`), alternative (`alt`), bounded (`range`), sequence (`seq`)
-- **Gremlin-style Traversal** — Imperative graph walking with chainable steps: `out`, `in`, `both`, `has`, `values`
-- **Property Graph Layer** — Nodes with labels and properties, typed edges with properties, neighbor queries
-- **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
-- **RDF Import/Export** — N-Triples, Turtle (W3C conformant: 209/209 positive, 82/82 negative), N-Quads
-- **Visualization** — Graphviz rendering (dot/neato/fdp/circo/twopi/sfdp), describe-graph summary
-- **Graph Operations** — Merge, diff, copy graphs. N-Quads export.
-- **Transactions** — Snapshot-based rollback with `with-transaction` macro
-- **Persistence** — Save/load graphs to disk with full type preservation
-- **Graph Analytics** — PageRank, connected components, degree centrality, clustering coefficient
-- **Reactive Queries** — Triggers that fire callbacks when matching triples are added
-- **Named Graphs** — Quad store with GRAPH clause for multi-graph queries
-- **SPARQL String Parser** — Execute standard SPARQL query strings directly
+### Storage & Indexing
+- **Triple Store** — Compact flat indexes (7 hash tables) for O(1) lookups. Tested to 3.6M triples.
 - **Thread Safety** — Lock-based concurrent read/write access (bordeaux-threads)
+- **Disk-Backed Persistence** — Append-only txlog backing store with auto-persist on every mutation
+- **Graph Partitioning** — Hash-based subject partitioning across N stores with fan-out queries
+- **Named Graphs** — Quad store with GRAPH clause for multi-graph queries
+
+### Query & Pattern Matching
+- **SPARQL-like Query DSL** — `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, subqueries
+- **SPARQL String Parser** — Execute standard SPARQL query strings directly, including `DESCRIBE`
+- **SPARQL UPDATE** — `INSERT DATA`, `DELETE DATA`, `DELETE WHERE` via string parser and HTTP endpoint
+- **SPARQL SERVICE** — Federated queries to remote SPARQL endpoints via Drakma
+- **Aggregation** — `GROUP BY` with `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `GROUP_CONCAT`, `SAMPLE`
+- **Property Paths** — Transitive (`+`), Kleene star (`*`), zero-or-one (`?`), inverse, alternative, bounded, sequence
+- **Full-Text Search** — Inverted index over literals with case-insensitive multi-word AND matching
+
+### Graph Models
+- **Property Graph Layer** — Nodes with labels and properties, typed edges, neighbor queries
+- **Gremlin-style Traversal** — Chainable steps: `out`, `in`, `both`, `has`, `values`, path tracking, shortest path
+
+### Reasoning & Validation
+- **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
+- **OWL/RDFS Reasoning** — subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
+- **Schema Validation** — Class/property type and cardinality constraints
+- **Duplicate Detection** — Jaccard bigram similarity for near-duplicate entities
+
+### Import & Export
+- **RDF Import** — N-Triples, Turtle (W3C conformant: 209/209 positive, 82/82 negative), N-Quads, RDF/XML, JSON-LD
+- **RDF Export** — N-Triples, Turtle, N-Quads, JSON-LD, Cytoscape JSON, DOT/Graphviz
 - **Streaming Import** — Line-by-line import for large files (~100K triples/sec)
-- **OWL/RDFS Reasoning** — Automatic entailment: subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
-- **Schema Validation** — Define expected classes/properties, validate types and cardinality constraints
-- **Duplicate Detection** — Find near-duplicate entities via fuzzy string matching
-- **Web Visualization** — Interactive Cytoscape.js graph explorer with predicate filtering, search, layout switching
-- **SPARQL Endpoint** — HTTP server accepting SPARQL queries at `/sparql?query=...`
-- **Export Formats** — N-Triples, Turtle, N-Quads, JSON-LD, Cytoscape JSON, DOT/Graphviz
-- **Import Formats** — N-Triples, Turtle, N-Quads, RDF/XML, JSON-LD
-- **SPARQL UPDATE** — INSERT DATA, DELETE DATA via string parser and HTTP endpoint
+- **Blank Node Skolemization** — Replace blank nodes with stable `/.well-known/genid/` URIs
+
+### Visualization & Web
+- **Graphviz Rendering** — dot/neato/fdp/circo/twopi/sfdp engines with predicate filtering
+- **Web Explorer** — Interactive Cytoscape.js graph viewer with predicate filtering, search, layout switching
+- **SPARQL Endpoint** — HTTP server at `/sparql` and `/update` (Hunchentoot)
+
+### Operations & Durability
+- **Transactions** — Snapshot-based rollback with `with-transaction` macro
+- **Persistence** — Save/load graphs with full type preservation
 - **Transaction Log** — Append-only log for incremental persistence and crash recovery
-- **Backup/Restore** — Timestamped versioned snapshots with restore-latest
+- **Backup/Restore** — Timestamped versioned snapshots
+- **Graph Versioning** — Named checkpoints with temporal queries via `query-at-version`
+- **Graph Events/Webhooks** — Callbacks and HTTP POST notifications on graph mutations (Drakma)
 - **Query Pagination** — Cursor-based iteration over large result sets
-- **Profiling** — Query timing and graph statistics
+- **Profiling** — Query timing, graph statistics, memory usage reporting
+- **Graph Analytics** — PageRank, connected components, degree centrality, clustering coefficient
+- **Prefix Registry** — Register short prefixes for use across all operations
 
 ## Quick Start
 
