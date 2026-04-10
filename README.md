@@ -28,7 +28,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
 - **OWL/RDFS Reasoning** — subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
 - **Schema Validation** — Class/property type and cardinality constraints
-- **SHACL Validation** — W3C Shapes Constraint Language, 95/95 core + 23/23 SPARQL tests (100% conformance)
+- **SHACL Validation** — W3C Shapes Constraint Language, 98/98 core + 23/23 SPARQL tests (100% conformance)
 - **Duplicate Detection** — Jaccard bigram similarity for near-duplicate entities
 
 ### Import & Export
@@ -188,7 +188,7 @@ git clone <repository-url> ariadne
 | Standard | Tests | Result |
 |----------|-------|--------|
 | Turtle (syntax) | 209/209 positive, 82/82 negative | 100% |
-| SHACL Core | 95/95 | 100% |
+| SHACL Core | 98/98 | 100% |
 | SHACL-SPARQL | 23/23 | 100% |
 
 ## Architecture
