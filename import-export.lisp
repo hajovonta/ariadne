@@ -108,6 +108,8 @@
   "Convert a string value to the appropriate CL type based on XSD type URI."
   (handler-case
       (cond
+        ((search "byte" type-uri) value)  ; keep as string to preserve type info
+        ((search "short" type-uri) value)
         ((search "integer" type-uri) (parse-integer value))
         ((search "decimal" type-uri) (read-from-string value))
         ((search "float" type-uri) (read-from-string value))
@@ -296,12 +298,12 @@
 ;;; Turtle Import
 ;;; ==========================================================================
 
-(defun import-turtle (g data)
+(defun import-turtle (g data &key (bnode-counter-start 0))
   "Import Turtle format string into graph G.
 Tokenizes the entire input then processes token stream."
   (let ((prefixes (make-hash-table :test 'equal))
         (tokens (turtle-tokenize data)))
-    (turtle-parse-tokens g tokens prefixes)))
+    (turtle-parse-tokens g tokens prefixes bnode-counter-start)))
 
 (defun turtle-tokenize (data)
   "Tokenize Turtle input into a flat list of tokens.
@@ -622,13 +624,13 @@ Returns (remaining-toks anon-counter list-head-node)."
     (when (and toks (string= ")" (car toks))) (pop toks))
     (list toks anon-counter head)))
 
-(defun turtle-parse-tokens (g tokens prefixes)
+(defun turtle-parse-tokens (g tokens prefixes &optional (anon-start 0))
   "Parse a token stream into triples. Uses a context stack for nested blank nodes."
   (let ((toks tokens)
         (subject nil)
         (predicate nil)
         (base-uri nil)
-        (anon-counter 0)
+        (anon-counter anon-start)
         (had-predicate nil)
         (expect-punct nil)
         (bracket-depth 0)

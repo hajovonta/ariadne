@@ -16,7 +16,7 @@
                    (let ((buf (make-string (file-length s))))
                      (read-sequence buf s)
                      buf))))
-    (import-turtle g content)
+    (import-turtle g content :bnode-counter-start 50000)
     g))
 
 (defun extract-expected-conforms (g)
@@ -49,7 +49,7 @@
                 (let ((content (with-open-file (s ref-path :direction :input :external-format :utf-8)
                                  (let ((buf (make-string (file-length s))))
                                    (read-sequence buf s) buf))))
-                  (handler-case (import-turtle g content)
+                  (handler-case (import-turtle g content :bnode-counter-start 10000)
                     (error () nil)))))))
         (let* ((expected (extract-expected-conforms g))
                (report (shacl-validate g))
