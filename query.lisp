@@ -413,12 +413,14 @@
 ;;; before calling match-patterns, and applying path patterns after.
 
 (defun match-with-paths (g patterns)
-  "Match patterns, handling property paths and subqueries."
+  "Match patterns, handling property paths, subqueries, and SERVICE."
   (let ((simple nil)
         (path-pats nil)
-        (subquery-pats nil))
+        (subquery-pats nil)
+        (service-pats nil))
     (dolist (p patterns)
       (cond
+        ((service-pattern-p p) (push p service-pats))
         ((path-pattern-p p) (push p path-pats))
         ((subquery-pattern-p p) (push p subquery-pats))
         (t (push p simple))))
@@ -432,6 +434,8 @@
         (setf envs (apply-path-pattern g envs pp)))
       (dolist (sq (nreverse subquery-pats))
         (setf envs (apply-subquery-pattern g envs sq)))
+      (dolist (sp (nreverse service-pats))
+        (setf envs (apply-service-pattern envs sp)))
       envs)))
 
 (defun optimize-pattern-order (patterns)
@@ -760,3 +764,97 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
   "Return T if all results have been consumed."
   (>= (query-cursor-offset cursor)
       (length (query-cursor-results cursor))))
+
+;;; ==========================================================================
+;;; SPARQL SERVICE (federated queries)
+;;; ==========================================================================
+
+(defun service-pattern-p (p)
+  "Return T if P is a SERVICE pattern."
+  (and (listp p) (eq (first p) 'service)))
+
+(defun patterns-to-sparql (patterns vars)
+  "Serialize triple patterns and variable list into a SPARQL SELECT string."
+  (format nil "SELECT ~{~A ~}WHERE { ~{~A~} }"
+          (mapcar (lambda (v) (format nil "?~A" (string-downcase (subseq (symbol-name v) 1))))
+                  vars)
+          (mapcar (lambda (pat)
+                    (format nil "~A ~A ~A . "
+                            (term-to-sparql (first pat))
+                            (term-to-sparql (second pat))
+                            (term-to-sparql (third pat))))
+                  patterns)))
+
+(defun term-to-sparql (term)
+  "Convert a query term to SPARQL syntax."
+  (cond
+    ((and (symbolp term) (char= #\? (char (symbol-name term) 0)))
+     (format nil "?~A" (string-downcase (subseq (symbol-name term) 1))))
+    ((stringp term) (format nil "<~A>" term))
+    (t (format nil "~A" term))))
+
+(defun query-remote-sparql (url sparql-string)
+  "Send a SPARQL query to a remote endpoint, return list of binding alists."
+  (multiple-value-bind (body status)
+      (drakma:http-request url
+                           :method :get
+                           :parameters (list (cons "query" sparql-string))
+                           :accept "application/json")
+    (when (/= status 200)
+      (return-from query-remote-sparql nil))
+    (let* ((json (jzon:parse (if (stringp body) body
+                                 (flexi-streams:octets-to-string body :external-format :utf-8))))
+           (results (gethash "results" json)))
+      (when results
+        (map 'list
+             (lambda (row)
+               (let ((bindings nil))
+                 (loop for i from 0 below (length row) do
+                   (push (aref row i) bindings))
+                 (nreverse bindings)))
+             results)))))
+
+(defun collect-variables (patterns)
+  "Collect all ?variables from a list of triple patterns."
+  (let ((vars nil))
+    (dolist (pat patterns)
+      (dolist (term pat)
+        (when (and (symbolp term) (char= #\? (char (symbol-name term) 0)))
+          (pushnew term vars))))
+    (nreverse vars)))
+
+(defun apply-service-pattern (envs service-pat)
+  "Execute a SERVICE pattern against a remote endpoint and join with local bindings."
+  (let* ((url (second service-pat))
+         (patterns (third service-pat))
+         (svc-vars (collect-variables patterns))
+         (result-envs nil))
+    (dolist (env envs)
+      ;; Substitute bound variables into patterns
+      (let ((bound-patterns
+              (mapcar (lambda (pat)
+                        (mapcar (lambda (term)
+                                  (if (and (symbolp term)
+                                           (char= #\? (char (symbol-name term) 0))
+                                           (assoc term env))
+                                      (cdr (assoc term env))
+                                      term))
+                                pat))
+                      patterns)))
+        ;; Build query with remaining unbound vars
+        (let* ((unbound (remove-if (lambda (v) (assoc v env)) svc-vars))
+               (all-vars (or unbound svc-vars))
+               (query-str (patterns-to-sparql bound-patterns all-vars))
+               (remote-results (query-remote-sparql url query-str)))
+          (if remote-results
+              (dolist (row remote-results)
+                (let ((new-env (copy-list env)))
+                  ;; Bind unbound vars from remote results
+                  (loop for var in all-vars
+                        for val in row
+                        do (unless (assoc var new-env)
+                             (push (cons var val) new-env)))
+                  (push new-env result-envs)))
+              ;; No results from remote — this env is dropped (inner join)
+              ))))
+    (nreverse result-envs)))

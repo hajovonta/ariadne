@@ -63,6 +63,7 @@
                              (:file "suite-delete-where")
                              (:file "suite-full-text-search")
                              (:file "suite-graph-versioning")
-                             (:file "suite-graph-events"))))
+                             (:file "suite-graph-events")
+                             (:file "suite-sparql-service"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

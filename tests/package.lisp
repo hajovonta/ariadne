@@ -290,6 +290,10 @@
   :description "Graph events and webhooks"
   :in :ariadne)
 
+(def-suite :sparql-service
+  :description "SPARQL SERVICE federated queries"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
