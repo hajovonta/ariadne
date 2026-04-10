@@ -836,18 +836,24 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
          (message (or (prop-shape-value g constraint "message") "SPARQL constraint violation"))
          (violations nil))
     (when select-query
-      (check-shacl-sparql-allowed select-query)
-      ;; Replace $this in WHERE body with URI, remove from SELECT list
-      (let* ((query-str (cl-ppcre:regex-replace-all
-                         "\\$this"
-                         select-query
-                         (format nil "<~A>" focus-node)))
-             ;; Fix SELECT: remove <uri> from select list, keep variables
-             (fixed-query (cl-ppcre:regex-replace
-                           "(?i)SELECT\\s+<[^>]+>"
-                           query-str
-                           "SELECT"))
-             (results (sparql g fixed-query)))
+      (let ((clean-query (remove #\Return select-query)))
+        (check-shacl-sparql-allowed clean-query)
+      ;; Replace $this: in SELECT list use a dummy var, in WHERE use URI
+      (let* ((where-pos (search "WHERE" (string-upcase clean-query)))
+             (select-part (if where-pos (subseq clean-query 0 where-pos) ""))
+             (where-part (if where-pos (subseq clean-query where-pos) clean-query))
+             (fixed-select (cl-ppcre:regex-replace-all "\\$this" select-part "?SHACLthis"))
+             (fixed-where (cl-ppcre:regex-replace-all
+                           "\\$this"
+                           where-part
+                           (format nil "<~A>" focus-node)))
+             (fixed-query (concatenate 'string fixed-select fixed-where))
+             (results (handler-case (sparql g fixed-query)
+                       (error (e)
+                         (format *error-output* "SPARQL-ERR: ~A~%" e)
+                         nil))))
+        (with-open-file (dbg "/tmp/shacl-sparql-debug.txt" :direction :output :if-exists :supersede)
+          (format dbg "~A" fixed-query))
         (when (and results (listp results))
           (dolist (row results)
             (let ((row-list (if (listp row) row (list row))))
@@ -856,16 +862,17 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                     shape
                                     (if (stringp message) message (princ-to-string message))
                                     :value (when (> (length row-list) 2) (third row-list)))
-                    violations))))))
+                    violations)))))))
     (when ask-query
-      (check-shacl-sparql-allowed ask-query)
-      (let* ((query-str (cl-ppcre:regex-replace-all
-                         "\\$this"
-                         ask-query
-                         (format nil "<~A>" focus-node)))
-             (result (sparql g query-str)))
-        (unless result
-          (push (make-violation focus-node nil shape
-                                (if (stringp message) message (princ-to-string message)))
-                violations))))
+      (let ((clean-ask (remove #\Return ask-query)))
+        (check-shacl-sparql-allowed clean-ask)
+        (let* ((query-str (cl-ppcre:regex-replace-all
+                           "\\$this"
+                           clean-ask
+                           (format nil "<~A>" focus-node)))
+               (result (sparql g query-str)))
+          (unless result
+            (push (make-violation focus-node nil shape
+                                  (if (stringp message) message (princ-to-string message)))
+                  violations)))))
     violations))

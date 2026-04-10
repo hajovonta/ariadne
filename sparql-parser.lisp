@@ -283,7 +283,7 @@
 
 (defun parse-unary-expr (toks prefixes)
   "Parse unary: !expr or primary"
-  (if (and toks (stringp (car toks)) (string= (car toks) "!"))
+  (if (and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
       (progn
         (pop toks)
         (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
@@ -295,7 +295,7 @@
   (cond
     ((null toks) (values nil nil))
     ;; Parenthesized expression
-    ((string= (car toks) "(")
+    ((and (stringp (car toks)) (string= (car toks) "("))
      (pop toks)
      (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
        (when (and rest (stringp (car rest)) (string= (car rest) ")"))
@@ -305,7 +305,7 @@
     ((and (stringp (car toks)) (string-equal (car toks) "true"))
      (pop toks) (values t toks))
     ((and (stringp (car toks)) (string-equal (car toks) "false"))
-     (pop toks) (values nil toks))
+     (pop toks) (values '(not t) toks))
     ;; Function call: name(args)
     ((and (stringp (car toks))
           (cdr toks)
@@ -315,16 +315,16 @@
      (let ((fname (string-upcase (pop toks))))
        (pop toks) ; consume (
        (let ((args nil))
-         (loop until (or (null toks) (string= (car toks) ")")) do
+         (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
            (multiple-value-bind (arg rest) (parse-or-expr toks prefixes)
              (push arg args)
              (setf toks rest))
            (when (and toks (stringp (car toks)) (string= (car toks) ","))
              (pop toks)))
-         (when (and toks (string= (car toks) ")"))
+         (when (and toks (stringp (car toks)) (string= (car toks) ")"))
            (pop toks))
          (values (cons (intern fname) (nreverse args)) toks))))
-    ;; Regular term (variable, URI, literal)
+    ;; Regular term (variable, URI, literal, number)
     (t (values (sparql-resolve-term (pop toks) prefixes) toks))))
 
 (defun sparql-parse-body (toks prefixes)
