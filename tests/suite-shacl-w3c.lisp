@@ -20,7 +20,12 @@
     g))
 
 (defun extract-expected-conforms (g)
-  "Extract the expected sh:conforms value from a test graph."
+  "Extract the expected sh:conforms value from a test graph.
+Returns T, NIL, or :failure for sht:Failure tests."
+  ;; Check for sht:Failure
+  (dolist (tr (get-triples g :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result"))
+    (when (equal (triple-object tr) "http://www.w3.org/ns/shacl-test#Failure")
+      (return-from extract-expected-conforms :failure)))
   (let ((tr (first (get-triples g :predicate "http://www.w3.org/ns/shacl#conforms"))))
     (when tr
       (let ((val (triple-object tr)))
@@ -52,9 +57,18 @@
                   (handler-case (import-turtle g content :bnode-counter-start 10000)
                     (error () nil)))))))
         (let* ((expected (extract-expected-conforms g))
-               (report (shacl-validate g))
-               (actual (getf report :conforms)))
-          (values (eq (not (not expected)) (not (not actual)))
+               (report (if (eq expected :failure)
+                           ;; sht:Failure — test passes if validation signals error
+                           (handler-case
+                               (progn (shacl-validate g) nil)
+                             (error () (list :conforms :failure)))
+                           (shacl-validate g)))
+               (actual (if (eq expected :failure)
+                           (if report :failure t)
+                           (getf report :conforms))))
+          (values (cond
+                    ((eq expected :failure) (eq actual :failure))
+                    (t (eq (not (not expected)) (not (not actual)))))
                   expected actual)))
     (error (e)
       (declare (ignore e))

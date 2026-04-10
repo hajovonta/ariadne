@@ -776,7 +776,9 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
         (unless (or (eq deact t) (equal deact "true"))
           (let ((targets (shape-targets g shape))
                 (prop-shapes (shape-property-shapes g shape))
-                (is-prop-shape (has-triple-p g shape *rdf-type* (sh-uri "PropertyShape"))))
+                (is-prop-shape (has-triple-p g shape *rdf-type* (sh-uri "PropertyShape")))
+                (sparql-constraints (mapcar #'triple-object
+                                            (get-triples g :subject shape :predicate (sh-uri "sparql")))))
             (dolist (focus targets)
               (let ((node-violations (check-node-constraints g focus shape)))
                 (setf all-violations (nconc all-violations node-violations)))
@@ -788,6 +790,82 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                 (let ((ps-deact (prop-shape-value g ps "deactivated")))
                   (unless (or (eq ps-deact t) (equal ps-deact "true"))
                     (let ((violations (check-property-shape g focus ps shape)))
-                      (setf all-violations (nconc all-violations violations)))))))))))
+                      (setf all-violations (nconc all-violations violations))))))
+              ;; SPARQL constraints
+              (dolist (sc sparql-constraints)
+                (let ((violations (check-sparql-constraint g focus sc shape)))
+                  (setf all-violations (nconc all-violations violations)))))))))
     (list :conforms (null all-violations)
           :results all-violations)))
+
+;;; ==========================================================================
+;;; SPARQL-based constraints
+;;; ==========================================================================
+
+(defvar *shacl-sparql-forbidden*
+  '("MINUS" "VALUES" "SERVICE" "GRAPH" "INSERT" "DELETE" "LOAD" "CLEAR" "CREATE" "DROP"
+    "COPY" "MOVE" "ADD")
+  "SPARQL keywords forbidden in SHACL constraint queries.")
+
+(defun check-shacl-sparql-allowed (query-str)
+  "Signal error if SPARQL query uses features forbidden in SHACL constraints."
+  (let ((upper (string-upcase query-str)))
+    ;; Forbidden keywords
+    (dolist (kw *shacl-sparql-forbidden*)
+      (when (cl-ppcre:scan (format nil "\\b~A\\b" kw) upper)
+        (error "SHACL-SPARQL: ~A not allowed in constraint queries" kw)))
+    ;; Nested SELECT (more than one SELECT keyword)
+    (let ((first-select (search "SELECT" upper))
+          (second-select nil))
+      (when first-select
+        (setf second-select (search "SELECT" upper :start2 (+ first-select 6))))
+      (when second-select
+        (error "SHACL-SPARQL: nested SELECT not allowed in constraint queries")))
+    ;; BIND reassigning pre-bound variables ($this, $PATH, $shapesGraph, $currentShape)
+    (when (cl-ppcre:scan "\\bBIND\\b.*\\bAS\\b.*\\$" upper)
+      (error "SHACL-SPARQL: BIND cannot reassign pre-bound variables"))
+    ;; Unresolved pre-bound variables other than $this
+    (let ((cleaned (cl-ppcre:regex-replace-all "(?i)\\$this\\b" query-str "")))
+      (when (cl-ppcre:scan "\\$[A-Za-z]" cleaned)
+        (error "SHACL-SPARQL: unresolved pre-bound variable")))))
+
+(defun check-sparql-constraint (g focus-node constraint shape)
+  "Execute a sh:sparql constraint against focus-node. Returns list of violations."
+  (let* ((select-query (prop-shape-value g constraint "select"))
+         (ask-query (prop-shape-value g constraint "ask"))
+         (message (or (prop-shape-value g constraint "message") "SPARQL constraint violation"))
+         (violations nil))
+    (when select-query
+      (check-shacl-sparql-allowed select-query)
+      ;; Replace $this in WHERE body with URI, remove from SELECT list
+      (let* ((query-str (cl-ppcre:regex-replace-all
+                         "\\$this"
+                         select-query
+                         (format nil "<~A>" focus-node)))
+             ;; Fix SELECT: remove <uri> from select list, keep variables
+             (fixed-query (cl-ppcre:regex-replace
+                           "(?i)SELECT\\s+<[^>]+>"
+                           query-str
+                           "SELECT"))
+             (results (sparql g fixed-query)))
+        (when (and results (listp results))
+          (dolist (row results)
+            (let ((row-list (if (listp row) row (list row))))
+              (push (make-violation focus-node
+                                    (when (> (length row-list) 1) (second row-list))
+                                    shape
+                                    (if (stringp message) message (princ-to-string message))
+                                    :value (when (> (length row-list) 2) (third row-list)))
+                    violations))))))
+    (when ask-query
+      (check-shacl-sparql-allowed ask-query)
+      (let* ((query-str (cl-ppcre:regex-replace-all
+                         "\\$this"
+                         ask-query
+                         (format nil "<~A>" focus-node)))
+             (result (sparql g query-str)))
+        (unless result
+          (push (make-violation focus-node nil shape
+                                (if (stringp message) message (princ-to-string message)))
+                violations))))
+    violations))
