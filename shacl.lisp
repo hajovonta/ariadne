@@ -887,6 +887,10 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
             (message (or (prop-shape-value g validator "message")
                          "Custom constraint violation")))
         ;; Collect prefixes from validator
+        ;; Check for BIND reassigning pre-bound variables (spec 6.3.3)
+        (let ((raw-q (or select-q ask-q "")))
+          (when (cl-ppcre:scan "(?i)\\bBIND\\b[^)]*\\bAS\\b\\s*[?$](value|this|PATH)\\b" raw-q)
+            (error "SHACL-SPARQL: BIND reassigns pre-bound variable in validator")))
         (let ((prefix-str (collect-shacl-prefixes g validator)))
           (flet ((substitute-params (q)
                    (let* ((result (remove #\Return q))
