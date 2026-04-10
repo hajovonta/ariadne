@@ -223,3 +223,139 @@
     (add-triple g (ex "alice") (ex "name") "Alice")
     (let ((report (shacl-validate g)))
       (is-true (getf report :conforms)))))
+
+;;; ==========================================================================
+;;; Phase 2: Value range constraints
+;;; ==========================================================================
+
+(test shacl-min-inclusive
+  "sh:minInclusive validates minimum value"
+  (let ((g (make-graph :name "shacl-mini")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "age"))
+    (add-triple g (ex "P1") (sh "minInclusive") 0)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "age") -1)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-max-inclusive
+  "sh:maxInclusive validates maximum value"
+  (let ((g (make-graph :name "shacl-maxi")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "age"))
+    (add-triple g (ex "P1") (sh "maxInclusive") 150)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "age") 200)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-min-exclusive
+  "sh:minExclusive validates strict minimum"
+  (let ((g (make-graph :name "shacl-mine")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "score"))
+    (add-triple g (ex "P1") (sh "minExclusive") 0)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "score") 0)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-max-exclusive
+  "sh:maxExclusive validates strict maximum"
+  (let ((g (make-graph :name "shacl-maxe")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "score"))
+    (add-triple g (ex "P1") (sh "maxExclusive") 100)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "score") 100)
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-range-pass
+  "Value range constraints pass when satisfied"
+  (let ((g (make-graph :name "shacl-range-ok")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "age"))
+    (add-triple g (ex "P1") (sh "minInclusive") 0)
+    (add-triple g (ex "P1") (sh "maxInclusive") 150)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "age") 30)
+    (let ((report (shacl-validate g)))
+      (is-true (getf report :conforms)))))
+
+;;; ==========================================================================
+;;; Phase 2: String length constraints
+;;; ==========================================================================
+
+(test shacl-min-length
+  "sh:minLength validates minimum string length"
+  (let ((g (make-graph :name "shacl-minl")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "name"))
+    (add-triple g (ex "P1") (sh "minLength") 3)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "name") "Al")
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+(test shacl-max-length
+  "sh:maxLength validates maximum string length"
+  (let ((g (make-graph :name "shacl-maxl")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "code"))
+    (add-triple g (ex "P1") (sh "maxLength") 5)
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "code") "ABCDEF")
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+;;; ==========================================================================
+;;; Phase 2: sh:hasValue
+;;; ==========================================================================
+
+(test shacl-has-value
+  "sh:hasValue requires a specific value"
+  (let ((g (make-graph :name "shacl-hv")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "status"))
+    (add-triple g (ex "P1") (sh "hasValue") "active")
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "status") "inactive")
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))
+
+;;; ==========================================================================
+;;; Phase 2: sh:class
+;;; ==========================================================================
+
+(test shacl-class
+  "sh:class requires values to be instances of a class"
+  (let ((g (make-graph :name "shacl-cls")))
+    (add-triple g (ex "S1") (rdf "type") (sh "NodeShape"))
+    (add-triple g (ex "S1") (sh "targetClass") (ex "Person"))
+    (add-triple g (ex "S1") (sh "property") (ex "P1"))
+    (add-triple g (ex "P1") (sh "path") (ex "knows"))
+    (add-triple g (ex "P1") (sh "class") (ex "Person"))
+    (add-triple g (ex "alice") (rdf "type") (ex "Person"))
+    (add-triple g (ex "alice") (ex "knows") (ex "fido"))
+    ;; fido is not a Person
+    (add-triple g (ex "fido") (rdf "type") (ex "Dog"))
+    (let ((report (shacl-validate g)))
+      (is-false (getf report :conforms)))))

@@ -110,7 +110,67 @@
           (push (make-violation focus-node path shape
                                 (format nil "value not in allowed set")
                                 :value val)
-                violations))))
+                violations)))
+      ;; sh:minInclusive
+      (let ((limit (prop-shape-value g prop-shape "minInclusive")))
+        (when (and limit (numberp val) (numberp limit) (< val limit))
+          (push (make-violation focus-node path shape
+                                (format nil "value ~A < minInclusive ~A" val limit)
+                                :value val)
+                violations)))
+      ;; sh:maxInclusive
+      (let ((limit (prop-shape-value g prop-shape "maxInclusive")))
+        (when (and limit (numberp val) (numberp limit) (> val limit))
+          (push (make-violation focus-node path shape
+                                (format nil "value ~A > maxInclusive ~A" val limit)
+                                :value val)
+                violations)))
+      ;; sh:minExclusive
+      (let ((limit (prop-shape-value g prop-shape "minExclusive")))
+        (when (and limit (numberp val) (numberp limit) (<= val limit))
+          (push (make-violation focus-node path shape
+                                (format nil "value ~A <= minExclusive ~A" val limit)
+                                :value val)
+                violations)))
+      ;; sh:maxExclusive
+      (let ((limit (prop-shape-value g prop-shape "maxExclusive")))
+        (when (and limit (numberp val) (numberp limit) (>= val limit))
+          (push (make-violation focus-node path shape
+                                (format nil "value ~A >= maxExclusive ~A" val limit)
+                                :value val)
+                violations)))
+      ;; sh:minLength
+      (let ((min-l (prop-shape-value g prop-shape "minLength")))
+        (when (and min-l (stringp val))
+          (let ((n (if (numberp min-l) min-l (parse-integer (princ-to-string min-l) :junk-allowed t))))
+            (when (and n (< (length val) n))
+              (push (make-violation focus-node path shape
+                                    (format nil "length ~A < minLength ~A" (length val) n)
+                                    :value val)
+                    violations)))))
+      ;; sh:maxLength
+      (let ((max-l (prop-shape-value g prop-shape "maxLength")))
+        (when (and max-l (stringp val))
+          (let ((n (if (numberp max-l) max-l (parse-integer (princ-to-string max-l) :junk-allowed t))))
+            (when (and n (> (length val) n))
+              (push (make-violation focus-node path shape
+                                    (format nil "length ~A > maxLength ~A" (length val) n)
+                                    :value val)
+                    violations)))))
+      ;; sh:hasValue
+      (let ((required (prop-shape-value g prop-shape "hasValue")))
+        (when (and required (not (member required values :test #'equal)))
+          (push (make-violation focus-node path shape
+                                (format nil "missing required value ~A" required))
+                violations)))
+      ;; sh:class
+      (let ((cls (prop-shape-value g prop-shape "class")))
+        (when (and cls (stringp val))
+          (unless (has-triple-p g val *rdf-type* cls)
+            (push (make-violation focus-node path shape
+                                  (format nil "~A is not an instance of ~A" val cls)
+                                  :value val)
+                  violations)))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
