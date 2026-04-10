@@ -144,7 +144,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 - [x] Full-text search — index literals, search by keyword
 - [x] Graph versioning / temporal queries — query graph at point in time
 - [x] SPARQL SERVICE — federated queries to remote endpoints
-- [ ] SHACL validation — W3C standard shape constraints
+- [x] SHACL validation — W3C standard shape constraints (95/95 core tests, 100%)
 - [x] Graph events / webhooks — notify external systems on changes
 
 ## Completed

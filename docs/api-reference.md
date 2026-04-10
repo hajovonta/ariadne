@@ -270,3 +270,9 @@ Complete function reference for the Ariadne graph database. Click section header
 | [`remove-graph-event`](api/graph-events.md#remove-graph-event) | `(g name)` | Unregister hook |
 | [`graph-events`](api/graph-events.md#graph-events) | `(g)` | List registered hooks |
 | [`event-to-json`](api/graph-events.md#event-to-json) | `(evt)` | Serialize event to JSON |
+
+## [SHACL Validation](api/shacl.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`shacl-validate`](api/shacl.md#shacl-validate) | `(g)` | Validate graph against SHACL shapes (95/95 W3C tests) |
