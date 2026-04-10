@@ -8,9 +8,12 @@
       (let ((pass 0) (fail 0) (err 0))
         (dolist (file (sort (directory (merge-pathnames "*.ttl" dir)) #'string< :key #'namestring))
           (unless (string= "manifest" (pathname-name file))
-            (multiple-value-bind (ok expected actual) (run-shacl-w3c-test file)
-              (cond
-                ((eq expected :error) (incf err) (format t "  ERROR ~A~%" (pathname-name file)))
-                (ok (incf pass))
-                (t (incf fail) (format t "  FAIL  ~A (expected ~A got ~A)~%" (pathname-name file) expected actual))))))
+            (let ((name (pathname-name file)))
+              (unless (or (and (> (length name) 5) (string= "-data" (subseq name (- (length name) 5))))
+                          (and (> (length name) 7) (string= "-shapes" (subseq name (- (length name) 7)))))
+                (multiple-value-bind (ok expected actual) (run-shacl-w3c-test file)
+                  (cond
+                    ((eq expected :error) (incf err) (format t "  ERROR ~A~%" (pathname-name file)))
+                    (ok (incf pass))
+                    (t (incf fail) (format t "  FAIL  ~A (expected ~A got ~A)~%" (pathname-name file) expected actual))))))))
         (format t "  ~A pass, ~A fail, ~A errors~%" pass fail err)))))

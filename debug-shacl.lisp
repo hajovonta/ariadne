@@ -1,21 +1,11 @@
 (require :asdf)
-(asdf:load-system :ariadne)
-(in-package :ariadne)
-(let ((g (make-graph :name "test")))
-  (import-turtle g (with-open-file (s "test-data/shacl/data-shapes/data-shapes-test-suite/tests/core/property/or-001.ttl")
-                     (let ((b (make-string (file-length s)))) (read-sequence b s) b)))
-  ;; Check what shapes are found
-  (format t "Shapes: ~S~%" (find-shapes g))
-  ;; Check targets for AddressShape
-  (let ((shape "http://datashapes.org/sh/tests/core/property/or-001.test#AddressShape"))
-    (format t "Targets: ~S~%" (shape-targets g shape))
-    (format t "Prop shapes: ~S~%" (shape-property-shapes g shape))
-    ;; Check the property shape
-    (let ((ps "http://datashapes.org/sh/tests/core/property/or-001.test#AddressShape-address"))
-      (format t "Path: ~S~%" (prop-shape-path g ps))
-      (format t "or list: ~S~%" (prop-shape-list-value g ps "or"))
-      ;; Check values for InvalidResource1
-      (let ((focus "http://datashapes.org/sh/tests/core/property/or-001.test#InvalidResource1"))
-        (format t "Values for ~A: ~S~%" focus
-                (resolve-path-values g focus (prop-shape-path g ps)))
-        (format t "Violations: ~S~%" (check-property-shape g focus ps shape))))))
+(asdf:load-system :ariadne-tests)
+(in-package :ariadne/tests)
+(let ((path (merge-pathnames "node/qualified-001.ttl" *shacl-test-base*)))
+  (multiple-value-bind (ok expected actual) (run-shacl-w3c-test path)
+    (format t "qualified-001: ok=~A expected=~A actual=~A~%" ok expected actual)))
+;; Try the data file directly
+(let ((path (merge-pathnames "node/qualified-001-data.ttl" *shacl-test-base*)))
+  (format t "~%data file exists: ~A~%" (probe-file path))
+  (multiple-value-bind (ok expected actual) (run-shacl-w3c-test path)
+    (format t "qualified-001-data: ok=~A expected=~A actual=~A~%" ok expected actual)))
