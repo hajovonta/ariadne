@@ -27,9 +27,13 @@
 ;;; ==========================================================================
 
 (defun find-shapes (g)
-  "Find all NodeShape definitions in the graph."
-  (mapcar #'triple-subject
-          (get-triples g :predicate *rdf-type* :object (sh-uri "NodeShape"))))
+  "Find all NodeShape and PropertyShape definitions in the graph."
+  (let ((shapes nil))
+    (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "NodeShape")))
+      (pushnew (triple-subject tr) shapes :test #'equal))
+    (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "PropertyShape")))
+      (pushnew (triple-subject tr) shapes :test #'equal))
+    shapes))
 
 (defun shape-targets (g shape)
   "Return list of focus nodes for SHAPE."
@@ -75,6 +79,76 @@
   (let ((tr (first (get-triples g :subject ps :predicate (sh-uri "path")))))
     (when tr (triple-object tr))))
 
+(defun resolve-path-values (g focus-node path)
+  "Resolve values for a SHACL property path from focus-node.
+PATH can be a simple URI or a blank node with path operators."
+  (cond
+    ;; Simple predicate path
+    ((and (stringp path) (not (eql 0 (search "_:" path))))
+     (mapcar #'triple-object (get-triples g :subject focus-node :predicate path)))
+    ;; Complex path (blank node)
+    ((stringp path)
+     (let ((inverse (first (get-triples g :subject path :predicate (sh-uri "inversePath"))))
+           (alt-list (first (get-triples g :subject path :predicate (sh-uri "alternativePath"))))
+           (zero-more (first (get-triples g :subject path :predicate (sh-uri "zeroOrMorePath"))))
+           (one-more (first (get-triples g :subject path :predicate (sh-uri "oneOrMorePath"))))
+           (zero-one (first (get-triples g :subject path :predicate (sh-uri "zeroOrOnePath")))))
+       (cond
+         ;; sh:inversePath
+         (inverse
+          (let ((pred (triple-object inverse)))
+            (mapcar #'triple-subject (get-triples g :predicate pred :object focus-node))))
+         ;; sh:alternativePath (RDF list of paths)
+         (alt-list
+          (let ((paths (rdf-list-to-list g (triple-object alt-list)))
+                (results nil))
+            (dolist (p paths)
+              (setf results (nconc results (resolve-path-values g focus-node p))))
+            results))
+         ;; sh:zeroOrMorePath
+         (zero-more
+          (let ((pred (triple-object zero-more)))
+            (transitive-path-values g focus-node pred t)))
+         ;; sh:oneOrMorePath
+         (one-more
+          (let ((pred (triple-object one-more)))
+            (transitive-path-values g focus-node pred nil)))
+         ;; sh:zeroOrOnePath
+         (zero-one
+          (let ((pred (triple-object zero-one)))
+            (cons focus-node (mapcar #'triple-object (get-triples g :subject focus-node :predicate pred)))))
+         ;; Sequence path (RDF list — path is a list head)
+         ((get-triples g :subject path :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+          (let ((steps (rdf-list-to-list g path)))
+            (sequence-path-values g (list focus-node) steps)))
+         ;; Unknown — treat as simple
+         (t (mapcar #'triple-object (get-triples g :subject focus-node :predicate path))))))
+    (t nil)))
+
+(defun transitive-path-values (g start pred include-self)
+  "Follow predicate transitively. If INCLUDE-SELF, include the start node."
+  (let ((visited (make-hash-table :test 'equal))
+        (result nil))
+    (when include-self (push start result) (setf (gethash start visited) t))
+    (labels ((walk (node)
+               (dolist (tr (get-triples g :subject node :predicate pred))
+                 (let ((obj (triple-object tr)))
+                   (unless (gethash obj visited)
+                     (setf (gethash obj visited) t)
+                     (push obj result)
+                     (walk obj))))))
+      (walk start))
+    result))
+
+(defun sequence-path-values (g nodes steps)
+  "Follow a sequence of path steps."
+  (dolist (step steps)
+    (let ((next nil))
+      (dolist (node nodes)
+        (setf next (nconc next (resolve-path-values g node step))))
+      (setf nodes next)))
+  nodes)
+
 (defun prop-shape-value (g ps pred)
   (let ((tr (first (get-triples g :subject ps :predicate (sh-uri pred)))))
     (when tr (triple-object tr))))
@@ -114,7 +188,7 @@
 (defun check-property-shape (g focus-node prop-shape shape)
   "Check a property shape against a focus node. Returns list of violations."
   (let* ((path (prop-shape-path g prop-shape))
-         (values (mapcar #'triple-object (get-triples g :subject focus-node :predicate path)))
+         (values (resolve-path-values g focus-node path))
          (count (length values))
          (violations nil))
     ;; sh:minCount
@@ -556,10 +630,15 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
       (let ((deact (prop-shape-value g shape "deactivated")))
         (unless (or (eq deact t) (equal deact "true"))
           (let ((targets (shape-targets g shape))
-                (prop-shapes (shape-property-shapes g shape)))
+                (prop-shapes (shape-property-shapes g shape))
+                (is-prop-shape (has-triple-p g shape *rdf-type* (sh-uri "PropertyShape"))))
             (dolist (focus targets)
               (let ((node-violations (check-node-constraints g focus shape)))
                 (setf all-violations (nconc all-violations node-violations)))
+              ;; If shape is itself a PropertyShape with sh:path, validate it directly
+              (when (and is-prop-shape (prop-shape-path g shape))
+                (let ((violations (check-property-shape g focus shape shape)))
+                  (setf all-violations (nconc all-violations violations))))
               (dolist (ps prop-shapes)
                 (let ((ps-deact (prop-shape-value g ps "deactivated")))
                   (unless (or (eq ps-deact t) (equal ps-deact "true"))
