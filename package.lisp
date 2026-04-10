@@ -148,4 +148,8 @@
    ;; Memory usage
    #:graph-memory-usage
    ;; Skolemization
-   #:skolemize-blank-nodes))
+   #:skolemize-blank-nodes
+   ;; Full-text search
+   #:build-text-index
+   #:text-search
+   #:graph-text-index))

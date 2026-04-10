@@ -32,4 +32,5 @@
                (:file "schema")
                (:file "rdf-xml")
                (:file "profiling")
-               (:file "txlog")))
+               (:file "txlog")
+               (:file "text-search")))

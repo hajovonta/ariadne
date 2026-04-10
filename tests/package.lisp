@@ -278,6 +278,10 @@
   :description "DELETE WHERE and SPARQL DESCRIBE"
   :in :ariadne)
 
+(def-suite :full-text-search
+  :description "Full-text search over graph literals"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
