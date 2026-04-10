@@ -344,22 +344,26 @@
            (when expr (push expr filters)))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
            (pop toks)))
-        ;; BIND (?var AS expr)
+        ;; BIND (expr AS ?var)
         ((string-equal (car toks) "BIND")
          (pop toks)
-         (when (and toks (string= (car toks) "("))
+         (when (and toks (stringp (car toks)) (string= (car toks) "("))
            (pop toks))
-         (let ((var (pop toks)))  ; ?var
-           (when (and toks (string-equal (princ-to-string (car toks)) "AS"))
+         ;; Read expression (may be a URI, variable, or complex expr)
+         (let* ((left (sparql-resolve-term (pop toks) prefixes))
+                (op (when (and toks
+                               (not (and (stringp (car toks)) (string= (car toks) ")")))
+                               (not (and (stringp (car toks)) (string-equal (car toks) "AS"))))
+                      (intern (string-upcase (princ-to-string (pop toks))))))
+                (right (when op (sparql-resolve-term (pop toks) prefixes)))
+                (expr (if op (list op left right) left)))
+           (when (and toks (stringp (car toks)) (string-equal (car toks) "AS"))
              (pop toks))
-           ;; Read expression: val op val
-           (let* ((left (sparql-resolve-term (pop toks) prefixes))
-                  (op (when (and toks (not (string= (car toks) ")")))
-                        (intern (string-upcase (princ-to-string (pop toks))))))
-                  (right (when op (sparql-resolve-term (pop toks) prefixes)))
-                  (expr (if op (list op left right) left)))
+           (let ((var (pop toks)))
              (push (list 'bind var expr) binds))
-           (when (and toks (string= (car toks) ")"))
+           (when (and toks (stringp (car toks)) (string= (car toks) ")"))
+             (pop toks))
+           (when (and toks (stringp (car toks)) (string= (car toks) "."))
              (pop toks))))
         ;; SERVICE <url> { ... }
         ((string-equal (car toks) "SERVICE")
@@ -386,10 +390,33 @@
            (when (and toks (string= (car toks) "}"))
              (pop toks))
            (push (cons 'optional opt-patterns) optionals)))
-        ;; UNION: { ... } UNION { ... }
+        ;; UNION or nested block: { ... } UNION { ... } or { SELECT subquery }
         ((string= (car toks) "{")
          (pop toks)
-         (multiple-value-bind (u-patterns u-filters u-rest)
+         ;; Check for subquery: { SELECT ... WHERE { ... } }
+         (if (and toks (stringp (car toks)) (string-equal (car toks) "SELECT"))
+             (progn
+               ;; Skip SELECT and variables until WHERE
+               (loop while (and toks (not (and (stringp (car toks)) (string-equal (car toks) "WHERE"))))
+                     do (pop toks))
+               (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
+                 (pop toks))
+               (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+                 (pop toks))
+               ;; Parse inner body — merge patterns/filters into outer scope
+               (multiple-value-bind (sub-pats sub-filts sub-rest sub-opts sub-unions sub-binds)
+                   (sparql-parse-body toks prefixes)
+                 (dolist (p sub-pats) (push p patterns))
+                 (dolist (f sub-filts) (push f filters))
+                 (dolist (b sub-binds) (push b binds))
+                 (setf toks sub-rest))
+               ;; Skip inner and outer closing braces
+               (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+                 (pop toks))
+               (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+                 (pop toks)))
+             ;; Regular nested block or UNION
+             (multiple-value-bind (u-patterns u-filters u-rest)
              (sparql-parse-body toks prefixes)
            (declare (ignore u-filters))
            (setf toks u-rest)
@@ -411,7 +438,7 @@
                                (cons 'where u2-patterns))
                          unions)))
                ;; Not UNION, just nested block — treat as patterns
-               (dolist (p u-patterns) (push p patterns)))))
+               (dolist (p u-patterns) (push p patterns))))))
         ;; Triple pattern: s p o .  (with property path detection)
         (t
          (let* ((s (sparql-resolve-term (pop toks) prefixes))

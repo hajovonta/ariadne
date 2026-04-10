@@ -32,6 +32,6 @@
   "Parse BIND clause"
   (let ((g (make-graph)))
     (add-triple g "alice" "age" 30)
-    (let ((result (sparql g "SELECT ?name ?age WHERE { ?name \"age\" ?age . BIND (?doubled AS ?age * 2) }")))
+    (let ((result (sparql g "SELECT ?name ?age WHERE { ?name \"age\" ?age . BIND (?age * 2 AS ?doubled) }")))
       ;; Should have results with the bound variable
       (is (>= (length result) 1)))))

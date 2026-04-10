@@ -815,13 +815,16 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
     (dolist (kw *shacl-sparql-forbidden*)
       (when (cl-ppcre:scan (format nil "\\b~A\\b" kw) upper)
         (error "SHACL-SPARQL: ~A not allowed in constraint queries" kw)))
-    ;; Nested SELECT (more than one SELECT keyword)
+    ;; Nested SELECT with SELECT * or different variables — unsupported
     (let ((first-select (search "SELECT" upper))
           (second-select nil))
       (when first-select
         (setf second-select (search "SELECT" upper :start2 (+ first-select 6))))
       (when second-select
-        (error "SHACL-SPARQL: nested SELECT not allowed in constraint queries")))
+        ;; Allow if inner SELECT uses $THIS, reject SELECT * or other vars
+        (let ((after (subseq upper second-select)))
+          (unless (cl-ppcre:scan "^SELECT\\s+\\$THIS\\b" after)
+            (error "SHACL-SPARQL: unsupported subquery")))))
     ;; BIND reassigning pre-bound variables ($this, $PATH, $shapesGraph, $currentShape)
     (when (cl-ppcre:scan "\\bBIND\\b.*\\bAS\\b.*\\$" upper)
       (error "SHACL-SPARQL: BIND cannot reassign pre-bound variables"))

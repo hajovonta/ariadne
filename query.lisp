@@ -122,11 +122,11 @@
     ;; Expand property paths in where-patterns
     (setf where-patterns (expand-property-paths g where-patterns))
     ;; Execute pattern matching
-    (let ((envs (if union-clauses
-                    (execute-union g union-clauses)
-                    (if graph-clause
-                        (match-in-graph g where-patterns graph-clause)
-                        (match-with-paths g where-patterns)))))
+    (let ((envs (cond
+                 (union-clauses (execute-union g union-clauses))
+                 (graph-clause (match-in-graph g where-patterns graph-clause))
+                 (where-patterns (match-with-paths g where-patterns))
+                 (t (list nil)))))
       ;; Apply optional patterns
       (when optional-patterns
         (setf envs (apply-optional g envs optional-patterns)))
