@@ -9,6 +9,26 @@
 
 (defun sh-uri (name) (concatenate 'string *sh* name))
 
+(defun shacl-value< (a b)
+  "Compare two SHACL values. Handles numbers, strings, and timestamps."
+  (cond
+    ((and (numberp a) (numberp b)) (< a b))
+    ((and (stringp a) (stringp b)) (string< a b))
+    ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
+     (local-time:timestamp< a b))
+    (t nil)))
+
+(defun shacl-value<= (a b)
+  (cond
+    ((and (numberp a) (numberp b)) (<= a b))
+    ((and (stringp a) (stringp b)) (string<= a b))
+    ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
+     (or (local-time:timestamp< a b) (local-time:timestamp= a b)))
+    (t nil)))
+
+(defun shacl-value>= (a b) (shacl-value<= b a))
+(defun shacl-value> (a b) (shacl-value< b a))
+
 (defun all-subclasses (g class)
   "Return all classes that are rdfs:subClassOf CLASS (transitive)."
   (let ((result nil)
@@ -246,28 +266,28 @@ PATH can be a simple URI or a blank node with path operators."
                 violations)))
       ;; sh:minInclusive
       (let ((limit (prop-shape-value g prop-shape "minInclusive")))
-        (when (and limit (numberp val) (numberp limit) (< val limit))
+        (when (and limit (not (shacl-value>= val limit)))
           (push (make-violation focus-node path shape
                                 (format nil "value ~A < minInclusive ~A" val limit)
                                 :value val)
                 violations)))
       ;; sh:maxInclusive
       (let ((limit (prop-shape-value g prop-shape "maxInclusive")))
-        (when (and limit (numberp val) (numberp limit) (> val limit))
+        (when (and limit (not (shacl-value<= val limit)))
           (push (make-violation focus-node path shape
                                 (format nil "value ~A > maxInclusive ~A" val limit)
                                 :value val)
                 violations)))
       ;; sh:minExclusive
       (let ((limit (prop-shape-value g prop-shape "minExclusive")))
-        (when (and limit (numberp val) (numberp limit) (<= val limit))
+        (when (and limit (not (shacl-value> val limit)))
           (push (make-violation focus-node path shape
                                 (format nil "value ~A <= minExclusive ~A" val limit)
                                 :value val)
                 violations)))
       ;; sh:maxExclusive
       (let ((limit (prop-shape-value g prop-shape "maxExclusive")))
-        (when (and limit (numberp val) (numberp limit) (>= val limit))
+        (when (and limit (not (shacl-value< val limit)))
           (push (make-violation focus-node path shape
                                 (format nil "value ~A >= maxExclusive ~A" val limit)
                                 :value val)
@@ -362,30 +382,20 @@ PATH can be a simple URI or a blank node with path operators."
         (let ((other-vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate lt-path))))
           (dolist (val values)
             (dolist (ov other-vals)
-              (when (and (or (numberp val) (stringp val))
-                         (or (numberp ov) (stringp ov)))
-                (let ((fail (cond ((and (numberp val) (numberp ov)) (not (< val ov)))
-                                  ((and (stringp val) (stringp ov)) (not (string< val ov)))
-                                  (t nil))))
-                  (when fail
-                    (push (make-violation focus-node path shape
-                                          (format nil "~A not < ~A" val ov) :value val)
-                          violations)))))))))
+              (unless (shacl-value< val ov)
+                (push (make-violation focus-node path shape
+                                      (format nil "~A not < ~A" val ov) :value val)
+                      violations)))))))
     ;; sh:lessThanOrEquals
     (let ((lte-path (prop-shape-value g prop-shape "lessThanOrEquals")))
       (when lte-path
         (let ((other-vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate lte-path))))
           (dolist (val values)
             (dolist (ov other-vals)
-              (when (and (or (numberp val) (stringp val))
-                         (or (numberp ov) (stringp ov)))
-                (let ((fail (cond ((and (numberp val) (numberp ov)) (not (<= val ov)))
-                                  ((and (stringp val) (stringp ov)) (not (string<= val ov)))
-                                  (t nil))))
-                  (when fail
-                    (push (make-violation focus-node path shape
-                                          (format nil "~A not <= ~A" val ov) :value val)
-                          violations)))))))))
+              (unless (shacl-value<= val ov)
+                (push (make-violation focus-node path shape
+                                      (format nil "~A not <= ~A" val ov) :value val)
+                      violations)))))))
     ;; sh:uniqueLang
     (let ((ul (prop-shape-value g prop-shape "uniqueLang")))
       (when (or (eq ul t) (equal ul "true"))
@@ -545,10 +555,10 @@ PATH can be a simple URI or a blank node with path operators."
     (and (or (null dt) (value-matches-datatype-p val dt))
          (or (null pat) (not (stringp val)) (cl-ppcre:scan pat val))
          (or (null nk) (value-matches-node-kind-p val nk))
-         (or (null mini) (not (numberp val)) (not (numberp mini)) (>= val mini))
-         (or (null maxi) (not (numberp val)) (not (numberp maxi)) (<= val maxi))
-         (or (null mine) (not (numberp val)) (not (numberp mine)) (> val mine))
-         (or (null maxe) (not (numberp val)) (not (numberp maxe)) (< val maxe))
+         (or (null mini) (shacl-value>= val mini))
+         (or (null maxi) (shacl-value<= val maxi))
+         (or (null mine) (shacl-value> val mine))
+         (or (null maxe) (shacl-value< val maxe))
          (or (null cls) (and (stringp val) (has-triple-p g val *rdf-type* cls)))
          (or (null hv) (equal val hv))
          (or (null in-list) (member val in-list :test #'equal))
@@ -605,27 +615,26 @@ PATH can be a simple URI or a blank node with path operators."
                               (format nil "does not match pattern ~A" pat))
               violations)))
     ;; sh:minInclusive/maxInclusive/minExclusive/maxExclusive
-    (when (numberp val)
-      (let ((mini (prop-shape-value g shape "minInclusive")))
-        (when (and mini (numberp mini) (< val mini))
-          (push (make-violation focus-node nil shape
-                                (format nil "value < minInclusive ~A" mini))
-                violations)))
-      (let ((maxi (prop-shape-value g shape "maxInclusive")))
-        (when (and maxi (numberp maxi) (> val maxi))
-          (push (make-violation focus-node nil shape
-                                (format nil "value > maxInclusive ~A" maxi))
-                violations)))
-      (let ((mine (prop-shape-value g shape "minExclusive")))
-        (when (and mine (numberp mine) (<= val mine))
-          (push (make-violation focus-node nil shape
-                                (format nil "value <= minExclusive ~A" mine))
-                violations)))
-      (let ((maxe (prop-shape-value g shape "maxExclusive")))
-        (when (and maxe (numberp maxe) (>= val maxe))
-          (push (make-violation focus-node nil shape
-                                (format nil "value >= maxExclusive ~A" maxe))
-                violations))))
+    (let ((mini (prop-shape-value g shape "minInclusive")))
+      (when (and mini (not (shacl-value>= val mini)))
+        (push (make-violation focus-node nil shape
+                              (format nil "value < minInclusive ~A" mini))
+              violations)))
+    (let ((maxi (prop-shape-value g shape "maxInclusive")))
+      (when (and maxi (not (shacl-value<= val maxi)))
+        (push (make-violation focus-node nil shape
+                              (format nil "value > maxInclusive ~A" maxi))
+              violations)))
+    (let ((mine (prop-shape-value g shape "minExclusive")))
+      (when (and mine (not (shacl-value> val mine)))
+        (push (make-violation focus-node nil shape
+                              (format nil "value <= minExclusive ~A" mine))
+              violations)))
+    (let ((maxe (prop-shape-value g shape "maxExclusive")))
+      (when (and maxe (not (shacl-value< val maxe)))
+        (push (make-violation focus-node nil shape
+                              (format nil "value >= maxExclusive ~A" maxe))
+              violations)))
     ;; sh:minLength/maxLength
     (when (stringp val)
       (let ((min-l (prop-shape-value g shape "minLength")))

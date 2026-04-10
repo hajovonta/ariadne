@@ -113,6 +113,10 @@
         ((search "float" type-uri) (read-from-string value))
         ((search "double" type-uri) (read-from-string value))
         ((search "boolean" type-uri) (string= value "true"))
+        ((search "dateTime" type-uri)
+         (local-time:parse-timestring value :fail-on-error nil))
+        ((search "date" type-uri)
+         (local-time:parse-timestring value :fail-on-error nil))
         (t value))
     (error () value)))
 

@@ -9,7 +9,8 @@
                #:bordeaux-threads
                #:hunchentoot
                #:drakma
-               #:com.inuoe.jzon)
+               #:com.inuoe.jzon
+               #:local-time)
   :serial t
   :components ((:file "package")
                (:file "ariadne")
