@@ -306,6 +306,10 @@
   :description "SHACL (Shapes Constraint Language) validation"
   :in :ariadne)
 
+(def-suite :shacl-w3c
+  :description "W3C SHACL conformance tests"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

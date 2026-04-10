@@ -25,6 +25,11 @@
     (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetClass")))
       (dolist (inst (get-triples g :predicate *rdf-type* :object (triple-object tr)))
         (pushnew (triple-subject inst) nodes :test #'equal)))
+    ;; Implicit target class: shape is also an rdfs:Class or owl:Class
+    (when (or (has-triple-p g shape *rdf-type* "http://www.w3.org/2000/01/rdf-schema#Class")
+              (has-triple-p g shape *rdf-type* "http://www.w3.org/2002/07/owl#Class"))
+      (dolist (inst (get-triples g :predicate *rdf-type* :object shape))
+        (pushnew (triple-subject inst) nodes :test #'equal)))
     ;; sh:targetNode
     (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetNode")))
       (pushnew (triple-object tr) nodes :test #'equal))
@@ -53,6 +58,31 @@
 
 (defun prop-shape-values (g ps pred)
   (mapcar #'triple-object (get-triples g :subject ps :predicate (sh-uri pred))))
+
+(defun rdf-list-to-list (g head)
+  "Follow an RDF list (rdf:first/rdf:rest) and return CL list of values."
+  (let ((result nil)
+        (node head)
+        (rdf-first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+        (rdf-rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+        (rdf-nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
+    (loop while (and node (not (equal node rdf-nil))) do
+      (let ((first-tr (first (get-triples g :subject node :predicate rdf-first)))
+            (rest-tr (first (get-triples g :subject node :predicate rdf-rest))))
+        (when first-tr (push (triple-object first-tr) result))
+        (setf node (when rest-tr (triple-object rest-tr)))))
+    (nreverse result)))
+
+(defun prop-shape-list-value (g ps pred)
+  "Get the value of PRED on PS. If it points to an RDF list, expand it."
+  (let ((tr (first (get-triples g :subject ps :predicate (sh-uri pred)))))
+    (when tr
+      (let ((obj (triple-object tr)))
+        ;; Check if it's an RDF list head (has rdf:first)
+        (if (get-triples g :subject obj :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+            (rdf-list-to-list g obj)
+            ;; Multiple direct values
+            (mapcar #'triple-object (get-triples g :subject ps :predicate (sh-uri pred))))))))
 
 ;;; ==========================================================================
 ;;; Constraint checking
@@ -105,7 +135,7 @@
                                 :value val)
                 violations)))
       ;; sh:in
-      (let ((allowed (prop-shape-values g prop-shape "in")))
+      (let ((allowed (prop-shape-list-value g prop-shape "in")))
         (when (and allowed (not (member val allowed :test #'equal)))
           (push (make-violation focus-node path shape
                                 (format nil "value not in allowed set")
@@ -179,7 +209,7 @@
                                 :value val)
                 violations)))
       ;; sh:and — value must satisfy ALL sub-shapes
-      (let ((and-shapes (prop-shape-values g prop-shape "and")))
+      (let ((and-shapes (prop-shape-list-value g prop-shape "and")))
         (when and-shapes
           (unless (every (lambda (ss) (check-value-against-subshape g val ss)) and-shapes)
             (push (make-violation focus-node path shape
@@ -187,7 +217,7 @@
                                   :value val)
                   violations))))
       ;; sh:or — value must satisfy AT LEAST ONE sub-shape
-      (let ((or-shapes (prop-shape-values g prop-shape "or")))
+      (let ((or-shapes (prop-shape-list-value g prop-shape "or")))
         (when or-shapes
           (unless (some (lambda (ss) (check-value-against-subshape g val ss)) or-shapes)
             (push (make-violation focus-node path shape
@@ -195,7 +225,7 @@
                                   :value val)
                   violations))))
       ;; sh:xone — value must satisfy EXACTLY ONE sub-shape
-      (let ((xone-shapes (prop-shape-values g prop-shape "xone")))
+      (let ((xone-shapes (prop-shape-list-value g prop-shape "xone")))
         (when xone-shapes
           (let ((pass-count (count-if (lambda (ss) (check-value-against-subshape g val ss))
                                       xone-shapes)))
@@ -264,6 +294,128 @@
          (or (null maxe) (not (numberp val)) (not (numberp maxe)) (< val maxe)))))
 
 ;;; ==========================================================================
+;;; Node-level constraint checking
+;;; ==========================================================================
+
+(defun check-node-constraints (g focus-node shape)
+  "Check constraints placed directly on a NodeShape against the focus node."
+  (let ((violations nil)
+        (val focus-node))
+    ;; sh:class — focus node must be instance of class
+    (let ((cls (prop-shape-value g shape "class")))
+      (when (and cls (not (has-triple-p g focus-node *rdf-type* cls)))
+        (push (make-violation focus-node nil shape
+                              (format nil "not an instance of ~A" cls))
+              violations)))
+    ;; sh:datatype
+    (let ((dt (prop-shape-value g shape "datatype")))
+      (when (and dt (not (value-matches-datatype-p val dt)))
+        (push (make-violation focus-node nil shape
+                              (format nil "expected datatype ~A" dt))
+              violations)))
+    ;; sh:nodeKind
+    (let ((nk (prop-shape-value g shape "nodeKind")))
+      (when (and nk (not (value-matches-node-kind-p val nk)))
+        (push (make-violation focus-node nil shape
+                              (format nil "expected nodeKind ~A" nk))
+              violations)))
+    ;; sh:in
+    (let ((allowed (prop-shape-list-value g shape "in")))
+      (when (and allowed (not (member val allowed :test #'equal)))
+        (push (make-violation focus-node nil shape "value not in allowed set")
+              violations)))
+    ;; sh:hasValue — the focus node's values must include this
+    (let ((required (prop-shape-value g shape "hasValue")))
+      (when (and required (not (equal val required)))
+        (push (make-violation focus-node nil shape
+                              (format nil "expected hasValue ~A" required))
+              violations)))
+    ;; sh:pattern
+    (let ((pat (prop-shape-value g shape "pattern")))
+      (when (and pat (stringp val) (not (cl-ppcre:scan pat val)))
+        (push (make-violation focus-node nil shape
+                              (format nil "does not match pattern ~A" pat))
+              violations)))
+    ;; sh:minInclusive/maxInclusive/minExclusive/maxExclusive
+    (when (numberp val)
+      (let ((mini (prop-shape-value g shape "minInclusive")))
+        (when (and mini (numberp mini) (< val mini))
+          (push (make-violation focus-node nil shape
+                                (format nil "value < minInclusive ~A" mini))
+                violations)))
+      (let ((maxi (prop-shape-value g shape "maxInclusive")))
+        (when (and maxi (numberp maxi) (> val maxi))
+          (push (make-violation focus-node nil shape
+                                (format nil "value > maxInclusive ~A" maxi))
+                violations)))
+      (let ((mine (prop-shape-value g shape "minExclusive")))
+        (when (and mine (numberp mine) (<= val mine))
+          (push (make-violation focus-node nil shape
+                                (format nil "value <= minExclusive ~A" mine))
+                violations)))
+      (let ((maxe (prop-shape-value g shape "maxExclusive")))
+        (when (and maxe (numberp maxe) (>= val maxe))
+          (push (make-violation focus-node nil shape
+                                (format nil "value >= maxExclusive ~A" maxe))
+                violations))))
+    ;; sh:minLength/maxLength
+    (when (stringp val)
+      (let ((min-l (prop-shape-value g shape "minLength")))
+        (when min-l
+          (let ((n (if (numberp min-l) min-l (parse-integer (princ-to-string min-l) :junk-allowed t))))
+            (when (and n (< (length val) n))
+              (push (make-violation focus-node nil shape
+                                    (format nil "length < minLength ~A" n))
+                    violations)))))
+      (let ((max-l (prop-shape-value g shape "maxLength")))
+        (when max-l
+          (let ((n (if (numberp max-l) max-l (parse-integer (princ-to-string max-l) :junk-allowed t))))
+            (when (and n (> (length val) n))
+              (push (make-violation focus-node nil shape
+                                    (format nil "length > maxLength ~A" n))
+                    violations))))))
+    ;; sh:not
+    (let ((not-shape (prop-shape-value g shape "not")))
+      (when (and not-shape (check-value-against-subshape g val not-shape))
+        (push (make-violation focus-node nil shape "satisfies sh:not (should not)")
+              violations)))
+    ;; sh:and
+    (let ((and-shapes (prop-shape-list-value g shape "and")))
+      (when and-shapes
+        (unless (every (lambda (ss) (check-value-against-subshape g val ss)) and-shapes)
+          (push (make-violation focus-node nil shape "does not satisfy all sh:and")
+                violations))))
+    ;; sh:or
+    (let ((or-shapes (prop-shape-list-value g shape "or")))
+      (when or-shapes
+        (unless (some (lambda (ss) (check-value-against-subshape g val ss)) or-shapes)
+          (push (make-violation focus-node nil shape "does not satisfy any sh:or")
+                violations))))
+    ;; sh:xone
+    (let ((xone-shapes (prop-shape-list-value g shape "xone")))
+      (when xone-shapes
+        (let ((pass-count (count-if (lambda (ss) (check-value-against-subshape g val ss))
+                                    xone-shapes)))
+          (unless (= 1 pass-count)
+            (push (make-violation focus-node nil shape
+                                  (format nil "sh:xone expects 1 match, got ~A" pass-count))
+                  violations)))))
+    ;; sh:closed
+    (let ((closed (prop-shape-value g shape "closed")))
+      (when (equal closed "true")
+        (let ((allowed-preds (mapcar (lambda (ps) (prop-shape-path g ps))
+                                     (shape-property-shapes g shape)))
+              (ignored (prop-shape-list-value g shape "ignoredProperties")))
+          (push *rdf-type* allowed-preds)
+          (dolist (ig ignored) (push ig allowed-preds))
+          (dolist (tr (get-triples g :subject focus-node))
+            (unless (member (triple-predicate tr) allowed-preds :test #'equal)
+              (push (make-violation focus-node (triple-predicate tr) shape
+                                    (format nil "predicate not allowed by sh:closed"))
+                    violations))))))
+    violations))
+
+;;; ==========================================================================
 ;;; Main validation entry point
 ;;; ==========================================================================
 
@@ -273,11 +425,19 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
   (let ((shapes (find-shapes g))
         (all-violations nil))
     (dolist (shape shapes)
-      (let ((targets (shape-targets g shape))
-            (prop-shapes (shape-property-shapes g shape)))
-        (dolist (focus targets)
-          (dolist (ps prop-shapes)
-            (let ((violations (check-property-shape g focus ps shape)))
-              (setf all-violations (nconc all-violations violations)))))))
+      ;; Skip deactivated shapes
+      (unless (equal "true" (prop-shape-value g shape "deactivated"))
+        (let ((targets (shape-targets g shape))
+              (prop-shapes (shape-property-shapes g shape)))
+          (dolist (focus targets)
+            ;; Node-level constraints (directly on the shape)
+            (let ((node-violations (check-node-constraints g focus shape)))
+              (setf all-violations (nconc all-violations node-violations)))
+            ;; Property-level constraints
+            (dolist (ps prop-shapes)
+              ;; Skip deactivated property shapes
+              (unless (equal "true" (prop-shape-value g ps "deactivated"))
+                (let ((violations (check-property-shape g focus ps shape)))
+                  (setf all-violations (nconc all-violations violations)))))))))
     (list :conforms (null all-violations)
           :results all-violations)))
