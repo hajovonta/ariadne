@@ -36,4 +36,5 @@
                (:file "profiling")
                (:file "txlog")
                (:file "text-search")
-               (:file "events")))
+               (:file "events")
+               (:file "disk-backed")))

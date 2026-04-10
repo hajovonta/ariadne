@@ -163,4 +163,8 @@
    #:on-graph-event
    #:remove-graph-event
    #:graph-events
-   #:event-to-json))
+   #:event-to-json
+   ;; Disk-backed persistence
+   #:open-disk-graph
+   #:close-disk-graph
+   #:compact-disk-graph))

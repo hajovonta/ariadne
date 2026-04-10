@@ -104,7 +104,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 
 ## Phase 11 — Scale & Operations
 
-- [ ] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
+- [x] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
 - [x] Incremental persistence — append-only transaction log with crash recovery
 - [ ] Graph partitioning — split large graphs across multiple in-memory stores
 - [x] Profiling — query timing, index stats, bottleneck identification

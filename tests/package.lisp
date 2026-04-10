@@ -294,6 +294,10 @@
   :description "SPARQL SERVICE federated queries"
   :in :ariadne)
 
+(def-suite :disk-backed
+  :description "Disk-backed persistent graph storage"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

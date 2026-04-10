@@ -64,6 +64,7 @@
                              (:file "suite-full-text-search")
                              (:file "suite-graph-versioning")
                              (:file "suite-graph-events")
-                             (:file "suite-sparql-service"))))
+                             (:file "suite-sparql-service")
+                             (:file "suite-disk-backed"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))
