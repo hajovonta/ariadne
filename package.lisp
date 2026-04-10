@@ -167,4 +167,8 @@
    ;; Disk-backed persistence
    #:open-disk-graph
    #:close-disk-graph
-   #:compact-disk-graph))
+   #:compact-disk-graph
+   ;; Graph partitioning
+   #:make-partitioned-graph
+   #:partition-count
+   #:graph-partitions))

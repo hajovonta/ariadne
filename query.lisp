@@ -11,7 +11,7 @@
   "Compare a symbol's name to a string, case-insensitively."
   (and (symbolp sym) (string-equal (symbol-name sym) name)))
 
-(defun query (g expr)
+(defmethod query ((g graph) expr)
   "Execute a query expression against graph G."
   (let ((form (first expr)))
     (cond

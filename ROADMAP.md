@@ -106,7 +106,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 
 - [x] Disk-backed persistence — memory-mapped storage for graphs larger than RAM
 - [x] Incremental persistence — append-only transaction log with crash recovery
-- [ ] Graph partitioning — split large graphs across multiple in-memory stores
+- [x] Graph partitioning — split large graphs across multiple in-memory stores
 - [x] Profiling — query timing, index stats, bottleneck identification
 - [x] Backup/restore with versioning — timestamped snapshots
 - [x] Query result pagination — cursor-based iteration over large result sets

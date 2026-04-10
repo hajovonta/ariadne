@@ -65,6 +65,7 @@
                              (:file "suite-graph-versioning")
                              (:file "suite-graph-events")
                              (:file "suite-sparql-service")
-                             (:file "suite-disk-backed"))))
+                             (:file "suite-disk-backed")
+                             (:file "suite-partitioned-graph"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

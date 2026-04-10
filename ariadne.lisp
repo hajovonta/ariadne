@@ -31,31 +31,42 @@
 ;;; Graph
 ;;; ==========================================================================
 
-(defstruct (graph (:constructor %make-graph)
-                  (:copier nil))
-  (name nil)
-  (spo (make-hash-table :test 'equal) :type hash-table)
-  (sp  (make-hash-table :test 'equal) :type hash-table)
-  (s   (make-hash-table :test 'equal) :type hash-table)
-  (p   (make-hash-table :test 'equal) :type hash-table)
-  (po  (make-hash-table :test 'equal) :type hash-table)
-  (o   (make-hash-table :test 'equal) :type hash-table)
-  (os  (make-hash-table :test 'equal) :type hash-table)
-  (all nil :type list)
-  (count 0 :type fixnum)
-  (extra nil :type list)
-  (triple-graph (make-hash-table :test 'equal) :type hash-table)
-  (graph-index (make-hash-table :test 'equal) :type hash-table)
-  (lock (bt:make-lock "graph-lock")))
+(defclass graph ()
+  ((name :initarg :name :initform nil :accessor graph-name)
+   (spo :initform (make-hash-table :test 'equal) :accessor graph-spo)
+   (sp  :initform (make-hash-table :test 'equal) :accessor graph-sp)
+   (s   :initform (make-hash-table :test 'equal) :accessor graph-s)
+   (p   :initform (make-hash-table :test 'equal) :accessor graph-p)
+   (po  :initform (make-hash-table :test 'equal) :accessor graph-po)
+   (o   :initform (make-hash-table :test 'equal) :accessor graph-o)
+   (os  :initform (make-hash-table :test 'equal) :accessor graph-os)
+   (all :initform nil :accessor graph-all)
+   (count :initform 0 :accessor graph-count)
+   (extra :initform nil :accessor graph-extra)
+   (triple-graph :initform (make-hash-table :test 'equal) :accessor graph-triple-graph)
+   (graph-index :initform (make-hash-table :test 'equal) :accessor graph-graph-index)
+   (lock :initform (bt:make-lock "graph-lock") :accessor graph-lock)))
 
 (defun make-graph (&key name)
-  (%make-graph :name name))
+  (make-instance 'graph :name name))
 
 (defun triplep (x) (triple-p x))
 
-(defun graphp (x) (graph-p x))
+(defun graphp (x) (typep x 'graph))
 
-(defun triple-count (g &key snapshot)
+;;; ==========================================================================
+;;; Generic functions for polymorphism
+;;; ==========================================================================
+
+(defgeneric triple-count (g &key snapshot))
+(defgeneric add-triple (g subject predicate object))
+(defgeneric remove-triple (g subject predicate object))
+(defgeneric get-triples (g &key subject predicate object))
+(defgeneric has-triple-p (g subject predicate object))
+(defgeneric clear-graph (g))
+(defgeneric query (g expr))
+
+(defmethod triple-count ((g graph) &key snapshot)
   (declare (ignore snapshot))
   (graph-count g))
 
@@ -80,7 +91,7 @@
 (declaim (ftype function expand-if-prefixed))
 (declaim (ftype function fire-graph-events))
 
-(defun add-triple (g subject predicate object)
+(defmethod add-triple ((g graph) subject predicate object)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
   (when (stringp subject) (setf subject (intern-string (expand-if-prefixed g subject))))
@@ -106,7 +117,7 @@
         (fire-graph-events g :add subject predicate object)
         tr))))
 
-(defun remove-triple (g subject predicate object)
+(defmethod remove-triple ((g graph) subject predicate object)
   (bt:with-lock-held ((graph-lock g))
     (let* ((key (list subject predicate object))
            (tr (gethash key (graph-spo g))))
@@ -129,7 +140,7 @@
   (dolist (tr (get-triples g :subject subject :predicate predicate :object object))
     (remove-triple g (triple-subject tr) (triple-predicate tr) (triple-object tr))))
 
-(defun get-triples (g &key subject predicate object)
+(defmethod get-triples ((g graph) &key subject predicate object)
   "Query triples using the best flat index."
   (when (stringp subject) (setf subject (expand-if-prefixed g subject)))
   (when (stringp predicate) (setf predicate (expand-if-prefixed g predicate)))
@@ -149,13 +160,13 @@
     (object (copy-list (gethash object (graph-o g))))
     (t (copy-list (graph-all g)))))
 
-(defun has-triple-p (g subject predicate object)
+(defmethod has-triple-p ((g graph) subject predicate object)
   (when (stringp subject) (setf subject (expand-if-prefixed g subject)))
   (when (stringp predicate) (setf predicate (expand-if-prefixed g predicate)))
   (when (stringp object) (setf object (expand-if-prefixed g object)))
   (not (null (gethash (list subject predicate object) (graph-spo g)))))
 
-(defun clear-graph (g)
+(defmethod clear-graph ((g graph))
   (clrhash (graph-spo g))
   (clrhash (graph-sp g))
   (clrhash (graph-s g))

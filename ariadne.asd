@@ -37,4 +37,5 @@
                (:file "txlog")
                (:file "text-search")
                (:file "events")
-               (:file "disk-backed")))
+               (:file "disk-backed")
+               (:file "partitioned")))

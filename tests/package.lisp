@@ -298,6 +298,10 @@
   :description "Disk-backed persistent graph storage"
   :in :ariadne)
 
+(def-suite :partitioned-graph
+  :description "Graph partitioning"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
