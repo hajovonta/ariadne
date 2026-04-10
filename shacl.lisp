@@ -400,6 +400,27 @@ PATH can be a simple URI or a blank node with path operators."
                                               :value val)
                               violations)
                         (push lang seen))))))))))
+    ;; sh:languageIn
+    (let ((lang-list (prop-shape-list-value g prop-shape "languageIn")))
+      (when lang-list
+        (dolist (val values)
+          (when (stringp val)
+            (let ((at (position #\@ val)))
+              (if at
+                  (let ((lang (subseq val (1+ at))))
+                    (unless (some (lambda (allowed)
+                                    (or (string-equal lang allowed)
+                                        (and (> (length lang) (length allowed))
+                                             (char= #\- (char lang (length allowed)))
+                                             (string-equal (subseq lang 0 (length allowed)) allowed))))
+                                  lang-list)
+                      (push (make-violation focus-node path shape
+                                            (format nil "language ~A not in ~S" lang lang-list)
+                                            :value val)
+                            violations)))
+                  (push (make-violation focus-node path shape
+                                        "value has no language tag" :value val)
+                        violations)))))))
     ;; sh:node
     (let ((node-shape (prop-shape-value g prop-shape "node")))
       (when node-shape

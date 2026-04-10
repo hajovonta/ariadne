@@ -865,6 +865,9 @@ Returns (remaining-toks anon-counter list-head-node)."
                      (string= "^^" (subseq rest 0 2)))
                 (let ((type-uri (string-trim '(#\< #\>) (subseq rest 2))))
                   (convert-typed-literal str type-uri)))
+               ;; Language tag: @en, @fr-FR, etc.
+               ((and (> (length rest) 0) (char= #\@ (char rest 0)))
+                (concatenate 'string str rest))
                (t str)))
            token)))
     ;; Number
