@@ -635,6 +635,24 @@ PATH can be a simple URI or a blank node with path operators."
             (push (make-violation focus-node nil shape
                                   (format nil "sh:xone expects 1 match, got ~A" pass-count))
                   violations)))))
+    ;; sh:languageIn (node level)
+    (let ((lang-list (prop-shape-list-value g shape "languageIn")))
+      (when lang-list
+        (when (stringp val)
+          (let ((at (position #\@ val)))
+            (if at
+                (let ((lang (subseq val (1+ at))))
+                  (unless (some (lambda (allowed)
+                                  (or (string-equal lang allowed)
+                                      (and (> (length lang) (length allowed))
+                                           (char= #\- (char lang (length allowed)))
+                                           (string-equal (subseq lang 0 (length allowed)) allowed))))
+                                lang-list)
+                    (push (make-violation focus-node nil shape
+                                          (format nil "language ~A not in ~S" lang lang-list))
+                          violations)))
+                (push (make-violation focus-node nil shape "no language tag")
+                      violations))))))
     ;; sh:closed
     (let ((closed (prop-shape-value g shape "closed")))
       (when (or (eq closed t) (equal closed "true"))
