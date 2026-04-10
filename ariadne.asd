@@ -38,4 +38,5 @@
                (:file "text-search")
                (:file "events")
                (:file "disk-backed")
-               (:file "partitioned")))
+               (:file "partitioned")
+               (:file "shacl")))

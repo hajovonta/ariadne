@@ -171,4 +171,6 @@
    ;; Graph partitioning
    #:make-partitioned-graph
    #:partition-count
-   #:graph-partitions))
+   #:graph-partitions
+   ;; SHACL validation
+   #:shacl-validate))

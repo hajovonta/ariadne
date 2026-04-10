@@ -302,6 +302,10 @@
   :description "Graph partitioning"
   :in :ariadne)
 
+(def-suite :shacl
+  :description "SHACL (Shapes Constraint Language) validation"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================
