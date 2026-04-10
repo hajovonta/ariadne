@@ -142,7 +142,7 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 ## Phase 16 — Advanced Features
 
 - [x] Full-text search — index literals, search by keyword
-- [ ] Graph versioning / temporal queries — query graph at point in time
+- [x] Graph versioning / temporal queries — query graph at point in time
 - [ ] SPARQL SERVICE — federated queries to remote endpoints
 - [ ] SHACL validation — W3C standard shape constraints
 - [ ] Graph events / webhooks — notify external systems on changes

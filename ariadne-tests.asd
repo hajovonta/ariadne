@@ -61,6 +61,7 @@
                              (:file "suite-memory-usage")
                              (:file "suite-skolemization")
                              (:file "suite-delete-where")
-                             (:file "suite-full-text-search"))))
+                             (:file "suite-full-text-search")
+                             (:file "suite-graph-versioning"))))
   :perform (asdf:test-op (o c)
                     (uiop:symbol-call :fiveam :run! :ariadne)))

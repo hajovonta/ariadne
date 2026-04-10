@@ -152,4 +152,9 @@
    ;; Full-text search
    #:build-text-index
    #:text-search
-   #:graph-text-index))
+   #:graph-text-index
+   ;; Graph versioning
+   #:graph-checkpoint
+   #:graph-restore
+   #:graph-versions
+   #:query-at-version))

@@ -282,6 +282,10 @@
   :description "Full-text search over graph literals"
   :in :ariadne)
 
+(def-suite :graph-versioning
+  :description "Graph versioning and temporal queries"
+  :in :ariadne)
+
 ;; =============================================================================
 ;; Helper functions
 ;; =============================================================================

@@ -188,3 +188,47 @@
                         p
                         (if (blank-node-p o) (skolem-uri o) o)))))))
   g)
+
+;;; ==========================================================================
+;;; Graph Versioning
+;;; ==========================================================================
+
+(defun graph-versions (g)
+  "Return list of version plists (:name :timestamp) for graph G."
+  (getf (graph-extra g) :versions))
+
+(defun graph-checkpoint (g name)
+  "Save current graph state as a named version."
+  (let* ((snap (mapcar (lambda (tr)
+                         (list (triple-subject tr)
+                               (triple-predicate tr)
+                               (triple-object tr)))
+                       (get-triples g)))
+         (entry (list :name name
+                      :timestamp (get-universal-time)
+                      :triples snap)))
+    (setf (getf (graph-extra g) :versions)
+          (append (graph-versions g) (list entry)))
+    name))
+
+(defun graph-restore (g name)
+  "Restore graph G to the named version."
+  (let ((version (find name (graph-versions g)
+                       :key (lambda (v) (getf v :name))
+                       :test #'string=)))
+    (unless version (error "Unknown version: ~A" name))
+    (clear-graph g)
+    (dolist (spo (getf version :triples))
+      (add-triple g (first spo) (second spo) (third spo)))
+    g))
+
+(defun query-at-version (g name expr)
+  "Execute query EXPR against the named version of G without modifying G."
+  (let ((tmp (make-graph :name (format nil "~A@~A" (graph-name g) name)))
+        (version (find name (graph-versions g)
+                       :key (lambda (v) (getf v :name))
+                       :test #'string=)))
+    (unless version (error "Unknown version: ~A" name))
+    (dolist (spo (getf version :triples))
+      (add-triple tmp (first spo) (second spo) (third spo)))
+    (query tmp expr)))
