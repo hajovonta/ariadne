@@ -36,11 +36,26 @@
   "Run a single W3C SHACL test. Returns (values pass-p expected actual)."
   (handler-case
       (let* ((g (load-shacl-test-file path))
-             (expected (extract-expected-conforms g))
-             (report (shacl-validate g))
-             (actual (getf report :conforms)))
-        (values (eq (not (not expected)) (not (not actual)))
-                expected actual))
+             ;; Check for separate data/shapes graphs
+             (data-refs (mapcar #'triple-object
+                                (get-triples g :predicate "http://www.w3.org/ns/shacl-test#dataGraph")))
+             (shapes-refs (mapcar #'triple-object
+                                  (get-triples g :predicate "http://www.w3.org/ns/shacl-test#shapesGraph"))))
+        ;; Load referenced files into the same graph
+        (dolist (ref (append data-refs shapes-refs))
+          (when (and (stringp ref) (> (length ref) 0) (not (string= ref "")))
+            (let ((ref-path (merge-pathnames ref (directory-namestring path))))
+              (when (probe-file ref-path)
+                (let ((content (with-open-file (s ref-path :direction :input :external-format :utf-8)
+                                 (let ((buf (make-string (file-length s))))
+                                   (read-sequence buf s) buf))))
+                  (handler-case (import-turtle g content)
+                    (error () nil)))))))
+        (let* ((expected (extract-expected-conforms g))
+               (report (shacl-validate g))
+               (actual (getf report :conforms)))
+          (values (eq (not (not expected)) (not (not actual)))
+                  expected actual)))
     (error (e)
       (declare (ignore e))
       (values nil :error :error))))

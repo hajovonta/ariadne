@@ -27,12 +27,17 @@
 ;;; ==========================================================================
 
 (defun find-shapes (g)
-  "Find all NodeShape and PropertyShape definitions in the graph."
+  "Find all shape definitions in the graph (explicit and implicit)."
   (let ((shapes nil))
+    ;; Explicit types
     (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "NodeShape")))
       (pushnew (triple-subject tr) shapes :test #'equal))
     (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "PropertyShape")))
       (pushnew (triple-subject tr) shapes :test #'equal))
+    ;; Implicit: anything with sh:targetClass, sh:targetNode, sh:targetSubjectsOf, sh:targetObjectsOf
+    (dolist (pred '("targetClass" "targetNode" "targetSubjectsOf" "targetObjectsOf"))
+      (dolist (tr (get-triples g :predicate (sh-uri pred)))
+        (pushnew (triple-subject tr) shapes :test #'equal)))
     shapes))
 
 (defun shape-targets (g shape)
@@ -455,6 +460,13 @@ PATH can be a simple URI or a blank node with path operators."
         (maxi (prop-shape-value g sub-shape "maxInclusive"))
         (mine (prop-shape-value g sub-shape "minExclusive"))
         (maxe (prop-shape-value g sub-shape "maxExclusive"))
+        (cls (prop-shape-value g sub-shape "class"))
+        (hv (prop-shape-value g sub-shape "hasValue"))
+        (in-list (prop-shape-list-value g sub-shape "in"))
+        (not-shape (prop-shape-value g sub-shape "not"))
+        (and-shapes (prop-shape-list-value g sub-shape "and"))
+        (or-shapes (prop-shape-list-value g sub-shape "or"))
+        (xone-shapes (prop-shape-list-value g sub-shape "xone"))
         (prop-shapes (shape-property-shapes g sub-shape)))
     (and (or (null dt) (value-matches-datatype-p val dt))
          (or (null pat) (not (stringp val)) (cl-ppcre:scan pat val))
@@ -463,7 +475,13 @@ PATH can be a simple URI or a blank node with path operators."
          (or (null maxi) (not (numberp val)) (not (numberp maxi)) (<= val maxi))
          (or (null mine) (not (numberp val)) (not (numberp mine)) (> val mine))
          (or (null maxe) (not (numberp val)) (not (numberp maxe)) (< val maxe))
-         ;; Check property constraints on the sub-shape against val as focus node
+         (or (null cls) (and (stringp val) (has-triple-p g val *rdf-type* cls)))
+         (or (null hv) (equal val hv))
+         (or (null in-list) (member val in-list :test #'equal))
+         (or (null not-shape) (not (check-value-against-subshape g val not-shape)))
+         (or (null and-shapes) (every (lambda (ss) (check-value-against-subshape g val ss)) and-shapes))
+         (or (null or-shapes) (some (lambda (ss) (check-value-against-subshape g val ss)) or-shapes))
+         (or (null xone-shapes) (= 1 (count-if (lambda (ss) (check-value-against-subshape g val ss)) xone-shapes)))
          (or (null prop-shapes)
              (every (lambda (ps)
                       (null (check-property-shape g val ps sub-shape)))
@@ -589,15 +607,14 @@ PATH can be a simple URI or a blank node with path operators."
               (push (make-violation focus-node (triple-predicate tr) shape
                                     (format nil "predicate not allowed by sh:closed"))
                     violations))))))
-    ;; sh:equals (node level) — focus node's values for two paths must be equal
+    ;; sh:equals (node level) — focus node must be in values of the given path
     (let ((eq-path (prop-shape-value g shape "equals")))
       (when eq-path
-        ;; At node level, check all properties of focus node against eq-path
-        (let ((vals1 (mapcar #'triple-object (get-triples g :subject focus-node)))
-              (vals2 (mapcar #'triple-object (get-triples g :subject focus-node :predicate eq-path))))
-          (declare (ignore vals1 vals2))
-          ;; Node-level equals is about the node itself — simplified
-          nil)))
+        (let ((vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate eq-path))))
+          (unless (member focus-node vals :test #'equal)
+            (push (make-violation focus-node nil shape
+                                  (format nil "focus node not in values of ~A" eq-path))
+                  violations)))))
     ;; sh:disjoint (node level)
     (let ((disj-path (prop-shape-value g shape "disjoint")))
       (when disj-path
