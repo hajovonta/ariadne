@@ -106,13 +106,15 @@
 
 (defun convert-typed-literal (value type-uri)
   "Convert a string value to the appropriate CL type based on XSD type URI."
-  (cond
-    ((search "integer" type-uri) (parse-integer value))
-    ((search "decimal" type-uri) (read-from-string value))
-    ((search "float" type-uri) (read-from-string value))
-    ((search "double" type-uri) (read-from-string value))
-    ((search "boolean" type-uri) (string= value "true"))
-    (t value)))
+  (handler-case
+      (cond
+        ((search "integer" type-uri) (parse-integer value))
+        ((search "decimal" type-uri) (read-from-string value))
+        ((search "float" type-uri) (read-from-string value))
+        ((search "double" type-uri) (read-from-string value))
+        ((search "boolean" type-uri) (string= value "true"))
+        (t value))
+    (error () value)))
 
 ;;; ==========================================================================
 ;;; N-Triples Export
