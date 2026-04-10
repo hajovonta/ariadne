@@ -3,7 +3,8 @@
 (defpackage #:ariadne
   (:use #:cl)
   (:local-nicknames (#:bt #:bordeaux-threads)
-                    (#:ht #:hunchentoot))
+                    (#:ht #:hunchentoot)
+                    (#:jzon #:com.inuoe.jzon))
   (:export
    ;; Graph
    #:make-graph

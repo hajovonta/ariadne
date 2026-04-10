@@ -10,16 +10,6 @@
 ;;; JSON conversion
 ;;; ==========================================================================
 
-(defun json-escape (str)
-  (with-output-to-string (s)
-    (loop for c across (princ-to-string str) do
-      (case c
-        (#\" (write-string "\\\"" s))
-        (#\\ (write-string "\\\\" s))
-        (#\Newline (write-string "\\n" s))
-        (#\Tab (write-string "\\t" s))
-        (t (write-char c s))))))
-
 (defun graph-to-cytoscape-json (g &key predicates center depth)
   "Convert graph to Cytoscape.js elements JSON string."
   (let ((triples (if (or predicates center)
@@ -57,27 +47,29 @@
       (setf (gethash (princ-to-string (triple-object tr)) nodes) t)
       (push tr edges))
     ;; Build JSON
-    (with-output-to-string (s)
-      (write-string "[" s)
-      (let ((first t))
-        ;; Nodes
-        (maphash (lambda (id v)
-                   (declare (ignore v))
-                   (if first (setf first nil) (write-string "," s))
-                   (format s "{\"data\":{\"id\":\"~A\",\"label\":\"~A\"}}"
-                           (json-escape id)
-                           (json-escape (node-label id))))
-                 nodes)
-        ;; Edges
-        (let ((eid 0))
-          (dolist (tr edges)
-            (write-string "," s)
-            (format s "{\"data\":{\"id\":\"e~A\",\"source\":\"~A\",\"target\":\"~A\",\"label\":\"~A\"}}"
-                    (incf eid)
-                    (json-escape (princ-to-string (triple-subject tr)))
-                    (json-escape (princ-to-string (triple-object tr)))
-                    (json-escape (triple-predicate tr))))))
-      (write-string "]" s))))
+    (let ((elements nil))
+      ;; Nodes
+      (maphash (lambda (id v)
+                 (declare (ignore v))
+                 (let ((data (make-hash-table :test 'equal)))
+                   (setf (gethash "id" data) id)
+                   (setf (gethash "label" data) (node-label id))
+                   (let ((el (make-hash-table :test 'equal)))
+                     (setf (gethash "data" el) data)
+                     (push el elements))))
+               nodes)
+      ;; Edges
+      (let ((eid 0))
+        (dolist (tr edges)
+          (let ((data (make-hash-table :test 'equal)))
+            (setf (gethash "id" data) (format nil "e~A" (incf eid)))
+            (setf (gethash "source" data) (princ-to-string (triple-subject tr)))
+            (setf (gethash "target" data) (princ-to-string (triple-object tr)))
+            (setf (gethash "label" data) (triple-predicate tr))
+            (let ((el (make-hash-table :test 'equal)))
+              (setf (gethash "data" el) data)
+              (push el elements)))))
+      (jzon:stringify (coerce (nreverse elements) 'vector)))))
 
 (defun node-label (id)
   "Short label for a node: strip URI prefix."
@@ -258,29 +250,35 @@ function selectAll(){
   (handler-case
       (let ((results (sparql g query-string)))
         (cond
-          ((eq results t) "{\"boolean\":true}")
-          ((null results) "{\"boolean\":false}")
+          ((eq results t) (jzon:stringify (let ((ht (make-hash-table :test 'equal)))
+                                           (setf (gethash "boolean" ht) t) ht)))
+          ((null results) (jzon:stringify (let ((ht (make-hash-table :test 'equal)))
+                                           (setf (gethash "boolean" ht) nil) ht)))
           ((listp results)
-           (format nil "{\"results\":[~{~A~^,~}]}"
-                   (mapcar (lambda (row)
-                             (format nil "[~{~A~^,~}]"
-                                     (mapcar (lambda (v)
-                                               (if (stringp v)
-                                                   (format nil "\"~A\"" (json-escape v))
-                                                   (format nil "~A" v)))
-                                             (if (listp row) row (list row)))))
-                           results)))
-          (t (format nil "~A" results))))
+           (let ((ht (make-hash-table :test 'equal)))
+             (setf (gethash "results" ht)
+                   (coerce (mapcar (lambda (row)
+                                     (coerce (if (listp row) row (list row)) 'vector))
+                                   results) 'vector))
+             (jzon:stringify ht)))
+          (t (jzon:stringify results))))
     (error (e)
-      (format nil "{\"error\":\"~A\"}" (json-escape (princ-to-string e))))))
+      (let ((ht (make-hash-table :test 'equal)))
+        (setf (gethash "error" ht) (princ-to-string e))
+        (jzon:stringify ht)))))
 
 (defun sparql-update-json (g update-string)
   "Execute SPARQL UPDATE and return JSON result."
   (handler-case
-      (let ((count (sparql-update g update-string)))
-        (format nil "{\"success\":true,\"mutationCount\":~A}" count))
+      (let ((count (sparql-update g update-string))
+            (ht (make-hash-table :test 'equal)))
+        (setf (gethash "success" ht) t)
+        (setf (gethash "mutationCount" ht) count)
+        (jzon:stringify ht))
     (error (e)
-      (format nil "{\"error\":\"~A\"}" (json-escape (princ-to-string e))))))
+      (let ((ht (make-hash-table :test 'equal)))
+        (setf (gethash "error" ht) (princ-to-string e))
+        (jzon:stringify ht)))))
 
 (defun start-web-server (graph &key (port 8080))
   "Start the web visualization server for GRAPH on PORT."
@@ -302,21 +300,20 @@ function selectAll(){
                              :depth (when depth (parse-integer depth :junk-allowed t))))
   (ht:define-easy-handler (handle-graph-info :uri "/api/info") ()
     (setf (ht:content-type*) "application/json")
-    (format nil "{\"name\":\"~A\",\"triples\":~A,\"subjects\":~A,\"predicates\":~A}"
-            (json-escape (or (graph-name *web-graph*) "unnamed"))
-            (triple-count *web-graph*)
-            (length (all-subjects *web-graph*))
-            (length (all-predicates *web-graph*))))
+    (let ((ht (make-hash-table :test 'equal)))
+      (setf (gethash "name" ht) (or (graph-name *web-graph*) "unnamed"))
+      (setf (gethash "triples" ht) (triple-count *web-graph*))
+      (setf (gethash "subjects" ht) (length (all-subjects *web-graph*)))
+      (setf (gethash "predicates" ht) (length (all-predicates *web-graph*)))
+      (jzon:stringify ht)))
   (ht:define-easy-handler (handle-predicates-api :uri "/api/predicates") ()
     (setf (ht:content-type*) "application/json")
-    ;; Return predicates sorted by frequency (most common first)
     (let* ((preds (all-predicates *web-graph*))
            (sorted (sort (mapcar (lambda (p)
                                    (cons p (length (get-triples *web-graph* :predicate p))))
                                  preds)
                          #'> :key #'cdr)))
-      (format nil "[~{\"~A\"~^,~}]"
-              (mapcar (lambda (pc) (json-escape (car pc))) sorted))))
+      (jzon:stringify (coerce (mapcar #'car sorted) 'vector))))
   (ht:define-easy-handler (handle-sparql :uri "/sparql")
       ((query :parameter-type 'string))
     (setf (ht:content-type*) "application/json")

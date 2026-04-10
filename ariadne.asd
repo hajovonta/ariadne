@@ -8,7 +8,8 @@
   :depends-on (#:cl-ppcre
                #:bordeaux-threads
                #:hunchentoot
-               #:drakma)
+               #:drakma
+               #:com.inuoe.jzon)
   :serial t
   :components ((:file "package")
                (:file "ariadne")

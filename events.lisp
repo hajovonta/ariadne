@@ -23,15 +23,12 @@
 
 (defun event-to-json (evt)
   "Serialize an event plist to JSON."
-  (format nil "{\"event\":\"~(~A~)\",\"subject\":~A,\"predicate\":~A,\"object\":~A}"
-          (getf evt :event)
-          (json-escape-string (princ-to-string (getf evt :subject)))
-          (json-escape-string (princ-to-string (getf evt :predicate)))
-          (json-escape-string (princ-to-string (getf evt :object)))))
-
-(defun json-escape-string (s)
-  "Wrap string in quotes with basic JSON escaping."
-  (format nil "\"~A\"" (cl-ppcre:regex-replace-all "\"" s "\\\\\"")))
+  (let ((ht (make-hash-table :test 'equal)))
+    (setf (gethash "event" ht) (string-downcase (symbol-name (getf evt :event))))
+    (setf (gethash "subject" ht) (princ-to-string (getf evt :subject)))
+    (setf (gethash "predicate" ht) (princ-to-string (getf evt :predicate)))
+    (setf (gethash "object" ht) (princ-to-string (getf evt :object)))
+    (jzon:stringify ht)))
 
 (defun fire-graph-events (g event-type subject predicate object)
   "Fire all matching event hooks."
