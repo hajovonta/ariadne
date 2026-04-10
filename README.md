@@ -136,6 +136,32 @@ git clone <repository-url> ariadne
 | `:reactive` | Reactive triggers on pattern match |
 | `:persistence` | Save/load with type preservation |
 | `:edge-cases` | Unicode, emoji, empty graphs, stress tests, mixed types |
+| `:named-graphs` | Named graphs: quads, GRAPH clause |
+| `:sparql-parser` | SPARQL string parser |
+| `:sparql-parser-extended` | CONSTRUCT, OPTIONAL, UNION, GROUP BY, HAVING, OFFSET |
+| `:sparql-parser-paths` | Property paths and BIND in SPARQL parser |
+| `:sparql-update` | SPARQL UPDATE: INSERT DATA, DELETE DATA |
+| `:sparql-endpoint` | SPARQL HTTP endpoint |
+| `:compact-index` | Compact index correctness |
+| `:thread-safety` | Concurrent reads and writes |
+| `:visualization` | Graph visualization via Graphviz |
+| `:graph-operations` | Merge, diff, copy, export formats |
+| `:web-server` | Web visualization server |
+| `:owl-reasoning` | OWL/RDFS entailment rules |
+| `:schema-validation` | Schema validation and constraints |
+| `:export-formats` | JSON-LD and Cytoscape JSON export |
+| `:rdf-xml` | RDF/XML import |
+| `:json-ld-import` | JSON-LD import |
+| `:profiling` | Query profiling and graph statistics |
+| `:incremental-persistence` | Append-only transaction log |
+| `:pagination` | Query result pagination |
+| `:backup` | Backup/restore with versioning |
+| `:prefix-registry` | Prefix registry for short URIs |
+| `:memory-usage` | Memory usage reporting |
+| `:skolemization` | Blank node skolemization |
+| `:delete-where` | DELETE WHERE and SPARQL DESCRIBE |
+| `:full-text-search` | Full-text search over literals |
+| `:graph-versioning` | Graph versioning and temporal queries |
 
 ## Architecture
 

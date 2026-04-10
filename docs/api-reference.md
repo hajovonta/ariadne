@@ -150,6 +150,7 @@ Complete function reference for the Ariadne graph database. Click section header
 | [`merge-graphs-into`](api/graph-operations.md#merge-graphs-into) | `(target source)` | Merge source into target |
 | [`diff-graphs`](api/graph-operations.md#diff-graphs) | `(g1 g2)` | Triples in g1 not in g2 |
 | [`copy-graph`](api/graph-operations.md#copy-graph) | `(g)` | Independent deep copy |
+| [`skolemize-blank-nodes`](api/graph-operations.md#skolemize-blank-nodes) | `(g &key base)` | Replace blank nodes with stable URIs |
 
 ## [Visualization & REPL](api/visualization.md)
 
@@ -165,3 +166,98 @@ Complete function reference for the Ariadne graph database. Click section header
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | [`sparql`](api/sparql-parser.md#sparql) | `(g query-string)` | Parse and execute SPARQL string |
+
+## [SPARQL UPDATE](api/sparql-update.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`sparql-update`](api/sparql-update.md#sparql-update) | `(g update-string)` | Execute INSERT DATA, DELETE DATA, DELETE WHERE |
+
+## [OWL/RDFS Reasoning](api/owl-reasoning.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`apply-owl-rules`](api/owl-reasoning.md#apply-owl-rules) | `(g)` | Apply OWL/RDFS entailment rules |
+
+## [Schema Validation](api/schema-validation.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`define-schema`](api/schema-validation.md#define-schema) | `(g class &key properties)` | Define class schema |
+| [`graph-schema`](api/schema-validation.md#graph-schema) | `(g)` | Get schema definitions |
+| [`validate-graph`](api/schema-validation.md#validate-graph) | `(g)` | Validate instances against schema |
+| [`find-similar-entities`](api/schema-validation.md#find-similar-entities) | `(g entity &key threshold)` | Find similar entities by Jaccard similarity |
+
+## [Export Formats](api/export-formats.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`export-json-ld`](api/export-formats.md#export-json-ld) | `(g)` | Export as JSON-LD |
+| [`export-cytoscape-json`](api/export-formats.md#export-cytoscape-json) | `(g &key predicates center depth)` | Export as Cytoscape.js JSON |
+| [`export-nquads`](api/export-formats.md#export-nquads) | `(g)` | Export as N-Quads |
+| [`import-rdf-xml`](api/export-formats.md#import-rdf-xml) | `(g string)` | Import RDF/XML |
+| [`import-json-ld`](api/export-formats.md#import-json-ld) | `(g string)` | Import JSON-LD |
+
+## [Web Visualization](api/web-server.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`start-web-server`](api/web-server.md#start-web-server) | `(g &key port)` | Start Cytoscape.js web explorer |
+| [`stop-web-server`](api/web-server.md#stop-web-server) | `()` | Stop web server |
+
+## [Profiling & Statistics](api/profiling.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`profile-query`](api/profiling.md#profile-query) | `(g expr)` | Time a query and report |
+| [`graph-statistics`](api/profiling.md#graph-statistics) | `(g)` | Graph stats plist |
+| [`graph-memory-usage`](api/profiling.md#graph-memory-usage) | `(g)` | Memory usage estimate |
+
+## [Transaction Log](api/txlog.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`start-txlog`](api/txlog.md#start-txlog) | `(g path)` | Start append-only log |
+| [`stop-txlog`](api/txlog.md#stop-txlog) | `(g)` | Stop logging |
+| [`replay-txlog`](api/txlog.md#replay-txlog) | `(g path)` | Replay log to reconstruct state |
+
+## [Pagination](api/pagination.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`make-query-cursor`](api/pagination.md#make-query-cursor) | `(g expr &key page-size)` | Create paginated cursor |
+| [`cursor-next`](api/pagination.md#cursor-next) | `(cursor)` | Get next page |
+| [`cursor-done-p`](api/pagination.md#cursor-done-p) | `(cursor)` | Check if exhausted |
+
+## [Backup & Restore](api/backup.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`backup-graph`](api/backup.md#backup-graph) | `(g directory)` | Timestamped backup |
+| [`restore-latest-backup`](api/backup.md#restore-latest-backup) | `(g directory)` | Restore most recent |
+| [`list-backups`](api/backup.md#list-backups) | `(directory)` | List backup files |
+
+## [Prefix Registry](api/prefix-registry.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`register-prefix`](api/prefix-registry.md#register-prefix) | `(g prefix uri)` | Register a short prefix |
+| [`register-common-prefixes`](api/prefix-registry.md#register-common-prefixes) | `(g)` | Register standard prefixes |
+| [`graph-prefixes`](api/prefix-registry.md#graph-prefixes) | `(g)` | List registered prefixes |
+
+## [Full-Text Search](api/full-text-search.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`build-text-index`](api/full-text-search.md#build-text-index) | `(g &key fields)` | Build inverted index |
+| [`text-search`](api/full-text-search.md#text-search) | `(g query)` | Search by keywords |
+| [`graph-text-index`](api/full-text-search.md#graph-text-index) | `(g)` | Get text index |
+
+## [Graph Versioning](api/graph-versioning.md)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| [`graph-checkpoint`](api/graph-versioning.md#graph-checkpoint) | `(g name)` | Save named snapshot |
+| [`graph-restore`](api/graph-versioning.md#graph-restore) | `(g name)` | Restore to version |
+| [`graph-versions`](api/graph-versioning.md#graph-versions) | `(g)` | List all versions |
+| [`query-at-version`](api/graph-versioning.md#query-at-version) | `(g name expr)` | Query historical state |
