@@ -1,6 +1,6 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 787/787 tests passing.
+A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 796/796 tests passing.
 
 ## Key Features
 
@@ -12,7 +12,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Named Graphs** — Quad store with GRAPH clause for multi-graph queries
 
 ### Query & Pattern Matching
-- **SPARQL-like Query DSL** — `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, subqueries
+- **SPARQL-like Query DSL** — `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, `GRAPH`, subqueries
 - **SPARQL String Parser** — Execute standard SPARQL query strings directly, including `DESCRIBE`
 - **SPARQL UPDATE** — `INSERT DATA`, `DELETE DATA`, `DELETE WHERE` via string parser and HTTP endpoint
 - **SPARQL SERVICE** — Federated queries to remote SPARQL endpoints via Drakma
@@ -28,7 +28,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
 - **OWL/RDFS Reasoning** — subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
 - **Schema Validation** — Class/property type and cardinality constraints
-- **SHACL Validation** — W3C Shapes Constraint Language, 95/95 core tests (100% conformance)
+- **SHACL Validation** — W3C Shapes Constraint Language, 95/95 core + 23/23 SPARQL tests (100% conformance)
 - **Duplicate Detection** — Jaccard bigram similarity for near-duplicate entities
 
 ### Import & Export
@@ -159,6 +159,7 @@ git clone <repository-url> ariadne
 | `:sparql-parser` | SPARQL string parser |
 | `:sparql-parser-extended` | CONSTRUCT, OPTIONAL, UNION, GROUP BY, HAVING, OFFSET |
 | `:sparql-parser-paths` | Property paths and BIND in SPARQL parser |
+| `:sparql-filter-extended` | FILTER: boolean operators, NOT, BOUND, isLiteral, true/false |
 | `:sparql-update` | SPARQL UPDATE: INSERT DATA, DELETE DATA |
 | `:sparql-endpoint` | SPARQL HTTP endpoint |
 | `:compact-index` | Compact index correctness |
@@ -181,6 +182,14 @@ git clone <repository-url> ariadne
 | `:delete-where` | DELETE WHERE and SPARQL DESCRIBE |
 | `:full-text-search` | Full-text search over literals |
 | `:graph-versioning` | Graph versioning and temporal queries |
+
+### W3C Conformance
+
+| Standard | Tests | Result |
+|----------|-------|--------|
+| Turtle (syntax) | 209/209 positive, 82/82 negative | 100% |
+| SHACL Core | 95/95 | 100% |
+| SHACL-SPARQL | 23/23 | 100% |
 
 ## Architecture
 

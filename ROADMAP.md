@@ -144,7 +144,8 @@ Target: 82/82 negative tests correctly rejected. Achieved.
 - [x] Full-text search — index literals, search by keyword
 - [x] Graph versioning / temporal queries — query graph at point in time
 - [x] SPARQL SERVICE — federated queries to remote endpoints
-- [x] SHACL validation — W3C standard shape constraints (95/95 core tests, 100%)
+- [x] SHACL validation — W3C standard shape constraints (95/95 core + 23/23 SPARQL tests, 100%)
+- [x] SHACL-SPARQL — Custom constraint components, sh:validator/nodeValidator/propertyValidator, $this/$PATH/$shapesGraph/$currentShape pre-binding, FILTER NOT EXISTS, CONCAT, ASK with filters
 - [x] Graph events / webhooks — notify external systems on changes
 
 ## Completed
