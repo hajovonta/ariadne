@@ -29,7 +29,8 @@
 
 ;;; Methods for partitioned-graph
 
-(defmethod add-triple ((pg partitioned-graph) subject predicate object)
+(defmethod add-triple ((pg partitioned-graph) subject predicate object &key graph-name)
+  (declare (ignore graph-name))
   (add-triple (partition-for pg subject) subject predicate object))
 
 (defmethod remove-triple ((pg partitioned-graph) subject predicate object)

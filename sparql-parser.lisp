@@ -210,13 +210,14 @@
                (push (list 'having having-expr) clauses)))
             (t (return))))
         ;; Build DSL expression
-        (let ((expr (list (if distinct-p 'select-distinct 'select)
+        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists graph)))) patterns))
+               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists graph)))) patterns))
+               (expr (list (if distinct-p 'select-distinct 'select)
                           vars
-                          (cons 'where (remove-if (lambda (p) (and (consp p) (eq (car p) 'not-exists))) patterns)))))
-          ;; Extract NOT-EXISTS from patterns
-          (dolist (p patterns)
-            (when (and (consp p) (eq (car p) 'not-exists))
-              (setf expr (append expr (list p)))))
+                          (cons 'where clean-patterns))))
+          ;; Extract NOT-EXISTS and GRAPH from patterns
+          (dolist (p ne-and-graph)
+            (setf expr (append expr (list p))))
           (dolist (opt optionals)
             (setf expr (append expr (list opt))))
           (dolist (u unions)
@@ -399,6 +400,19 @@
              (when (and toks (string= (car toks) "}"))
                (pop toks))
              (push (list 'service url svc-patterns) patterns))))
+        ;; GRAPH <uri> { ... }
+        ((string-equal (car toks) "GRAPH")
+         (pop toks)
+         (let ((graph-uri (sparql-resolve-term (pop toks) prefixes)))
+           (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+             (pop toks))
+           (multiple-value-bind (g-pats g-filts g-rest)
+               (sparql-parse-body toks prefixes)
+             (declare (ignore g-filts))
+             (setf toks g-rest)
+             (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+               (pop toks))
+             (push (list 'graph graph-uri g-pats) patterns))))
         ;; OPTIONAL { ... }
         ((string-equal (car toks) "OPTIONAL")
          (pop toks)

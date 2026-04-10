@@ -1056,20 +1056,18 @@ Returns (remaining-toks anon-counter list-head-node)."
   "Export graph as N-Quads format string, including graph names."
   (with-output-to-string (s)
     ;; Triples with graph names
-    (maphash (lambda (graph-name keys)
-               (dolist (key keys)
-                 (destructuring-bind (subj pred obj) key
-                   (format s "~A ~A ~A ~A .~%"
-                           (format-nt-term subj)
-                           (format-nt-term pred)
-                           (format-nt-term obj)
-                           (format-nt-term graph-name)))))
+    (maphash (lambda (graph-name triples)
+               (dolist (tr triples)
+                 (format s "~A ~A ~A ~A .~%"
+                         (format-nt-term (triple-subject tr))
+                         (format-nt-term (triple-predicate tr))
+                         (format-nt-term (triple-object tr))
+                         (format-nt-term graph-name))))
              (graph-graph-index g))
     ;; Triples without graph names
     (dolist (tr (get-triples g))
-      (let ((key (list (triple-subject tr) (triple-predicate tr) (triple-object tr))))
-        (unless (gethash key (graph-triple-graph g))
-          (format s "~A ~A ~A .~%"
-                  (format-nt-term (triple-subject tr))
-                  (format-nt-term (triple-predicate tr))
-                  (format-nt-term (triple-object tr))))))))
+      (unless (triple-graph tr)
+        (format s "~A ~A ~A .~%"
+                (format-nt-term (triple-subject tr))
+                (format-nt-term (triple-predicate tr))
+                (format-nt-term (triple-object tr)))))))

@@ -952,7 +952,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
 ;;; ==========================================================================
 
 (defvar *shacl-sparql-forbidden*
-  '("MINUS" "VALUES" "SERVICE" "GRAPH" "INSERT" "DELETE" "LOAD" "CLEAR" "CREATE" "DROP"
+  '("MINUS" "VALUES" "SERVICE" "INSERT" "DELETE" "LOAD" "CLEAR" "CREATE" "DROP"
     "COPY" "MOVE" "ADD")
   "SPARQL keywords forbidden in SHACL constraint queries.")
 
@@ -977,7 +977,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
     (when (cl-ppcre:scan "\\bBIND\\b.*\\bAS\\b.*\\$" upper)
       (error "SHACL-SPARQL: BIND cannot reassign pre-bound variables"))
     ;; Unresolved pre-bound variables other than $this
-    (let ((cleaned (cl-ppcre:regex-replace-all "(?i)\\$this\\b|\\$PATH\\b" query-str "")))
+    (let ((cleaned (cl-ppcre:regex-replace-all "(?i)\\$this\\b|\\$PATH\\b|\\$shapesGraph\\b|\\$currentShape\\b" query-str "")))
       (when (cl-ppcre:scan "\\$[A-Za-z]" cleaned)
         (error "SHACL-SPARQL: unresolved pre-bound variable")))))
 
@@ -1022,13 +1022,16 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                    "\\$this"
                                    where-part
                                    (format nil "<~A>" focus-node))))
-                           (if path
-                               (cl-ppcre:regex-replace-all "\\$PATH" w (format nil "<~A>" path))
-                               w)))
+                           (when path
+                             (setf w (cl-ppcre:regex-replace-all "\\$PATH" w (format nil "<~A>" path))))
+                           (setf w (cl-ppcre:regex-replace-all
+                                    "\\$shapesGraph" w
+                                    (format nil "<~A>" (or (graph-name g) "urn:ariadne:default"))))
+                           (setf w (cl-ppcre:regex-replace-all
+                                    "\\$currentShape" w (format nil "<~A>" shape)))
+                           w))
              (fixed-query (concatenate 'string prefix-str fixed-select fixed-where))
              (results (sparql g fixed-query)))
-        (with-open-file (dbg "/tmp/shacl-sparql-debug.txt" :direction :output :if-exists :supersede)
-          (format dbg "~A" fixed-query))
         (when (and results (listp results))
           (dolist (row results)
             (let ((row-list (if (listp row) row (list row))))

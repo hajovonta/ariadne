@@ -17,6 +17,8 @@
    #:remove-triple
    #:remove-triples
    #:get-triples
+   #:get-quads
+   #:triple-graph
    #:has-triple-p
    #:triplep
    #:triple-subject

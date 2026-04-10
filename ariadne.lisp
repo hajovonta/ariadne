@@ -24,8 +24,8 @@
 ;;; Triple
 ;;; ==========================================================================
 
-(defstruct (triple (:constructor %make-triple (subject predicate object)))
-  subject predicate object)
+(defstruct (triple (:constructor %make-triple (subject predicate object &optional graph)))
+  subject predicate object graph)
 
 ;;; ==========================================================================
 ;;; Graph
@@ -59,7 +59,7 @@
 ;;; ==========================================================================
 
 (defgeneric triple-count (g &key snapshot))
-(defgeneric add-triple (g subject predicate object))
+(defgeneric add-triple (g subject predicate object &key graph-name))
 (defgeneric remove-triple (g subject predicate object))
 (defgeneric get-triples (g &key subject predicate object))
 (defgeneric has-triple-p (g subject predicate object))
@@ -91,7 +91,7 @@
 (declaim (ftype function expand-if-prefixed))
 (declaim (ftype function fire-graph-events))
 
-(defmethod add-triple ((g graph) subject predicate object)
+(defmethod add-triple ((g graph) subject predicate object &key graph-name)
   (when (or (null subject) (null predicate))
     (error "Subject and predicate must not be NIL"))
   (when (stringp subject) (setf subject (intern-string (expand-if-prefixed g subject))))
@@ -100,8 +100,11 @@
   (bt:with-lock-held ((graph-lock g))
     (let ((key (list subject predicate object)))
       (when (gethash key (graph-spo g))
-        (return-from add-triple (gethash key (graph-spo g))))
-      (let ((tr (%make-triple subject predicate object)))
+        (let ((existing (gethash key (graph-spo g))))
+          (when graph-name
+            (pushnew existing (gethash graph-name (graph-graph-index g))))
+          (return-from add-triple existing)))
+      (let ((tr (%make-triple subject predicate object graph-name)))
         (setf (gethash key (graph-spo g)) tr)
         (index-push (graph-sp g) (list subject predicate) tr)
         (index-push (graph-s g) subject tr)
@@ -111,6 +114,8 @@
         (index-push (graph-os g) (list object subject) tr)
         (push tr (graph-all g))
         (incf (graph-count g))
+        (when graph-name
+          (push tr (gethash graph-name (graph-graph-index g))))
         (when (graph-triggers g)
           (check-triggers g tr))
         (txlog-write g :add subject predicate object)
@@ -194,25 +199,17 @@
 
 (defun add-quad (g subject predicate object graph-name)
   "Add a triple associated with a named graph."
-  (let ((tr (add-triple g subject predicate object)))
-    (when graph-name
-      (let ((key (list subject predicate object)))
-        (setf (gethash key (graph-triple-graph g)) graph-name)
-        (pushnew key (gethash graph-name (graph-graph-index g)) :test #'equal)))
-    tr))
+  (add-triple g subject predicate object :graph-name graph-name))
 
 (defun get-quads (g &key graph subject predicate object)
   "Query triples, optionally filtered by graph name."
   (if graph
-      (let ((keys (gethash graph (graph-graph-index g)))
-            (results nil))
-        (dolist (key keys results)
-          (destructuring-bind (s p o) key
-            (when (and (or (null subject) (equal subject s))
-                       (or (null predicate) (equal predicate p))
-                       (or (null object) (equal object o)))
-              (let ((trs (get-triples g :subject s :predicate p :object o)))
-                (dolist (tr trs) (push tr results)))))))
+      (remove-if-not
+       (lambda (tr)
+         (and (or (null subject) (equal subject (triple-subject tr)))
+              (or (null predicate) (equal predicate (triple-predicate tr)))
+              (or (null object) (equal object (triple-object tr)))))
+       (gethash graph (graph-graph-index g)))
       (get-triples g :subject subject :predicate predicate :object object)))
 
 (defun named-graphs (g)

@@ -126,7 +126,8 @@
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
           ((sym-name-equal tag "MINUS") (setf minus-patterns (rest clause)))
           ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
-          ((sym-name-equal tag "GRAPH") (setf graph-clause (second clause)))
+          ((sym-name-equal tag "GRAPH")
+           (setf graph-clause (rest clause)))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
           ((sym-name-equal tag "HAVING") (setf having-clause (rest clause)))
           ((sym-name-equal tag "ORDER-BY") (setf order-var (second clause)))
@@ -137,7 +138,11 @@
     ;; Execute pattern matching
     (let ((envs (cond
                  (union-clauses (execute-union g union-clauses))
-                 (graph-clause (match-in-graph g where-patterns graph-clause))
+                 (graph-clause
+                  (let* ((graph-name (first graph-clause))
+                         (graph-patterns (second graph-clause))
+                         (patterns-to-use (or graph-patterns where-patterns)))
+                    (match-in-graph g patterns-to-use graph-name)))
                  (where-patterns (match-with-paths g where-patterns))
                  (t (list nil)))))
       ;; Apply optional patterns
@@ -775,13 +780,29 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
 
+(defun apply-graph-patterns (g outer-envs graph-patterns graph-name)
+  "Match graph-patterns against named graph, joining with outer environments."
+  (let ((graph-envs (match-in-graph g graph-patterns graph-name)))
+    ;; Join outer and graph environments
+    (if (and outer-envs graph-envs)
+        (let ((results nil))
+          (dolist (oe outer-envs)
+            (dolist (ge graph-envs)
+              (push (append ge oe) results)))
+          (nreverse results))
+        graph-envs)))
+
 (defun match-in-graph (g patterns graph-name)
-  "Match patterns only against triples in the named graph."
-  ;; Build a temporary graph with only the named graph's triples
-  (let ((temp (make-graph)))
-    (dolist (tr (get-quads g :graph graph-name))
-      (add-triple temp (triple-subject tr) (triple-predicate tr) (triple-object tr)))
-    (match-with-paths temp patterns)))
+  "Match patterns only against triples in the named graph.
+Falls back to default graph if named graph is empty."
+  (let ((quads (get-quads g :graph graph-name)))
+    (if quads
+        (let ((temp (make-graph)))
+          (dolist (tr quads)
+            (add-triple temp (triple-subject tr) (triple-predicate tr) (triple-object tr)))
+          (match-with-paths temp patterns))
+        ;; Fallback: query default graph
+        (match-with-paths g patterns))))
 
 
 ;;; ==========================================================================
