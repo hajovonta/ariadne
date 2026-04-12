@@ -307,15 +307,45 @@
     (values left rest)))
 
 (defun parse-compare-expr (toks prefixes)
-  "Parse comparison: expr op expr"
+  "Parse comparison: expr op expr, or expr IN/NOT IN (list)"
   (multiple-value-bind (left rest) (parse-unary-expr toks prefixes)
-    (when (and rest (symbolp (car rest))
-                (member (car rest) '(= != < > <= >=) :test #'eq))
-      (let ((op (pop rest)))
-        (multiple-value-bind (right rest2) (parse-unary-expr rest prefixes)
-          (setf left (list op left right))
-          (setf rest rest2))))
+    (cond
+      ;; expr IN (val, ...)
+      ((and rest (stringp (car rest)) (string-equal (car rest) "IN"))
+       (pop rest)
+       (let ((vals (parse-in-list rest prefixes)))
+         (setf left (list 'in left (car vals)))
+         (setf rest (cdr vals))))
+      ;; expr NOT IN (val, ...)
+      ((and rest (stringp (car rest)) (string-equal (car rest) "NOT")
+            (cdr rest) (stringp (cadr rest)) (string-equal (cadr rest) "IN"))
+       (pop rest) (pop rest)
+       (let ((vals (parse-in-list rest prefixes)))
+         (setf left (list 'not (list 'in left (car vals))))
+         (setf rest (cdr vals))))
+      ;; Regular comparison
+      ((and rest (symbolp (car rest))
+            (member (car rest) '(= != < > <= >=) :test #'eq))
+       (let ((op (pop rest)))
+         (multiple-value-bind (right rest2) (parse-unary-expr rest prefixes)
+           (setf left (list op left right))
+           (setf rest rest2)))))
     (values left rest)))
+
+(defun parse-in-list (toks prefixes)
+  "Parse (val1, val2, ...). Returns (list-of-values . remaining-toks)."
+  (when (and toks (stringp (car toks)) (string= (car toks) "("))
+    (pop toks))
+  (let ((vals nil))
+    (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
+      (multiple-value-bind (v rest) (parse-or-expr toks prefixes)
+        (push v vals)
+        (setf toks rest))
+      (when (and toks (stringp (car toks)) (string= (car toks) ","))
+        (pop toks)))
+    (when (and toks (stringp (car toks)) (string= (car toks) ")"))
+      (pop toks))
+    (cons (nreverse vals) toks)))
 
 (defun parse-unary-expr (toks prefixes)
   "Parse unary: !expr or primary"

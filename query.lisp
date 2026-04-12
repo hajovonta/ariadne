@@ -261,6 +261,11 @@
     ((atom expr) expr)
     ((null (first expr)) (error "Disallowed filter operation: NIL"))
     ((eq (first expr) 'quote) (second expr))
+    ;; IN needs special handling — second arg is a list of exprs, not a function call
+    ((sym-name-equal (first expr) "IN")
+     (let ((val (safe-eval (second expr)))
+           (list-vals (mapcar #'safe-eval (third expr))))
+       (member val list-vals :test #'equal)))
     ((sym-name-equal (first expr) "SUBQUERY")
      (let ((results (query *query-graph* (second expr))))
        (if (and results (= 1 (length results)) (= 1 (length (first results))))
@@ -285,6 +290,7 @@
            ((eq op 'and) (and (first args) (second args)))
            ((eq op 'or) (or (first args) (second args)))
            ((sym-name-equal op "BOUND") (not (null (first args))))
+           ((sym-name-equal op "ISNUMERIC") (numberp (first args)))
            ((sym-name-equal op "ISLITERAL")
             (let ((v (first args)))
               (or (stringp v) (numberp v) (member v '(t nil)))))
@@ -396,7 +402,35 @@
                 (let* ((s (first args)) (t-pos (position #\T s)))
                   (parse-integer (subseq s (+ t-pos 7)) :junk-allowed t))
                 0))
-           ((sym-name-equal op "MD5") "unsupported")
+           ((sym-name-equal op "MD5")
+            (ironclad:byte-array-to-hex-string
+             (ironclad:digest-sequence :md5 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+           ((sym-name-equal op "SHA1")
+            (ironclad:byte-array-to-hex-string
+             (ironclad:digest-sequence :sha1 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+           ((sym-name-equal op "SHA256")
+            (ironclad:byte-array-to-hex-string
+             (ironclad:digest-sequence :sha256 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+           ((sym-name-equal op "SHA384")
+            (ironclad:byte-array-to-hex-string
+             (ironclad:digest-sequence :sha384 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+           ((sym-name-equal op "SHA512")
+            (ironclad:byte-array-to-hex-string
+             (ironclad:digest-sequence :sha512 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+           ((sym-name-equal op "NOW")
+            (multiple-value-bind (sec min hr day mon yr) (get-decoded-time)
+              (format nil "~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ" yr mon day hr min sec)))
+           ((sym-name-equal op "RAND") (random 1.0d0))
+           ((sym-name-equal op "UUID")
+            (format nil "urn:uuid:~8,'0X-~4,'0X-~4,'0X-~4,'0X-~12,'0X"
+                    (random (expt 2 32)) (random (expt 2 16)) (random (expt 2 16))
+                    (random (expt 2 16)) (random (expt 2 48))))
+           ((sym-name-equal op "STRUUID")
+            (format nil "~8,'0X-~4,'0X-~4,'0X-~4,'0X-~12,'0X"
+                    (random (expt 2 32)) (random (expt 2 16)) (random (expt 2 16))
+                    (random (expt 2 16)) (random (expt 2 48))))
+           ((sym-name-equal op "BNODE")
+            (format nil "_:b~A" (random (expt 2 32))))
            ;; XSD cast functions
            ((cl-ppcre:scan "^XSD:" (symbol-name op))
             (let ((type (subseq (symbol-name op) 4))

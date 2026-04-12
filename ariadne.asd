@@ -10,7 +10,8 @@
                #:hunchentoot
                #:drakma
                #:com.inuoe.jzon
-               #:local-time)
+               #:local-time
+               #:ironclad)
   :serial t
   :components ((:file "package")
                (:file "ariadne")
