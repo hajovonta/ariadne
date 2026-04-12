@@ -1,3 +1,6 @@
 [submodule "test-data/shacl/data-shapes"]
 	path = test-data/shacl/data-shapes
 	url = https://github.com/w3c/data-shapes.git
+[submodule "test-data/rdf-tests"]
+	path = test-data/rdf-tests
+	url = https://github.com/w3c/rdf-tests.git
