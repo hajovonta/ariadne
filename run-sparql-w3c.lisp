@@ -60,7 +60,7 @@
 (defun run-category (cat)
   (let* ((dir (merge-pathnames (format nil "~A/" cat) *sbase*))
          (mf (merge-pathnames "manifest.ttl" dir))
-         (pass 0) (fail 0) (err 0))
+         (pass 0) (fail 0) (skip 0))
     (unless (probe-file mf) (return-from run-category (values 0 0 0)))
     (let ((mg (make-graph)))
       (handler-case (import-turtle mg (slurp mf)) (error () (return-from run-category (values 0 0 1))))
@@ -68,8 +68,8 @@
         (let ((subj (triple-subject tr))
               (typ (triple-object tr)))
           (handler-case
-              (let ((name (or (triple-object (first (get-triples mg :subject subj
-                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#name")))
+              (let ((name (or (lit-val (triple-object (first (get-triples mg :subject subj
+                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#name"))))
                               (subseq subj (1+ (or (position #\# subj :from-end t) -1))))))
                 (cond
                   ((equal typ "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#QueryEvaluationTest")
@@ -85,8 +85,8 @@
                           (rf (triple-object (first (get-triples mg :subject subj
                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result")))))
                      (cond
-                       ((not (and qf rf)) (incf err))
-                       ((not (cl-ppcre:scan "\\.srx$" rf)) (incf err)) ; skip non-srx
+                       ((not (and qf rf)) (incf skip))
+                       ((not (cl-ppcre:scan "\\.srx$" (lit-val rf))) (incf skip))
                        (t (let ((r (run-one-eval-test dir qf df rf gfs)))
                             (if (eq r :pass)
                                 (incf pass)
@@ -109,9 +109,10 @@
                              (parse-sparql (slurp (merge-pathnames qf dir)))
                              (incf fail) (format t "  FAIL  ~A (should reject)~%" name))
                          (error () (incf pass))
-                         (sb-ext:timeout () (incf fail) (format t "  FAIL  ~A (timeout)~%" name))))))))
-            (error () (incf err))))))
-    (values pass fail err)))
+                         (sb-ext:timeout () (incf fail) (format t "  FAIL  ~A (timeout)~%" name))))))
+                  (t (incf skip))))
+            (error () (incf skip))))))
+    (values pass fail skip)))
 
 ;; Run all categories when loaded directly
 (when (member "--run-all" sb-ext:*posix-argv* :test #'equal)
