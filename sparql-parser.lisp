@@ -36,6 +36,15 @@
               ((member ch '(#\{ #\} #\( #\) #\. #\+ #\* #\^ #\;))
                (push (string ch) tokens)
                (incf pos))
+              ;; | or || 
+              ((char= ch #\|)
+               (if (and (< (1+ pos) len) (char= #\| (char str (1+ pos))))
+                   (progn (push "||" tokens) (incf pos 2))
+                   (progn (push "|" tokens) (incf pos))))
+              ;; /
+              ((char= ch #\/)
+               (push "/" tokens)
+               (incf pos))
               ;; Variable ?name
               ((char= ch #\?)
                (let ((start pos))
@@ -92,11 +101,6 @@
                (when (and (< pos len) (char= #\& (char str pos)))
                  (incf pos))
                (push "&&" tokens))
-              ((char= ch #\|)
-               (incf pos)
-               (when (and (< pos len) (char= #\| (char str pos)))
-                 (incf pos))
-               (push "||" tokens))
               ((char= ch #\,)
                (push "," tokens)
                (incf pos))
@@ -106,7 +110,7 @@
                  (loop while (and (< pos len)
                                   (not (member (char str pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\{ #\} #\( #\) #\. #\;))))
+                                                 #\{ #\} #\( #\) #\. #\; #\| #\/))))
                        do (incf pos))
                  (let ((tok (subseq str start pos)))
                    (push tok tokens)))))))))
@@ -515,30 +519,67 @@
         ;; Triple pattern: s p o .  (with property path detection)
         (t
          (let* ((s (sparql-resolve-term (pop toks) prefixes))
-                ;; Check for inverse path: ^pred
-                (inverse-p (when (and toks (stringp (car toks)) (string= (car toks) "^"))
-                             (pop toks) t))
-                (p-raw (pop toks))
-                ;; Check for path modifier suffix: + or *
-                (modifier (when (and toks (stringp (car toks))
-                                     (member (car toks) '("+" "*") :test #'string=))
-                            (pop toks)))
-                (p-resolved (let ((r (sparql-resolve-term p-raw prefixes)))
-                              (if (equal r "a") "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" r)))
-                (p (cond
-                     ((and inverse-p modifier (string= modifier "+"))
-                      (list 'inv+ p-resolved))
-                     (inverse-p (list 'inv p-resolved))
-                     ((and modifier (string= modifier "+"))
-                      (list '+ p-resolved))
-                     ((and modifier (string= modifier "*"))
-                      (list '* p-resolved))
-                     (t p-resolved)))
-                (o (sparql-resolve-term (pop toks) prefixes)))
+                ;; Parse property path expression
+                (path-result (parse-sparql-path toks prefixes))
+                (p (car path-result))
+                (o-toks (cdr path-result))
+                (o (sparql-resolve-term (pop o-toks) prefixes)))
+           (setf toks o-toks)
            (push (list s p o) patterns))
          (when (and toks (string= (car toks) "."))
            (pop toks)))))
     (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions) (nreverse binds))))
+
+(defun parse-sparql-path (toks prefixes)
+  "Parse a SPARQL property path expression. Returns (path . remaining-toks)."
+  ;; path-alt := path-seq ( '|' path-seq )*
+  (let ((left (parse-sparql-path-seq toks prefixes)))
+    (loop while (and (cdr left) (stringp (cadr left)) (string= (cadr left) "|")) do
+      (pop (cdr left))  ; consume |
+      (let ((right (parse-sparql-path-seq (cdr left) prefixes)))
+        (setf left (cons (list 'alt (car left) (car right)) (cdr right)))))
+    left))
+
+(defun parse-sparql-path-seq (toks prefixes)
+  "Parse path-seq := path-elt ( '/' path-elt )*. Returns (path . remaining-toks)."
+  (let ((left (parse-sparql-path-elt toks prefixes)))
+    (loop while (and (cdr left) (stringp (cadr left)) (string= (cadr left) "/")) do
+      (pop (cdr left))  ; consume /
+      (let ((right (parse-sparql-path-elt (cdr left) prefixes)))
+        (setf left (cons (list 'seq (car left) (car right)) (cdr right)))))
+    left))
+
+(defun parse-sparql-path-elt (toks prefixes)
+  "Parse path-elt := '^'? primary ('*'|'+'|'?')?. Returns (path . remaining-toks)."
+  (let ((inverse-p (when (and toks (stringp (car toks)) (string= (car toks) "^"))
+                     (pop toks) t))
+        (negated-p (when (and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
+                     (pop toks) t)))
+    ;; Primary: URI, 'a', or '(' path ')'
+    (let* ((primary
+             (cond
+               ((and toks (stringp (car toks)) (string= (car toks) "("))
+                (pop toks)
+                (let ((inner (parse-sparql-path toks prefixes)))
+                  (setf toks (cdr inner))
+                  (when (and toks (stringp (car toks)) (string= (car toks) ")"))
+                    (pop toks))
+                  (car inner)))
+               (t (let ((raw (pop toks)))
+                    (let ((r (sparql-resolve-term raw prefixes)))
+                      (if (equal r "a") "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" r))))))
+           ;; Modifier: * + ?
+           (modifier (when (and toks (stringp (car toks))
+                                (member (car toks) '("+" "*" "?") :test #'string=))
+                       (pop toks)))
+           (path primary))
+      (when negated-p (setf path (list 'neg path)))
+      (when inverse-p (setf path (list 'inv path)))
+      (when modifier
+        (setf path (cond ((string= modifier "+") (list '+ path))
+                         ((string= modifier "*") (list '* path))
+                         ((string= modifier "?") (list 'zeroOrOne path)))))
+      (cons path toks))))
 
 (defun sparql-resolve-term (term prefixes)
   "Resolve a SPARQL term: expand prefixed names, keep variables as symbols."
