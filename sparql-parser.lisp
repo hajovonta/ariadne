@@ -26,7 +26,16 @@
     (flet ((skip-ws ()
              (loop while (and (< pos len)
                               (member (char str pos) '(#\Space #\Tab #\Newline #\Return)))
-                   do (incf pos))))
+                   do (incf pos))
+             ;; Skip # comments
+             (when (and (< pos len) (char= (char str pos) #\#))
+               (loop while (and (< pos len) (char/= (char str pos) #\Newline))
+                     do (incf pos))
+               (when (< pos len) (incf pos))
+               ;; Skip any whitespace after comment
+               (loop while (and (< pos len)
+                                (member (char str pos) '(#\Space #\Tab #\Newline #\Return)))
+                     do (incf pos)))))
       (loop while (< pos len) do
         (skip-ws)
         (when (< pos len)
