@@ -724,7 +724,11 @@
   (let ((expanded nil))
     (dolist (pattern patterns (nreverse expanded))
       (if (or (subquery-pattern-p pattern)
-              (/= 3 (length pattern)))
+              (/= 3 (length pattern))
+              (and (consp pattern) (symbolp (car pattern))
+                   (member (symbol-name (car pattern))
+                           '("VALUES" "EXISTS" "NOT-EXISTS" "GRAPH" "FILTER" "OPTIONAL" "MINUS" "INLINE-BIND")
+                           :test #'string-equal)))
           (push pattern expanded)
           (destructuring-bind (s p o) pattern
             (if (and (listp p) (symbolp (first p)))
@@ -790,8 +794,17 @@
         (progn
           (when simple
             (setf simple (optimize-pattern-order (nreverse simple))))
-          (let ((envs (if simple (match-patterns g simple) (list nil))))
-            (dolist (pp (nreverse path-pats))
+          ;; Collect inline VALUES to seed initial environments
+          (let ((init-envs (list nil)))
+            (dolist (p patterns)
+              (when (and (consp p) (symbolp (car p)) (sym-name-equal (car p) "VALUES"))
+                (setf init-envs (apply-values-inline init-envs (rest p)))))
+            (let ((envs (if simple
+                            (let ((results nil))
+                              (dolist (env init-envs (apply #'nconc (nreverse results)))
+                                (push (match-patterns-with-envs g simple (list env)) results)))
+                            init-envs)))
+              (dolist (pp (nreverse path-pats))
               (setf envs (apply-path-pattern g envs pp)))
             (dolist (sq (nreverse subquery-pats))
               (setf envs (apply-subquery-pattern g envs sq)))
@@ -809,10 +822,35 @@
                   ((sym-name-equal (car p) "NOT-EXISTS")
                    (setf envs (apply-not-exists g envs (rest p))))
                   ((sym-name-equal (car p) "GRAPH")
-                   (setf envs (match-graph-pattern g envs p)))
-                  ((sym-name-equal (car p) "VALUES")
-                   (setf envs (apply-values-clause envs (rest p)))))))
-            envs)))))
+                   (setf envs (match-graph-pattern g envs p))))))
+            envs))))))
+
+(defun apply-values-inline (envs clause)
+  "Apply inline VALUES: inject bindings into environments."
+  (let ((var-spec (first clause))
+        (data (second clause))
+        (results nil))
+    (dolist (env envs)
+      (dolist (row data)
+        (if (variable-p var-spec)
+            ;; Single variable
+            (let ((val (first row)))
+              (when (or (null val)
+                        (let ((existing (lookup-binding var-spec env)))
+                          (or (null existing) (equal existing val))))
+                (push (if val (cons (cons var-spec val) env) env) results)))
+            ;; Multiple variables
+            (let ((new-env env) (ok t))
+              (mapc (lambda (var val)
+                      (when val
+                        (let ((existing (lookup-binding var new-env)))
+                          (cond ((null existing)
+                                 (push (cons var val) new-env))
+                                ((not (equal existing val))
+                                 (setf ok nil))))))
+                    var-spec row)
+              (when ok (push new-env results))))))
+    (nreverse results)))
 
 (defun optimize-pattern-order (patterns)
   "Reorder patterns so more selective ones execute first.
