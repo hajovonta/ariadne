@@ -498,6 +498,11 @@
                 (t (intern-literal v (concatenate 'string "http://www.w3.org/2001/XMLSchema#" type))))))
            ((sym-name-equal op "REGEX")
             (apply #'ariadne-regex (mapcar #'lit-val args)))
+           ((sym-name-equal op "IF")
+            (if (first args) (second args) (third args)))
+           ((or (sym-name-equal op "IRI") (sym-name-equal op "URI"))
+            (let ((v (lit-val (first args))))
+              (if (stringp v) v (princ-to-string v))))
            (t (error "Disallowed filter operation: ~A" op)))))))
 
 (defun shacl-safe-compare (num-fn str-fn a b)

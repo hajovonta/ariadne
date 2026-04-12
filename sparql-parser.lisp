@@ -129,7 +129,8 @@
                  (loop while (and (< pos len)
                                   (not (member (char str pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\!))))
+                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\!
+                                                 #\, #\= #\< #\>))))
                        do (incf pos))
                  (let ((tok (subseq str start pos)))
                    (push tok tokens)))))))))
@@ -141,13 +142,21 @@
 
 (defun sparql-parse-query (tokens prefixes)
   "Parse tokens into an Ariadne DSL expression."
-  (let ((toks tokens))
-    ;; Parse PREFIX declarations
-    (loop while (and toks (string-equal (car toks) "PREFIX")) do
-      (pop toks) ; PREFIX
-      (let ((prefix-name (pop toks))  ; "ex:"
-            (uri (pop toks)))         ; full URI
-        (setf (gethash prefix-name prefixes) uri)))
+  (let ((toks tokens)
+        (base-uri nil))
+    ;; Parse BASE and PREFIX declarations
+    (loop while (and toks (or (string-equal (car toks) "PREFIX")
+                              (string-equal (car toks) "BASE"))) do
+      (cond
+        ((string-equal (car toks) "BASE")
+         (pop toks)
+         (setf base-uri (pop toks))
+         (setf (gethash "" prefixes) base-uri))
+        ((string-equal (car toks) "PREFIX")
+         (pop toks)
+         (let ((prefix-name (pop toks))
+               (uri (pop toks)))
+           (setf (gethash prefix-name prefixes) uri)))))
     ;; Parse query form
     (let ((form (pop toks)))
       (cond
