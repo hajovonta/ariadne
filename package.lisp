@@ -24,6 +24,11 @@
    #:triple-subject
    #:triple-predicate
    #:triple-object
+   ;; Typed literals
+   #:rdf-literal #:rdf-literal-p #:rdf-literal-value #:rdf-literal-datatype #:rdf-literal-language
+   #:intern-literal
+   #:+xsd-string+ #:+xsd-integer+ #:+xsd-decimal+ #:+xsd-double+ #:+xsd-float+
+   #:+xsd-boolean+ #:+xsd-datetime+ #:+xsd-date+ #:+rdf-langstring+
    ;; Enumeration
    #:all-subjects
    #:all-predicates

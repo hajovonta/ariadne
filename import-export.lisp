@@ -96,31 +96,30 @@
              (when end
                (let ((type-uri (subseq line (1+ pos) end)))
                  (setf pos (1+ end))
-                 ;; Convert typed literals
                  (setf value (convert-typed-literal value type-uri)))))))
         ;; Language tag: "Alice"@en
         ((and (< pos len) (char= #\@ (char line pos)))
          (let ((end (or (position #\Space line :start pos) len)))
-           (setf pos end))))
+           (setf value (intern-literal value +rdf-langstring+
+                                       (string-downcase (subseq line (1+ pos) end))))
+           (setf pos end)))
+        ;; Plain string
+        (t (setf value (intern-literal value +xsd-string+))))
       (cons value pos))))
 
 (defun convert-typed-literal (value type-uri)
-  "Convert a string value to the appropriate CL type based on XSD type URI."
+  "Convert a typed literal string to an interned rdf-literal."
   (handler-case
       (cond
-        ((search "byte" type-uri) value)  ; keep as string to preserve type info
-        ((search "short" type-uri) value)
-        ((search "integer" type-uri) (parse-integer value))
-        ((search "decimal" type-uri) (read-from-string value))
-        ((search "float" type-uri) (read-from-string value))
-        ((search "double" type-uri) (read-from-string value))
-        ((search "boolean" type-uri) (string= value "true"))
-        ((search "dateTime" type-uri)
-         (local-time:parse-timestring value :fail-on-error nil))
-        ((search "date" type-uri)
-         (local-time:parse-timestring value :fail-on-error nil))
-        (t value))
-    (error () value)))
+        ((search "integer" type-uri)
+         (intern-literal (parse-integer value) type-uri))
+        ((or (search "decimal" type-uri) (search "float" type-uri) (search "double" type-uri))
+         (let ((n (read-from-string value)))
+           (intern-literal (if (numberp n) n value) type-uri)))
+        ((search "boolean" type-uri)
+         (intern-literal (string= value "true") type-uri))
+        (t (intern-literal value type-uri)))
+    (error () (intern-literal value type-uri))))
 
 ;;; ==========================================================================
 ;;; N-Triples Export
@@ -138,6 +137,15 @@
 (defun format-nt-term (term)
   "Format a term for N-Triples output."
   (cond
+    ((rdf-literal-p term)
+     (let ((val (rdf-literal-value term))
+           (dt (rdf-literal-datatype term))
+           (lang (rdf-literal-language term)))
+       (cond
+         (lang (format nil "\"~A\"@~A" val lang))
+         ((equal dt +xsd-string+) (format nil "\"~A\"" val))
+         ((equal dt +xsd-boolean+) (format nil "\"~A\"^^<~A>" (if val "true" "false") dt))
+         (t (format nil "\"~A\"^^<~A>" val dt)))))
     ((stringp term)
      (if (and (> (length term) 0)
               (or (search "://" term)
@@ -871,12 +879,15 @@ Returns (remaining-toks anon-counter list-head-node)."
              (cond
                ((and (>= (length rest) 2)
                      (string= "^^" (subseq rest 0 2)))
-                (let ((type-uri (string-trim '(#\< #\>) (subseq rest 2))))
+                (let* ((type-tok (subseq rest 2))
+                       (type-uri (if (and (> (length type-tok) 0) (char= #\< (char type-tok 0)))
+                                     (subseq type-tok 1 (1- (length type-tok)))
+                                     (expand-prefix type-tok))))
                   (convert-typed-literal str type-uri)))
                ;; Language tag: @en, @fr-FR, etc.
                ((and (> (length rest) 0) (char= #\@ (char rest 0)))
-                (concatenate 'string str rest))
-               (t str)))
+                (intern-literal str +rdf-langstring+ (string-downcase (subseq rest 1))))
+               (t (intern-literal str +xsd-string+))))
            token)))
     ;; Number
     ((and (> (length token) 0)
@@ -888,7 +899,11 @@ Returns (remaining-toks anon-counter list-head-node)."
                        (member (char token 1) '(#\+ #\-))))))
      (validate-number-token token)
      (let ((val (ignore-errors (read-from-string token))))
-       (if (numberp val) val token)))
+       (if (numberp val)
+           (intern-literal val (cond ((integerp val) +xsd-integer+)
+                                     ((typep val 'double-float) +xsd-double+)
+                                     (t +xsd-decimal+)))
+           token)))
     ;; Blank node _:...
     ((and (> (length token) 1)
           (char= #\_ (char token 0))

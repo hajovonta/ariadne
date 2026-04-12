@@ -122,7 +122,7 @@ ex:Cat a rdfs:Class ; rdfs:label \"Cat\" ; ex:legs 4 .")
 ex:a ex:b \"\"\"hello world\"\"\" .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (equal "hello world" (triple-object tr))))))
+      (is (equal "hello world" (rdf-literal-value (triple-object tr)))))))
 
 (test turtle-long-double-quote-multiline
   "Multi-line long literal with triple double quotes"
@@ -133,8 +133,8 @@ line two
 line three\"\"\" .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (search "line one" (triple-object tr)))
-      (is (search "line three" (triple-object tr))))))
+      (is (search "line one" (rdf-literal-value (triple-object tr))))
+      (is (search "line three" (rdf-literal-value (triple-object tr)))))))
 
 (test turtle-long-single-quote-single-line
   "Single-line long literal with triple single quotes"
@@ -143,7 +143,7 @@ line three\"\"\" .")
 ex:a ex:b '''hello world''' .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (equal "hello world" (triple-object tr))))))
+      (is (equal "hello world" (rdf-literal-value (triple-object tr)))))))
 
 (test turtle-long-single-quote-multiline
   "Multi-line long literal with triple single quotes"
@@ -153,8 +153,8 @@ ex:a ex:b '''first
 second''' .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (search "first" (triple-object tr)))
-      (is (search "second" (triple-object tr))))))
+      (is (search "first" (rdf-literal-value (triple-object tr))))
+      (is (search "second" (rdf-literal-value (triple-object tr)))))))
 
 (test turtle-long-literal-with-quotes-inside
   "Long literal containing regular quotes inside"
@@ -181,4 +181,4 @@ description\"\"\" ;
 ex:a ex:b 'hello' .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (equal "hello" (triple-object tr))))))
+      (is (equal "hello" (rdf-literal-value (triple-object tr)))))))

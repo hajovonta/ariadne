@@ -24,7 +24,7 @@
     (is (= 1 (triple-count g)))
     ;; The object should be parsed as integer 30
     (let ((triples (get-triples g :subject "http://example.org/alice")))
-      (is (numberp (triple-object (first triples)))))))
+      (is (numberp (rdf-literal-value (triple-object (first triples))))))))
 
 (test import-ntriples-language-tags
   "Import N-Triples with language-tagged strings"
@@ -78,7 +78,7 @@
                    "http://example.org/bob")
     (add-triple g1 "http://example.org/alice"
                    "http://xmlns.com/foaf/0.1/name"
-                   "Alice")
+                   (intern-literal "Alice" +xsd-string+))
     (let ((nt (export-ntriples g1)))
       (import-ntriples g2 nt))
     (is (= (triple-count g1) (triple-count g2)))
@@ -87,7 +87,7 @@
                               "http://example.org/bob"))
     (is-true (has-triple-p g2 "http://example.org/alice"
                               "http://xmlns.com/foaf/0.1/name"
-                              "Alice"))))
+                              (intern-literal "Alice" +xsd-string+)))))
 
 ;; =============================================================================
 ;; Turtle Import
@@ -173,16 +173,20 @@ ex:alice ex:knows ex:bob , ex:charlie , ex:dave ."))
   (let ((g (make-graph))
         (data "<http://example.org/alice> <http://example.org/active> \"true\"^^<http://www.w3.org/2001/XMLSchema#boolean> ."))
     (import-ntriples g data)
-    (let ((triples (get-triples g :subject "http://example.org/alice")))
-      (is (eq t (triple-object (first triples)))))))
+    (let* ((triples (get-triples g :subject "http://example.org/alice"))
+           (obj (triple-object (first triples))))
+      (is (rdf-literal-p obj))
+      (is (eq t (rdf-literal-value obj))))))
 
 (test import-ntriples-decimal-literal
   "Import N-Triples with decimal typed literal"
   (let ((g (make-graph))
         (data "<http://example.org/alice> <http://example.org/score> \"3.14\"^^<http://www.w3.org/2001/XMLSchema#decimal> ."))
     (import-ntriples g data)
-    (let ((triples (get-triples g :subject "http://example.org/alice")))
-      (is (numberp (triple-object (first triples)))))))
+    (let* ((triples (get-triples g :subject "http://example.org/alice"))
+           (obj (triple-object (first triples))))
+      (is (rdf-literal-p obj))
+      (is (numberp (rdf-literal-value obj))))))
 
 ;; =============================================================================
 ;; Malformed Input

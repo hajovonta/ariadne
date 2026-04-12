@@ -9,22 +9,28 @@
 
 (defun sh-uri (name) (concatenate 'string *sh* name))
 
+(defun lit-val (x)
+  "Unwrap rdf-literal to its value, or return x as-is."
+  (if (rdf-literal-p x) (rdf-literal-value x) x))
+
 (defun shacl-value< (a b)
   "Compare two SHACL values. Handles numbers, strings, and timestamps."
-  (cond
-    ((and (numberp a) (numberp b)) (< a b))
-    ((and (stringp a) (stringp b)) (string< a b))
-    ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
-     (local-time:timestamp< a b))
-    (t nil)))
+  (let ((a (lit-val a)) (b (lit-val b)))
+    (cond
+      ((and (numberp a) (numberp b)) (< a b))
+      ((and (stringp a) (stringp b)) (string< a b))
+      ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
+       (local-time:timestamp< a b))
+      (t nil))))
 
 (defun shacl-value<= (a b)
-  (cond
-    ((and (numberp a) (numberp b)) (<= a b))
-    ((and (stringp a) (stringp b)) (string<= a b))
-    ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
-     (or (local-time:timestamp< a b) (local-time:timestamp= a b)))
-    (t nil)))
+  (let ((a (lit-val a)) (b (lit-val b)))
+    (cond
+      ((and (numberp a) (numberp b)) (<= a b))
+      ((and (stringp a) (stringp b)) (string<= a b))
+      ((and (typep a 'local-time:timestamp) (typep b 'local-time:timestamp))
+       (or (local-time:timestamp< a b) (local-time:timestamp= a b)))
+      (t nil))))
 
 (defun shacl-value>= (a b) (shacl-value<= b a))
 (defun shacl-value> (a b) (shacl-value< b a))
@@ -218,7 +224,7 @@ PATH can be a simple URI or a blank node with path operators."
          (count (length values))
          (violations nil))
     ;; sh:minCount
-    (let ((min-c (prop-shape-value g prop-shape "minCount")))
+    (let ((min-c (lit-val (prop-shape-value g prop-shape "minCount"))))
       (when min-c
         (let ((n (if (stringp min-c) (parse-integer min-c :junk-allowed t) min-c)))
           (when (and n (< count n))
@@ -226,7 +232,7 @@ PATH can be a simple URI or a blank node with path operators."
                                   (format nil "minCount ~A but found ~A" n count))
                   violations)))))
     ;; sh:maxCount
-    (let ((max-c (prop-shape-value g prop-shape "maxCount")))
+    (let ((max-c (lit-val (prop-shape-value g prop-shape "maxCount"))))
       (when max-c
         (let ((n (if (stringp max-c) (parse-integer max-c :junk-allowed t) max-c)))
           (when (and n (> count n))
@@ -235,6 +241,7 @@ PATH can be a simple URI or a blank node with path operators."
                   violations)))))
     ;; Per-value constraints
     (dolist (val values)
+      (let ((sval (lit-val val)))
       ;; sh:datatype
       (let ((dt (prop-shape-value g prop-shape "datatype")))
         (when (and dt (not (value-matches-datatype-p val dt)))
@@ -243,9 +250,9 @@ PATH can be a simple URI or a blank node with path operators."
                                 :value val)
                 violations)))
       ;; sh:pattern
-      (let ((pat (prop-shape-value g prop-shape "pattern")))
-        (when (and pat (stringp val)
-                   (not (cl-ppcre:scan pat val)))
+      (let ((pat (lit-val (prop-shape-value g prop-shape "pattern"))))
+        (when (and pat (stringp sval)
+                   (not (cl-ppcre:scan pat sval)))
           (push (make-violation focus-node path shape
                                 (format nil "does not match pattern ~A" pat)
                                 :value val)
@@ -294,20 +301,20 @@ PATH can be a simple URI or a blank node with path operators."
                 violations)))
       ;; sh:minLength
       (let ((min-l (prop-shape-value g prop-shape "minLength")))
-        (when (and min-l (stringp val))
+        (when (and min-l (stringp sval))
           (let ((n (if (numberp min-l) min-l (parse-integer (princ-to-string min-l) :junk-allowed t))))
-            (when (and n (< (length val) n))
+            (when (and n (< (length sval) n))
               (push (make-violation focus-node path shape
-                                    (format nil "length ~A < minLength ~A" (length val) n)
+                                    (format nil "length ~A < minLength ~A" (length sval) n)
                                     :value val)
                     violations)))))
       ;; sh:maxLength
       (let ((max-l (prop-shape-value g prop-shape "maxLength")))
-        (when (and max-l (stringp val))
+        (when (and max-l (stringp sval))
           (let ((n (if (numberp max-l) max-l (parse-integer (princ-to-string max-l) :junk-allowed t))))
-            (when (and n (> (length val) n))
+            (when (and n (> (length sval) n))
               (push (make-violation focus-node path shape
-                                    (format nil "length ~A > maxLength ~A" (length val) n)
+                                    (format nil "length ~A > maxLength ~A" (length sval) n)
                                     :value val)
                     violations)))))
       ;; sh:hasValue
@@ -318,8 +325,8 @@ PATH can be a simple URI or a blank node with path operators."
                 violations)))
       ;; sh:class
       (let ((cls (prop-shape-value g prop-shape "class")))
-        (when (and cls (stringp val))
-          (unless (has-triple-p g val *rdf-type* cls)
+        (when (and cls (stringp sval))
+          (unless (has-triple-p g sval *rdf-type* cls)
             (push (make-violation focus-node path shape
                                   (format nil "~A is not an instance of ~A" val cls)
                                   :value val)
@@ -356,7 +363,7 @@ PATH can be a simple URI or a blank node with path operators."
               (push (make-violation focus-node path shape
                                     (format nil "sh:xone expects exactly 1 match, got ~A" pass-count)
                                     :value val)
-                    violations))))))
+                    violations)))))))
     ;; sh:equals
     (let ((eq-path (prop-shape-value g prop-shape "equals")))
       (when eq-path
@@ -397,26 +404,24 @@ PATH can be a simple URI or a blank node with path operators."
                                       (format nil "~A not <= ~A" val ov) :value val)
                       violations)))))))
     ;; sh:uniqueLang
-    (let ((ul (prop-shape-value g prop-shape "uniqueLang")))
+    (let ((ul (lit-val (prop-shape-value g prop-shape "uniqueLang"))))
       (when (or (eq ul t) (equal ul "true"))
         (let ((seen nil))
           (dolist (val values)
-            (when (stringp val)
-              (let ((at (position #\@ val :from-end t)))
-                (when at
-                  (let ((lang (subseq val (1+ at))))
-                    (if (member lang seen :test #'string-equal)
-                        (push (make-violation focus-node path shape
-                                              (format nil "duplicate language: ~A" lang)
-                                              :value val)
-                              violations)
-                        (push lang seen))))))))))
+            (let ((lang (when (rdf-literal-p val) (rdf-literal-language val))))
+              (when lang
+                (if (member lang seen :test #'string-equal)
+                    (push (make-violation focus-node path shape
+                                          (format nil "duplicate language: ~A" lang)
+                                          :value val)
+                          violations)
+                    (push lang seen))))))))
     ;; sh:qualifiedValueShape
     (let ((qvs (prop-shape-value g prop-shape "qualifiedValueShape")))
       (when qvs
-        (let* ((qmin (prop-shape-value g prop-shape "qualifiedMinCount"))
-               (qmax (prop-shape-value g prop-shape "qualifiedMaxCount"))
-               (disjoint-p (let ((d (prop-shape-value g prop-shape "qualifiedValueShapesDisjoint")))
+        (let* ((qmin (lit-val (prop-shape-value g prop-shape "qualifiedMinCount")))
+               (qmax (lit-val (prop-shape-value g prop-shape "qualifiedMaxCount")))
+               (disjoint-p (let ((d (lit-val (prop-shape-value g prop-shape "qualifiedValueShapesDisjoint"))))
                               (or (eq d t) (equal d "true"))))
                ;; Find sibling qualified shapes (same parent, same path, different qualifiedValueShape)
                (sibling-qvs (when disjoint-p
@@ -452,20 +457,20 @@ PATH can be a simple URI or a blank node with path operators."
     (let ((lang-list (prop-shape-list-value g prop-shape "languageIn")))
       (when lang-list
         (dolist (val values)
-          (when (stringp val)
-            (let ((at (position #\@ val)))
-              (if at
-                  (let ((lang (subseq val (1+ at))))
-                    (unless (some (lambda (allowed)
-                                    (or (string-equal lang allowed)
-                                        (and (> (length lang) (length allowed))
-                                             (char= #\- (char lang (length allowed)))
-                                             (string-equal (subseq lang 0 (length allowed)) allowed))))
-                                  lang-list)
-                      (push (make-violation focus-node path shape
-                                            (format nil "language ~A not in ~S" lang lang-list)
-                                            :value val)
-                            violations)))
+          (let ((lang (when (rdf-literal-p val) (rdf-literal-language val))))
+            (if lang
+                (unless (some (lambda (allowed)
+                                (let ((allowed (lit-val allowed)))
+                                  (or (string-equal lang allowed)
+                                      (and (> (length lang) (length allowed))
+                                           (char= #\- (char lang (length allowed)))
+                                           (string-equal (subseq lang 0 (length allowed)) allowed)))))
+                              lang-list)
+                  (push (make-violation focus-node path shape
+                                        (format nil "language ~A not in ~S" lang lang-list)
+                                        :value val)
+                        violations))
+                (when (rdf-literal-p val)
                   (push (make-violation focus-node path shape
                                         "value has no language tag" :value val)
                         violations)))))))
@@ -497,52 +502,29 @@ PATH can be a simple URI or a blank node with path operators."
 
 (defun value-matches-datatype-p (val datatype)
   "Check if VAL matches the expected XSD datatype."
-  (cond
-    ((equal datatype (concatenate 'string *xsd* "byte"))
-     (and (stringp val)
-          (handler-case (let ((n (parse-integer val))) (<= -128 n 127))
-            (error () nil))))
-    ((equal datatype (concatenate 'string *xsd* "short"))
-     (and (stringp val)
-          (handler-case (let ((n (parse-integer val))) (<= -32768 n 32767))
-            (error () nil))))
-    ((equal datatype (concatenate 'string *xsd* "int"))
-     (and (stringp val)
-          (handler-case (let ((n (parse-integer val))) (<= -2147483648 n 2147483647))
-            (error () nil))))
-    ((equal datatype (concatenate 'string *xsd* "long"))
-     (and (stringp val)
-          (handler-case (parse-integer val) (error () nil))))
-    ((search "integer" datatype)
-     (or (integerp val)
-         (and (stringp val) (every #'digit-char-p val) (> (length val) 0))))
-    ((search "decimal" datatype)
-     (or (numberp val)
-         (and (stringp val) (cl-ppcre:scan "^-?[0-9]+(\\.[0-9]+)?$" val))))
-    ((search "float" datatype) (numberp val))
-    ((search "double" datatype) (numberp val))
-    ((equal datatype (concatenate 'string *xsd* "string"))
-     (and (stringp val) (not (position #\@ val))))
-    ((equal datatype (concatenate 'string *xsd* "boolean"))
-     (or (member val '(t nil))
-         (member val '("true" "false") :test #'equal)))
-    ((equal datatype "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString")
-     (and (stringp val) (position #\@ val)))
-    ((equal datatype "http://www.w3.org/1999/02/22-rdf-syntax-ns#HTML")
-     (and (stringp val) (search "<" val)))
-    ((search "dateTime" datatype) (typep val 'local-time:timestamp))
-    ((search "date" datatype) (or (typep val 'local-time:timestamp) (stringp val)))
-    (t t)))
+  (if (rdf-literal-p val)
+      (equal (rdf-literal-datatype val) datatype)
+      (let ((v (lit-val val)))
+        (cond
+          ((search "integer" datatype) (integerp v))
+          ((search "decimal" datatype) (numberp v))
+          ((search "float" datatype) (numberp v))
+          ((search "double" datatype) (numberp v))
+          ((equal datatype (concatenate 'string *xsd* "string")) (stringp v))
+          ((equal datatype (concatenate 'string *xsd* "boolean")) (member v '(t nil)))
+          ((search "dateTime" datatype) (typep v 'local-time:timestamp))
+          (t t)))))
 
 (defun value-matches-node-kind-p (val node-kind)
   "Check if VAL matches the expected sh:nodeKind."
   (cond
     ((equal node-kind (sh-uri "IRI"))
-     (and (stringp val) (search "://" val)))
+     (and (stringp val) (not (rdf-literal-p val)) (search "://" val)))
     ((equal node-kind (sh-uri "Literal"))
-     (or (stringp val) (numberp val)))
+     (or (rdf-literal-p val) (numberp val)))
     ((equal node-kind (sh-uri "BlankNode"))
-     (and (stringp val) (>= (length val) 2)
+     (and (stringp val) (not (rdf-literal-p val))
+          (>= (length val) 2)
           (char= #\_ (char val 0)) (char= #\: (char val 1))))
     (t t)))
 
@@ -567,10 +549,10 @@ PATH can be a simple URI or a blank node with path operators."
         (or-shapes (prop-shape-list-value g sub-shape "or"))
         (xone-shapes (prop-shape-list-value g sub-shape "xone"))
         (prop-shapes (shape-property-shapes g sub-shape))
-        (closed (prop-shape-value g sub-shape "closed"))
+        (closed (lit-val (prop-shape-value g sub-shape "closed")))
         (node-ref (prop-shape-value g sub-shape "node")))
     (and (or (null dt) (value-matches-datatype-p val dt))
-         (or (null pat) (not (stringp val)) (cl-ppcre:scan pat val))
+         (or (null pat) (not (stringp (lit-val val))) (cl-ppcre:scan (lit-val pat) (lit-val val)))
          (or (null nk) (value-matches-node-kind-p val nk))
          (or (null mini) (shacl-value>= val mini))
          (or (null maxi) (shacl-value<= val maxi))
@@ -636,7 +618,7 @@ PATH can be a simple URI or a blank node with path operators."
                               (format nil "expected hasValue ~A" required))
               violations)))
     ;; sh:pattern
-    (let ((pat (prop-shape-value g shape "pattern")))
+    (let ((pat (lit-val (prop-shape-value g shape "pattern"))))
       (when (and pat (stringp val) (not (cl-ppcre:scan pat val)))
         (push (make-violation focus-node nil shape
                               (format nil "does not match pattern ~A" pat))
@@ -723,7 +705,7 @@ PATH can be a simple URI or a blank node with path operators."
                 (push (make-violation focus-node nil shape "no language tag")
                       violations))))))
     ;; sh:closed
-    (let ((closed (prop-shape-value g shape "closed")))
+    (let ((closed (lit-val (prop-shape-value g shape "closed"))))
       (when (or (eq closed t) (equal closed "true"))
         (let ((allowed-preds (mapcar (lambda (ps) (prop-shape-path g ps))
                                      (shape-property-shapes g shape)))
@@ -773,7 +755,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
         (components (find-constraint-components g))
         (all-violations nil))
     (dolist (shape shapes)
-      (let ((deact (prop-shape-value g shape "deactivated")))
+      (let ((deact (lit-val (prop-shape-value g shape "deactivated"))))
         (unless (or (eq deact t) (equal deact "true"))
           (let ((targets (shape-targets g shape))
                 (prop-shapes (shape-property-shapes g shape))
@@ -787,7 +769,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                 (let ((violations (check-property-shape g focus shape shape)))
                   (setf all-violations (nconc all-violations violations))))
               (dolist (ps prop-shapes)
-                (let ((ps-deact (prop-shape-value g ps "deactivated")))
+                (let ((ps-deact (lit-val (prop-shape-value g ps "deactivated"))))
                   (unless (or (eq ps-deact t) (equal ps-deact "true"))
                     (let ((violations (check-property-shape g focus ps shape)))
                       (setf all-violations (nconc all-violations violations))))))

@@ -27,6 +27,35 @@
 (defstruct (triple (:constructor %make-triple (subject predicate object &optional graph)))
   subject predicate object graph)
 
+(defstruct (rdf-literal (:constructor %make-rdf-literal (value datatype &optional language)))
+  value datatype language)
+
+(defvar *literal-intern* (make-hash-table :test 'equal))
+
+(defun intern-literal (value datatype &optional language)
+  "Return an interned rdf-literal. Identical literals are EQ."
+  (let ((key (list value datatype language)))
+    (or (gethash key *literal-intern*)
+        (setf (gethash key *literal-intern*)
+              (%make-rdf-literal value datatype language)))))
+
+(defmethod print-object ((lit rdf-literal) stream)
+  (if *print-escape*
+      (if (rdf-literal-language lit)
+          (format stream "#<rdf-literal ~S@~A>" (rdf-literal-value lit) (rdf-literal-language lit))
+          (format stream "#<rdf-literal ~S^^~A>" (rdf-literal-value lit) (rdf-literal-datatype lit)))
+      (princ (rdf-literal-value lit) stream)))
+
+(defparameter +xsd-string+ "http://www.w3.org/2001/XMLSchema#string")
+(defparameter +xsd-integer+ "http://www.w3.org/2001/XMLSchema#integer")
+(defparameter +xsd-decimal+ "http://www.w3.org/2001/XMLSchema#decimal")
+(defparameter +xsd-double+ "http://www.w3.org/2001/XMLSchema#double")
+(defparameter +xsd-float+ "http://www.w3.org/2001/XMLSchema#float")
+(defparameter +xsd-boolean+ "http://www.w3.org/2001/XMLSchema#boolean")
+(defparameter +xsd-datetime+ "http://www.w3.org/2001/XMLSchema#dateTime")
+(defparameter +xsd-date+ "http://www.w3.org/2001/XMLSchema#date")
+(defparameter +rdf-langstring+ "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString")
+
 ;;; ==========================================================================
 ;;; Graph
 ;;; ==========================================================================
