@@ -745,6 +745,8 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
      (transitive-closure g start (second path-expr) target))
     ((sym-name-equal op "?")
      (zero-or-one-path g start (second path-expr) target))
+    ((sym-name-equal op "ZEROORONE")
+     (zero-or-one-path g start (second path-expr) target))
     ((sym-name-equal op "*")
      (kleene-star-path g start (second path-expr) target))
     ((sym-name-equal op "ALT")
@@ -757,7 +759,28 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
      (inverse-transitive g start (second path-expr) target))
     ((sym-name-equal op "SEQ")
      (sequence-path g start (rest path-expr) target))
+    ((sym-name-equal op "NEG")
+     (negated-property-set g start (second path-expr) target))
     (t (error "Unknown path operator: ~A" op))))
+
+(defun negated-property-set (g start excluded-pred target)
+  "Match any predicate EXCEPT the excluded one(s)."
+  (let ((bound-start (and (not (variable-p start)) start))
+        (excluded (if (listp excluded-pred) excluded-pred (list excluded-pred)))
+        (results nil))
+    (when bound-start
+      (dolist (tr (get-triples g :subject bound-start))
+        (unless (member (triple-predicate tr) excluded :test #'equal)
+          (push (cons bound-start (triple-object tr)) results))))
+    (if (and target (not (variable-p target)))
+        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+        results)))
+
+(defun one-hop (g node pred)
+  "Get all nodes reachable from NODE via one application of PRED (simple or complex path)."
+  (if (and (listp pred) (symbolp (first pred)))
+      (mapcar #'cdr (execute-path g node (first pred) pred nil))
+      (mapcar #'triple-object (get-triples g :subject node :predicate pred))))
 
 (defun transitive-closure (g start pred target)
   "Find all nodes reachable via one or more hops of PRED."
@@ -765,27 +788,22 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
         (results nil)
         (bound-start (and (not (variable-p start)) start)))
     (if bound-start
-        ;; Forward traversal from known start
         (labels ((walk (node)
-                   (dolist (tr (get-triples g :subject node :predicate pred))
-                     (let ((next (triple-object tr)))
-                       (unless (gethash next visited)
-                         (setf (gethash next visited) t)
-                         (push (cons bound-start next) results)
-                         (walk next))))))
+                   (dolist (next (one-hop g node pred))
+                     (unless (gethash next visited)
+                       (setf (gethash next visited) t)
+                       (push (cons bound-start next) results)
+                       (walk next)))))
           (walk bound-start))
-        ;; Unbound start — try all subjects
         (dolist (subj (all-subjects g))
           (let ((sub-visited (make-hash-table :test 'equal)))
             (labels ((walk (node)
-                       (dolist (tr (get-triples g :subject node :predicate pred))
-                         (let ((next (triple-object tr)))
-                           (unless (gethash next sub-visited)
-                             (setf (gethash next sub-visited) t)
-                             (push (cons subj next) results)
-                             (walk next))))))
+                       (dolist (next (one-hop g node pred))
+                         (unless (gethash next sub-visited)
+                           (setf (gethash next sub-visited) t)
+                           (push (cons subj next) results)
+                           (walk next)))))
               (walk subj)))))
-    ;; Filter by target if bound
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
@@ -795,11 +813,9 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
   (let ((bound-start (and (not (variable-p start)) start))
         (results nil))
     (when bound-start
-      ;; Zero hops: start itself
       (push (cons bound-start bound-start) results)
-      ;; One hop
-      (dolist (tr (get-triples g :subject bound-start :predicate pred))
-        (push (cons bound-start (triple-object tr)) results)))
+      (dolist (next (one-hop g bound-start pred))
+        (push (cons bound-start next) results)))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
@@ -810,8 +826,13 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
         (results nil))
     (when bound-start
       (dolist (pred preds)
-        (dolist (tr (get-triples g :subject bound-start :predicate pred))
-          (push (cons bound-start (triple-object tr)) results))))
+        (if (and (listp pred) (symbolp (first pred)))
+            ;; Nested path expression
+            (dolist (pair (execute-path g bound-start (first pred) pred nil))
+              (push pair results))
+            ;; Simple predicate
+            (dolist (tr (get-triples g :subject bound-start :predicate pred))
+              (push (cons bound-start (triple-object tr)) results)))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
@@ -840,18 +861,15 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
   (let ((bound-start (and (not (variable-p start)) start))
         (results nil))
     (when bound-start
-      ;; Zero hops: start itself
       (push (cons bound-start bound-start) results)
-      ;; One or more: transitive closure
       (let ((visited (make-hash-table :test 'equal)))
         (setf (gethash bound-start visited) t)
         (labels ((walk (node)
-                   (dolist (tr (get-triples g :subject node :predicate pred))
-                     (let ((next (triple-object tr)))
-                       (unless (gethash next visited)
-                         (setf (gethash next visited) t)
-                         (push (cons bound-start next) results)
-                         (walk next))))))
+                   (dolist (next (one-hop g node pred))
+                     (unless (gethash next visited)
+                       (setf (gethash next visited) t)
+                       (push (cons bound-start next) results)
+                       (walk next)))))
           (walk bound-start))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
@@ -950,11 +968,16 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
         (results nil))
     (when bound-start
       (let ((current (list bound-start)))
-        (dolist (pred predicates)
+        (dolist (step predicates)
           (let ((next nil))
             (dolist (node current)
-              (dolist (tr (get-triples g :subject node :predicate pred))
-                (pushnew (triple-object tr) next :test #'equal)))
+              (if (and (listp step) (symbolp (first step)))
+                  ;; Nested path expression — execute recursively
+                  (dolist (pair (execute-path g node (first step) step nil))
+                    (pushnew (cdr pair) next :test #'equal))
+                  ;; Simple predicate
+                  (dolist (tr (get-triples g :subject node :predicate step))
+                    (pushnew (triple-object tr) next :test #'equal))))
             (setf current next)))
         (dolist (end current)
           (push (cons bound-start end) results))))
