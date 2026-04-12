@@ -100,7 +100,7 @@
          (vars (second expr))
          (body (cddr expr))
          (where-patterns nil)
-         (optional-patterns nil)
+         (optional-groups nil)
          (union-clauses nil)
          (filters nil)
          (binds nil)
@@ -122,7 +122,7 @@
       (let ((tag (first clause)))
         (cond
           ((sym-name-equal tag "WHERE") (setf where-patterns (rest clause)))
-          ((sym-name-equal tag "OPTIONAL") (setf optional-patterns (rest clause)))
+          ((sym-name-equal tag "OPTIONAL") (push (rest clause) optional-groups))
           ((sym-name-equal tag "UNION") (setf union-clauses (rest clause)))
           ((sym-name-equal tag "FILTER") (setf filters (rest clause)))
           ((sym-name-equal tag "BIND") (push (rest clause) binds))
@@ -155,8 +155,8 @@
                  (where-patterns (match-with-paths g where-patterns))
                  (t (list nil)))))
       ;; Apply optional patterns
-      (when optional-patterns
-        (setf envs (apply-optional g envs optional-patterns)))
+      (dolist (opt-pats (nreverse optional-groups))
+        (setf envs (apply-optional g envs opt-pats)))
       ;; Apply NOT EXISTS
       (when not-exists-patterns
         (setf envs (apply-not-exists g envs not-exists-patterns)))
@@ -594,23 +594,37 @@
 
 (defun apply-minus (g envs patterns &optional filters)
   "Remove envs where the pattern produces matching bindings for shared variables."
-  (remove-if
-   (lambda (env)
-     (let ((matches (match-patterns-with-envs g patterns (list env))))
-       (when filters
-         (setf matches (remove-if-not
-                        (lambda (m)
-                          (every (lambda (f) (safe-eval (subst-vars f m))) filters))
-                        matches)))
-       ;; Check if any match binds the shared variables to the same values
-       (some (lambda (m)
-               (every (lambda (binding)
-                        (let ((existing (assoc (car binding) env)))
-                          (or (null existing)
-                              (equal (cdr existing) (cdr binding)))))
-                      m))
-             matches)))
-   envs))
+  ;; Separate optional patterns from basic patterns
+  (let ((basic nil) (opts nil))
+    (dolist (p patterns)
+      (if (and (consp p) (symbolp (car p)) (sym-name-equal (car p) "OPTIONAL"))
+          (push (rest p) opts)
+          (push p basic)))
+    (setf basic (nreverse basic))
+    (setf opts (nreverse opts))
+    ;; Evaluate MINUS patterns independently (not with outer bindings)
+    (let ((minus-envs (match-with-paths g basic)))
+      (dolist (opt opts)
+        (setf minus-envs (apply-optional g minus-envs opt)))
+      (when filters
+        (setf minus-envs (remove-if-not
+                          (lambda (m)
+                            (every (lambda (f) (safe-eval (subst-vars f m))) filters))
+                          minus-envs)))
+      ;; Remove outer envs that have compatible shared bindings with any minus env
+      (remove-if
+       (lambda (env)
+         (some (lambda (m)
+                 (let ((shared nil) (compat t))
+                   (dolist (b m)
+                     (let ((e (assoc (car b) env)))
+                       (when (and e (cdr b))
+                         (push t shared)
+                         (unless (equal (cdr e) (cdr b))
+                           (setf compat nil)))))
+                   (and shared compat)))
+               minus-envs))
+       envs))))
 
 ;;; ==========================================================================
 ;;; GROUP BY + Aggregation
