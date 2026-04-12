@@ -880,8 +880,15 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
   (let ((bound-start (and (not (variable-p start)) start))
         (results nil))
     (when bound-start
-      (dolist (tr (get-triples g :predicate pred :object bound-start))
-        (push (cons bound-start (triple-subject tr)) results)))
+      (if (and (listp pred) (symbolp (first pred)))
+          ;; Complex path — find all nodes that reach start via forward path
+          (dolist (subj (all-subjects g))
+            (let ((fwd (execute-path g subj (first pred) pred nil)))
+              (when (find bound-start fwd :key #'cdr :test #'equal)
+                (push (cons bound-start subj) results))))
+          ;; Simple predicate
+          (dolist (tr (get-triples g :predicate pred :object bound-start))
+            (push (cons bound-start (triple-subject tr)) results))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
@@ -972,12 +979,10 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
           (let ((next nil))
             (dolist (node current)
               (if (and (listp step) (symbolp (first step)))
-                  ;; Nested path expression — execute recursively
                   (dolist (pair (execute-path g node (first step) step nil))
-                    (pushnew (cdr pair) next :test #'equal))
-                  ;; Simple predicate
+                    (push (cdr pair) next))
                   (dolist (tr (get-triples g :subject node :predicate step))
-                    (pushnew (triple-object tr) next :test #'equal))))
+                    (push (triple-object tr) next))))
             (setf current next)))
         (dolist (end current)
           (push (cons bound-start end) results))))
