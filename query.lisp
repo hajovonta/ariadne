@@ -544,11 +544,30 @@
 (defun match-patterns-with-envs (g patterns envs)
   (let ((current envs))
     (dolist (pattern patterns current)
-      (let ((new-envs nil))
-        (dolist (env current)
-          (dolist (m (match-pattern-with-env g pattern env))
-            (push m new-envs)))
-        (setf current new-envs)))))
+      (cond
+        ((and (consp pattern) (symbolp (car pattern))
+              (sym-name-equal (car pattern) "EXISTS"))
+         (setf current (remove-if-not
+                        (lambda (env)
+                          (match-patterns-with-envs g (rest pattern) (list env)))
+                        current)))
+        ((and (consp pattern) (symbolp (car pattern))
+              (sym-name-equal (car pattern) "NOT-EXISTS"))
+         (setf current (apply-not-exists g current (rest pattern))))
+        ((and (consp pattern) (symbolp (car pattern))
+              (sym-name-equal (car pattern) "FILTER"))
+         (setf current (remove-if-not
+                        (lambda (env)
+                          (handler-case
+                              (let ((v (safe-eval (subst-vars (second pattern) env))))
+                                (and v (not (equal v ""))))
+                            (error () nil)))
+                        current)))
+        (t (let ((new-envs nil))
+             (dolist (env current)
+               (dolist (m (match-pattern-with-env g pattern env))
+                 (push m new-envs)))
+             (setf current new-envs)))))))
 
 ;;; ==========================================================================
 ;;; BIND
