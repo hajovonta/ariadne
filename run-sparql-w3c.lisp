@@ -30,21 +30,19 @@
     (nreverse results)))
 
 (defun run-one-eval-test (dir qf df rf)
-  "Run one evaluation test. Returns :pass, :fail, or :error."
+  "Run one evaluation test with 5s timeout. Returns :pass or :fail."
   (handler-case
-      (let* ((query-str (slurp (merge-pathnames qf dir)))
-             ;; Skip queries with SELECT * (not yet fully supported)
-             (_ (when (cl-ppcre:scan "SELECT\\s+\\*" query-str)
-                  (return-from run-one-eval-test :skip)))
-             (g (make-graph)))
-        (declare (ignore _))
-        (when df (import-turtle g (slurp (merge-pathnames df dir))))
-        (let ((actual (sparql g query-str))
-              (expected (parse-srx (merge-pathnames rf dir))))
-          (cond
-            ((member expected '(t nil)) (if (eq (not (not actual)) expected) :pass :fail))
-            (t (if (= (length actual) (length expected)) :pass :fail)))))
-    (error () :fail)))
+      (#+sbcl sb-ext:with-timeout #+sbcl 5
+       #-sbcl progn
+        (let ((g (make-graph)))
+          (when df (import-turtle g (slurp (merge-pathnames df dir))))
+          (let ((actual (sparql g (slurp (merge-pathnames qf dir))))
+                (expected (parse-srx (merge-pathnames rf dir))))
+            (if (member expected '(t nil))
+                (if (eq (not (not actual)) expected) :pass :fail)
+                (if (= (length actual) (length expected)) :pass :fail)))))
+    (error () :fail)
+    #+sbcl (sb-ext:timeout () :fail)))
 
 (defun run-category (cat)
   (let* ((dir (merge-pathnames (format nil "~A/" cat) *sbase*))
@@ -74,10 +72,9 @@
                        ((not (and qf rf)) (incf err))
                        ((not (cl-ppcre:scan "\\.srx$" rf)) (incf err)) ; skip non-srx
                        (t (let ((r (run-one-eval-test dir qf df rf)))
-                            (case r
-                              (:pass (incf pass))
-                              (:skip (incf err))
-                              (t (incf fail) (format t "  FAIL  ~A~%" name))))))))
+                            (if (eq r :pass)
+                                (incf pass)
+                                (progn (incf fail) (format t "  FAIL  ~A~%" name))))))))
                   ((equal typ "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11")
                    (let ((qf (triple-object (first (get-triples mg :subject subj
                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action")))))
