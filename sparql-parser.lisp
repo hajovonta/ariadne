@@ -268,10 +268,18 @@
                          (pop toks)
                          (let ((row nil))
                            (loop until (or (null toks) (string= (car toks) ")")) do
-                             (push (sparql-resolve-term (pop toks) prefixes) row))
+                             (let ((tok (pop toks)))
+                               (push (if (and (stringp tok) (string-equal tok "UNDEF"))
+                                         nil
+                                         (sparql-resolve-term tok prefixes))
+                                     row)))
                            (when toks (pop toks))
                            (push (nreverse row) val-data)))
-                       (push (list (sparql-resolve-term (pop toks) prefixes)) val-data)))
+                       (let ((tok (pop toks)))
+                         (push (list (if (and (stringp tok) (string-equal tok "UNDEF"))
+                                        nil
+                                        (sparql-resolve-term tok prefixes)))
+                               val-data))))
                  (when toks (pop toks)))
                (push (list 'values val-vars (nreverse val-data)) clauses)))
             (t (return))))
@@ -526,6 +534,38 @@
              (pop toks))
            (when (and toks (stringp (car toks)) (string= (car toks) "."))
              (pop toks))))
+        ;; VALUES inside WHERE clause
+        ((string-equal (car toks) "VALUES")
+         (pop toks)
+         (let ((val-vars nil) (val-data nil))
+           (if (and toks (stringp (car toks)) (string= (car toks) "("))
+               (progn
+                 (pop toks)
+                 (loop until (or (null toks) (string= (car toks) ")")) do
+                   (push (pop toks) val-vars))
+                 (when toks (pop toks))
+                 (setf val-vars (nreverse val-vars)))
+               (push (pop toks) val-vars))
+           (when (and toks (string= (car toks) "{"))
+             (pop toks)
+             (loop until (or (null toks) (string= (car toks) "}")) do
+               (if (and (stringp (car toks)) (string= (car toks) "("))
+                   (progn
+                     (pop toks)
+                     (let ((row nil))
+                       (loop until (or (null toks) (string= (car toks) ")")) do
+                         (let ((tok (pop toks)))
+                           (push (if (and (stringp tok) (string-equal tok "UNDEF"))
+                                     nil (sparql-resolve-term tok prefixes))
+                                 row)))
+                       (when toks (pop toks))
+                       (push (nreverse row) val-data)))
+                   (let ((tok (pop toks)))
+                     (push (list (if (and (stringp tok) (string-equal tok "UNDEF"))
+                                     nil (sparql-resolve-term tok prefixes)))
+                           val-data))))
+             (when toks (pop toks)))
+           (push (list 'values val-vars (nreverse val-data)) patterns)))
         ;; SERVICE <url> { ... }
         ((string-equal (car toks) "SERVICE")
          (pop toks)
