@@ -506,7 +506,9 @@
            (when (and toks (stringp (car toks)) (string-equal (car toks) "AS"))
              (pop toks))
            (let ((var (pop toks)))
-             (push (list 'bind var expr) binds))
+             (push (list 'bind var expr) binds)
+             ;; Also push as inline-bind pattern for ordered execution
+             (push (list 'inline-bind var expr) patterns))
            (when (and toks (stringp (car toks)) (string= (car toks) ")"))
              (pop toks))
            (when (and toks (stringp (car toks)) (string= (car toks) "."))

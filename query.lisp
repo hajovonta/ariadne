@@ -228,8 +228,14 @@
 (defun project-results (vars envs)
   "Extract selected variables from binding environments."
   (cond
-    ((eq vars '*)
-     (mapcar (lambda (env) (mapcar #'cdr env)) envs))
+    ((or (eq vars '*) (equal vars '("*")))
+     ;; Collect all variable bindings
+     (let ((all-vars (remove-duplicates
+                      (loop for env in envs nconc (mapcar #'car env))
+                      :test #'equal)))
+       (mapcar (lambda (env)
+                 (mapcar (lambda (v) (lookup-binding v env)) all-vars))
+               envs)))
     ;; Aggregation without GROUP BY: (select ((count ?var)) ...) or (select ((max ?var)) ...)
     ((and (= 1 (length vars))
           (listp (first vars))
@@ -654,30 +660,58 @@
 ;;; before calling match-patterns, and applying path patterns after.
 
 (defun match-with-paths (g patterns)
-  "Match patterns, handling property paths, subqueries, and SERVICE."
+  "Match patterns, handling property paths, subqueries, SERVICE, and inline-bind."
   (let ((simple nil)
         (path-pats nil)
         (subquery-pats nil)
-        (service-pats nil))
+        (service-pats nil)
+        (inline-binds nil))
     (dolist (p patterns)
       (cond
+        ((and (consp p) (symbolp (car p)) (sym-name-equal (car p) "INLINE-BIND"))
+         (push p inline-binds))
         ((service-pattern-p p) (push p service-pats))
         ((path-pattern-p p) (push p path-pats))
         ((subquery-pattern-p p) (push p subquery-pats))
         (t (push p simple))))
-    ;; Reorder simple patterns by selectivity (most bound positions first)
-    (when simple
-      (setf simple (optimize-pattern-order (nreverse simple))))
-    (let ((envs (if simple
-                    (match-patterns g simple)
-                    (list nil))))
-      (dolist (pp (nreverse path-pats))
-        (setf envs (apply-path-pattern g envs pp)))
-      (dolist (sq (nreverse subquery-pats))
-        (setf envs (apply-subquery-pattern g envs sq)))
-      (dolist (sp (nreverse service-pats))
-        (setf envs (apply-service-pattern envs sp)))
-      envs)))
+    ;; If we have inline-binds, process patterns in order with bind interleaving
+    (if inline-binds
+        (let ((envs (list nil))
+              (pre-bind nil)
+              (post-bind nil)
+              (found-bind nil))
+          ;; Split patterns: before first inline-bind and after
+          (dolist (p patterns)
+            (if (and (consp p) (symbolp (car p)) (sym-name-equal (car p) "INLINE-BIND"))
+                (setf found-bind p)
+                (if found-bind
+                    (push p post-bind)
+                    (push p pre-bind))))
+          ;; Match pre-bind patterns
+          (when pre-bind
+            (setf envs (match-with-paths g (nreverse pre-bind))))
+          ;; Apply the bind
+          (when found-bind
+            (setf envs (apply-bind envs (second found-bind) (third found-bind))))
+          ;; Match post-bind patterns with bound envs
+          (when post-bind
+            (let ((post-pats (nreverse post-bind)))
+              (setf envs (let ((results nil))
+                           (dolist (env envs (apply #'nconc (nreverse results)))
+                             (push (match-patterns-with-envs g post-pats (list env)) results))))))
+          envs)
+        ;; No inline-binds — original logic
+        (progn
+          (when simple
+            (setf simple (optimize-pattern-order (nreverse simple))))
+          (let ((envs (if simple (match-patterns g simple) (list nil))))
+            (dolist (pp (nreverse path-pats))
+              (setf envs (apply-path-pattern g envs pp)))
+            (dolist (sq (nreverse subquery-pats))
+              (setf envs (apply-subquery-pattern g envs sq)))
+            (dolist (sp (nreverse service-pats))
+              (setf envs (apply-service-pattern envs sp)))
+            envs)))))
 
 (defun optimize-pattern-order (patterns)
   "Reorder patterns so more selective ones execute first.
