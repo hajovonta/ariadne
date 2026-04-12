@@ -568,25 +568,18 @@
          ;; Check for subquery: { SELECT ... WHERE { ... } }
          (if (and toks (stringp (car toks)) (string-equal (car toks) "SELECT"))
              (progn
-               ;; Skip SELECT and variables until WHERE
-               (loop while (and toks (not (and (stringp (car toks)) (string-equal (car toks) "WHERE"))))
-                     do (pop toks))
-               (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
-                 (pop toks))
-               (when (and toks (stringp (car toks)) (string= (car toks) "{"))
-                 (pop toks))
-               ;; Parse inner body — merge patterns/filters into outer scope
-               (multiple-value-bind (sub-pats sub-filts sub-rest sub-opts sub-unions sub-binds)
-                   (sparql-parse-body toks prefixes)
-                 (dolist (p sub-pats) (push p patterns))
-                 (dolist (f sub-filts) (push f filters))
-                 (dolist (b sub-binds) (push b binds))
-                 (setf toks sub-rest))
-               ;; Skip inner and outer closing braces
-               (when (and toks (stringp (car toks)) (string= (car toks) "}"))
-                 (pop toks))
-               (when (and toks (stringp (car toks)) (string= (car toks) "}"))
-                 (pop toks)))
+               ;; Collect subquery tokens until matching }
+               (let ((sub-toks nil) (depth 1))
+                 (loop while (and toks (> depth 0)) do
+                   (let ((tok (pop toks)))
+                     (cond ((string= tok "{") (incf depth))
+                           ((string= tok "}") (decf depth)))
+                     (when (> depth 0) (push tok sub-toks))))
+                 (let ((st (nreverse sub-toks)))
+                   ;; Skip leading SELECT keyword
+                   (when (and st (stringp (car st)) (string-equal (car st) "SELECT"))
+                     (pop st))
+                   (push (list 'subquery (sparql-parse-select st prefixes nil)) patterns))))
              ;; Regular nested block or UNION
              (multiple-value-bind (u-patterns u-filters u-rest)
              (sparql-parse-body toks prefixes)

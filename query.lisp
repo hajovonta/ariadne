@@ -942,18 +942,33 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
 ;;; ==========================================================================
 
 (defun apply-subquery-pattern (g envs pattern)
-  "Apply a subquery pattern: (subquery <query-expr> <bind-var>)."
-  (let ((sq-expr (second pattern))
-        (bind-var (third pattern)))
-    (let ((sq-results (query g sq-expr)))
-      (let ((sq-values (mapcar (lambda (row)
-                                 (if (= 1 (length row)) (first row) row))
-                               sq-results)))
-        (remove-if-not
-         (lambda (env)
-           (let ((val (lookup-binding bind-var env)))
-             (member val sq-values :test #'equal)))
-         envs)))))
+  "Apply a subquery pattern: (subquery <query-expr>) or (subquery <query-expr> <bind-var>)."
+  (let* ((sq-expr (second pattern))
+         (bind-var (third pattern))
+         (sq-results (query g sq-expr)))
+    (if bind-var
+        ;; Old format: filter envs by bind-var membership in subquery results
+        (let ((sq-values (mapcar (lambda (row)
+                                   (if (= 1 (length row)) (first row) row))
+                                 sq-results)))
+          (remove-if-not
+           (lambda (env)
+             (member (lookup-binding bind-var env) sq-values :test #'equal))
+           envs))
+        ;; New format: join subquery results with outer environments
+        (let ((sq-vars (when (and (listp sq-expr) (listp (second sq-expr)))
+                         (remove-if-not #'variable-p (second sq-expr))))
+              (results nil))
+          (dolist (env envs)
+            (dolist (row sq-results)
+              (let ((new-env env) (ok t))
+                (loop for var in sq-vars for val in row do
+                  (let ((existing (assoc var new-env)))
+                    (cond ((null existing) (push (cons var val) new-env))
+                          ((equal (cdr existing) val))
+                          (t (setf ok nil)))))
+                (when ok (push new-env results)))))
+          (nreverse results)))))
 
 ;;; Subqueries in FILTER — handled by safe-eval recognizing (subquery ...) forms
 
