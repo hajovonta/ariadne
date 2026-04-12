@@ -33,7 +33,7 @@
           (let ((ch (char str pos)))
             (cond
               ;; Punctuation
-              ((member ch '(#\{ #\} #\( #\) #\. #\+ #\* #\^))
+              ((member ch '(#\{ #\} #\( #\) #\. #\+ #\* #\^ #\;))
                (push (string ch) tokens)
                (incf pos))
               ;; Variable ?name
