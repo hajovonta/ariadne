@@ -298,6 +298,7 @@
             (apply (symbol-function op) (mapcar #'lit-val args)))
            ((eq op '=) (equal (lit-val (first args)) (lit-val (second args))))
            ((eq op '/=) (not (equal (lit-val (first args)) (lit-val (second args)))))
+           ((sym-name-equal op "!=") (not (equal (lit-val (first args)) (lit-val (second args)))))
            ((eq op '<) (shacl-safe-compare #'< #'string< (first args) (second args)))
            ((eq op '>) (shacl-safe-compare #'> #'string> (first args) (second args)))
            ((eq op '<=) (shacl-safe-compare #'<= #'string<= (first args) (second args)))
