@@ -989,13 +989,20 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
 (defun zero-or-one-path (g start pred target)
   "Zero or one hop: includes the start node itself."
   (let ((bound-start (and (not (variable-p start)) start))
+        (bound-target (and target (not (variable-p target)) target))
         (results nil))
     (when bound-start
       (push (cons bound-start bound-start) results)
       (dolist (next (one-hop g bound-start pred))
         (push (cons bound-start next) results)))
-    (if (and target (not (variable-p target)))
-        (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
+    (when (and bound-target (not bound-start))
+      ;; Unbound start, bound target: target matches itself + inverse one-hop
+      (pushnew (cons bound-target bound-target) results :test #'equal)
+      (dolist (tr (get-triples g :object bound-target))
+        (when (equal (triple-predicate tr) (if (stringp pred) pred (lit-val pred)))
+          (pushnew (cons (triple-subject tr) bound-target) results :test #'equal))))
+    (if bound-target
+        (remove-if-not (lambda (pair) (equal (cdr pair) bound-target)) results)
         results)))
 
 (defun alternative-path (g start preds target)
@@ -1063,6 +1070,11 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
                              (push (cons node next) results)
                              (walk next)))))
                 (walk node))))))
+    ;; For zero-length path: bound terms always match themselves
+    (when (and target (not (variable-p target)))
+      (pushnew (cons target target) results :test #'equal))
+    (when (and bound-start (not (variable-p start)))
+      (pushnew (cons bound-start bound-start) results :test #'equal))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
