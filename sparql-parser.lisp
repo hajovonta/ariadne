@@ -495,19 +495,13 @@
          (pop toks)
          (when (and toks (stringp (car toks)) (string= (car toks) "("))
            (pop toks))
-         ;; Read expression (may be a URI, variable, or complex expr)
-         (let* ((left (sparql-resolve-term (pop toks) prefixes))
-                (op (when (and toks
-                               (not (and (stringp (car toks)) (string= (car toks) ")")))
-                               (not (and (stringp (car toks)) (string-equal (car toks) "AS"))))
-                      (intern (string-upcase (princ-to-string (pop toks))))))
-                (right (when op (sparql-resolve-term (pop toks) prefixes)))
-                (expr (if op (list op left right) left)))
+         ;; Parse expression using full expression parser
+         (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
+           (setf toks rest)
            (when (and toks (stringp (car toks)) (string-equal (car toks) "AS"))
              (pop toks))
            (let ((var (pop toks)))
              (push (list 'bind var expr) binds)
-             ;; Also push as inline-bind pattern for ordered execution
              (push (list 'inline-bind var expr) patterns))
            (when (and toks (stringp (car toks)) (string= (car toks) ")"))
              (pop toks))
