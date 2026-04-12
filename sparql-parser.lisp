@@ -70,15 +70,29 @@
                      (when (and (< pos len) (char= #\= (char str pos)))
                        (incf pos))
                      (push (intern (subseq str start pos)) tokens))))
-              ;; String "..."
+              ;; String "..." possibly with ^^type or @lang
               ((char= ch #\")
-               (let ((start (1+ pos)))
+               (let ((start pos))
                  (incf pos)
                  (loop while (and (< pos len) (char/= #\" (char str pos)))
                        do (when (char= #\\ (char str pos)) (incf pos))
                           (incf pos))
-                 (push (subseq str start pos) tokens)
-                 (when (< pos len) (incf pos))))
+                 (when (< pos len) (incf pos)) ; skip closing quote
+                 ;; Consume ^^type or @lang suffix
+                 (cond
+                   ((and (<= (+ pos 2) len) (char= #\^ (char str pos)) (char= #\^ (char str (1+ pos))))
+                    (incf pos 2)
+                    (if (and (< pos len) (char= #\< (char str pos)))
+                        (let ((end (position #\> str :start pos)))
+                          (when end (setf pos (1+ end))))
+                        (loop while (and (< pos len)
+                                         (not (member (char str pos) '(#\Space #\Tab #\Newline #\Return #\. #\) #\} #\;))))
+                              do (incf pos))))
+                   ((and (< pos len) (char= #\@ (char str pos)))
+                    (loop while (and (< pos len)
+                                     (not (member (char str pos) '(#\Space #\Tab #\Newline #\Return #\. #\) #\} #\;))))
+                          do (incf pos))))
+                 (push (subseq str start pos) tokens)))
               ;; Number
               ((or (digit-char-p ch)
                    (and (char= ch #\-) (< (1+ pos) len) (digit-char-p (char str (1+ pos)))))
@@ -671,18 +685,21 @@
   (cond
     ((null term) nil)
     ((symbolp term) term)  ; ?variable
-    ((numberp term) term)
+    ((numberp term) (intern-literal term (if (integerp term) +xsd-integer+ +xsd-decimal+)))
+    ((rdf-literal-p term) term)
     ((stringp term)
-     ;; Check for prefixed name (contains : but not ://)
-     (let ((colon (position #\: term)))
-       (if (and colon (not (search "://" term)))
-           (let* ((prefix (concatenate 'string (subseq term 0 (1+ colon))))
-                  (local (subseq term (1+ colon)))
-                  (base (gethash prefix prefixes)))
-             (if base
-                 (concatenate 'string base local)
-                 term))
-           term)))
+     (cond
+       ;; Quoted string literal
+       ((and (> (length term) 1) (char= #\" (char term 0)))
+        (resolve-sparql-token term prefixes))
+       ;; Prefixed name (contains : but not ://)
+       ((and (position #\: term) (not (search "://" term)))
+        (let* ((colon (position #\: term))
+               (prefix (concatenate 'string (subseq term 0 (1+ colon))))
+               (local (subseq term (1+ colon)))
+               (base (gethash prefix prefixes)))
+          (if base (concatenate 'string base local) term)))
+       (t term)))
     (t term)))
 
 
