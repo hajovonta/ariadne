@@ -612,7 +612,8 @@
                 (path-result (parse-sparql-path toks prefixes))
                 (p (car path-result))
                 (o-toks (cdr path-result))
-                (o (sparql-resolve-term (pop o-toks) prefixes)))
+                (o (let ((v (sparql-resolve-term (pop o-toks) prefixes)))
+                     (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
            (setf toks o-toks)
            (push (list s p o) patterns)
            ;; Handle ; (same subject, new predicate-object pairs)
@@ -622,7 +623,8 @@
              (let* ((pr (parse-sparql-path toks prefixes))
                     (p2 (car pr))
                     (o2-toks (cdr pr))
-                    (o2 (sparql-resolve-term (pop o2-toks) prefixes)))
+                    (o2 (let ((v (sparql-resolve-term (pop o2-toks) prefixes)))
+                          (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
                (setf toks o2-toks)
                (push (list s p2 o2) patterns))))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
@@ -685,7 +687,7 @@
   (cond
     ((null term) nil)
     ((symbolp term) term)  ; ?variable
-    ((numberp term) (intern-literal term (if (integerp term) +xsd-integer+ +xsd-decimal+)))
+    ((numberp term) term)
     ((rdf-literal-p term) term)
     ((stringp term)
      (cond

@@ -114,7 +114,7 @@
                               (where (?person "birth-year" ?year))
                               (bind ?age (- 2026 ?year))))))
       (is (= 1 (length results)))
-      (is (= 36 (second (first results)))))))
+      (is (= 36 (rdf-literal-value (second (first results))))))))
 
 (test bind-string-concat
   "BIND with string concatenation"
@@ -125,7 +125,8 @@
                               (where (?person "first-name" ?first)
                                      (?person "last-name" ?last))
                               (bind ?full (concatenate 'string ?first " " ?last))))))
-      (is (equal "Alice Smith" (second (first results)))))))
+      (is (equal "Alice Smith" (let ((v (second (first results))))
+                                  (if (rdf-literal-p v) (rdf-literal-value v) v)))))))
 
 (test bind-multiple
   "Multiple BIND clauses"
@@ -137,8 +138,8 @@
                                      (?shape "height" ?h))
                               (bind ?area (* ?w ?h))
                               (bind ?perimeter (* 2 (+ ?w ?h)))))))
-      (is (= 50 (second (first results))))
-      (is (= 30 (third (first results)))))))
+      (is (= 50 (rdf-literal-value (second (first results)))))
+      (is (= 30 (rdf-literal-value (third (first results))))))))
 
 ;; =============================================================================
 ;; NOT EXISTS / MINUS
