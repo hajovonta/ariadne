@@ -40,7 +40,11 @@
       (#+sbcl sb-ext:with-timeout #+sbcl 5
        #-sbcl progn
         (let ((g (make-graph)))
-          (when df (import-turtle g (slurp (merge-pathnames df dir))))
+          (when df
+            (let ((path (merge-pathnames df dir)))
+              (if (cl-ppcre:scan "\\.rdf$" df)
+                  (import-rdf-xml g (slurp path))
+                  (import-turtle g (slurp path)))))
           (dolist (gf graph-data-files)
             (let ((gpath (merge-pathnames gf dir)))
               (when (probe-file gpath)

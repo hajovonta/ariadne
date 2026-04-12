@@ -783,10 +783,27 @@ Returns (remaining-toks anon-counter list-head-node)."
            (pop toks)
            (setf expect-punct nil)
            (when (and subject predicate toks)
-             (let ((obj-tok (pop toks)))
-               (let ((obj (turtle-resolve obj-tok prefixes)))
-                 (add-triple g subject predicate obj :graph-name graph-name)
-                 (setf expect-punct t)))))
+             (cond
+               ;; Blank node as object
+               ((string= (car toks) "[")
+                (pop toks)
+                (let ((bnode (format nil "_:anon~A" (incf anon-counter))))
+                  (multiple-value-bind (new-toks new-ac)
+                      (parse-bnode-contents g toks prefixes anon-counter bnode)
+                    (setf toks new-toks anon-counter new-ac))
+                  (add-triple g subject predicate bnode :graph-name graph-name)
+                  (setf expect-punct t)))
+               ;; Collection as object
+               ((string= (car toks) "(")
+                (pop toks)
+                (let ((result (parse-collection g toks prefixes anon-counter)))
+                  (setf toks (first result) anon-counter (second result))
+                  (add-triple g subject predicate (third result) :graph-name graph-name)
+                  (setf expect-punct t)))
+               ;; Regular object
+               (t (let ((obj (turtle-resolve (pop toks) prefixes)))
+                    (add-triple g subject predicate obj :graph-name graph-name)
+                    (setf expect-punct t))))))
           ;; Regular token
           (t
            (when (and expect-punct (= 0 bracket-depth))
