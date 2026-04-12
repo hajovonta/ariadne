@@ -107,6 +107,7 @@
          (not-exists-patterns nil)
          (exists-patterns nil)
          (minus-patterns nil)
+         (minus-filters nil)
          (values-clause nil)
          (graph-clause nil)
          (projections nil)
@@ -127,7 +128,11 @@
           ((sym-name-equal tag "BIND") (push (rest clause) binds))
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
           ((sym-name-equal tag "EXISTS") (setf exists-patterns (rest clause)))
-          ((sym-name-equal tag "MINUS") (setf minus-patterns (rest clause)))
+          ((sym-name-equal tag "MINUS")
+           (let ((parts (rest clause)))
+             (setf minus-patterns (remove-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts))
+             (let ((f (find-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts)))
+               (when f (setf minus-filters (rest f))))))
           ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
           ((sym-name-equal tag "GRAPH")
            (setf graph-clause (rest clause)))
@@ -163,7 +168,7 @@
                     envs)))
       ;; Apply MINUS
       (when minus-patterns
-        (setf envs (apply-minus g envs minus-patterns)))
+        (setf envs (apply-minus g envs minus-patterns minus-filters)))
       ;; Apply VALUES
       (when values-clause
         (setf envs (apply-values-clause envs values-clause)))
@@ -525,11 +530,16 @@
      (match-patterns-with-envs g patterns (list env)))
    envs))
 
-(defun apply-minus (g envs patterns)
+(defun apply-minus (g envs patterns &optional filters)
   "Remove envs where the pattern produces matching bindings for shared variables."
   (remove-if
    (lambda (env)
      (let ((matches (match-patterns-with-envs g patterns (list env))))
+       (when filters
+         (setf matches (remove-if-not
+                        (lambda (m)
+                          (every (lambda (f) (safe-eval (subst-vars f m))) filters))
+                        matches)))
        ;; Check if any match binds the shared variables to the same values
        (some (lambda (m)
                (every (lambda (binding)

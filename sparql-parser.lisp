@@ -228,8 +228,8 @@
                (push (list 'having having-expr) clauses)))
             (t (return))))
         ;; Build DSL expression
-        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph)))) patterns))
-               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph)))) patterns))
+        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph minus)))) patterns))
+               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph minus)))) patterns))
                (expr (list (if distinct-p 'select-distinct 'select)
                           vars
                           (cons 'where clean-patterns))))
@@ -520,6 +520,19 @@
            (when (and toks (string= (car toks) "}"))
              (pop toks))
            (push (cons 'optional opt-patterns) optionals)))
+        ;; MINUS { ... }
+        ((string-equal (car toks) "MINUS")
+         (pop toks)
+         (when (and toks (string= (car toks) "{"))
+           (pop toks))
+         (multiple-value-bind (m-pats m-filts m-rest)
+             (sparql-parse-body toks prefixes)
+           (setf toks m-rest)
+           (when (and toks (string= (car toks) "}"))
+             (pop toks))
+           (let ((clause (cons 'minus m-pats)))
+             (when m-filts (nconc clause (list (cons 'filter m-filts))))
+             (push clause patterns))))
         ;; UNION or nested block: { ... } UNION { ... } or { SELECT subquery }
         ((string= (car toks) "{")
          (pop toks)
