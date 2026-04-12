@@ -226,6 +226,35 @@
                        (setf having-expr (list op (list agg-fn agg-var) val))))
                    (setf having-expr agg-or-paren))
                (push (list 'having having-expr) clauses)))
+            ((string-equal (car toks) "VALUES")
+             (pop toks)
+             ;; VALUES ?var { val1 val2 ... } or VALUES (?v1 ?v2) { (v1 v2) ... }
+             (let ((val-vars nil) (val-data nil))
+               (if (and toks (stringp (car toks)) (string= (car toks) "("))
+                   ;; Multi-variable: VALUES (?v1 ?v2) { ... }
+                   (progn
+                     (pop toks)
+                     (loop until (or (null toks) (string= (car toks) ")")) do
+                       (push (pop toks) val-vars))
+                     (when toks (pop toks))
+                     (setf val-vars (nreverse val-vars)))
+                   ;; Single variable
+                   (push (pop toks) val-vars))
+               ;; Parse { val1 val2 ... } or { (v1 v2) (v3 v4) ... }
+               (when (and toks (string= (car toks) "{"))
+                 (pop toks)
+                 (loop until (or (null toks) (string= (car toks) "}")) do
+                   (if (and (stringp (car toks)) (string= (car toks) "("))
+                       (progn
+                         (pop toks)
+                         (let ((row nil))
+                           (loop until (or (null toks) (string= (car toks) ")")) do
+                             (push (sparql-resolve-term (pop toks) prefixes) row))
+                           (when toks (pop toks))
+                           (push (nreverse row) val-data)))
+                       (push (list (sparql-resolve-term (pop toks) prefixes)) val-data)))
+                 (when toks (pop toks)))
+               (push (list 'values val-vars (nreverse val-data)) clauses)))
             (t (return))))
         ;; Build DSL expression
         (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph minus)))) patterns))
