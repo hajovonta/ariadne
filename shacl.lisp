@@ -250,13 +250,17 @@ PATH can be a simple URI or a blank node with path operators."
                                 :value val)
                 violations)))
       ;; sh:pattern
-      (let ((pat (lit-val (prop-shape-value g prop-shape "pattern"))))
-        (when (and pat (stringp sval)
-                   (not (cl-ppcre:scan pat sval)))
-          (push (make-violation focus-node path shape
-                                (format nil "does not match pattern ~A" pat)
-                                :value val)
-                violations)))
+      (let ((pat (lit-val (prop-shape-value g prop-shape "pattern")))
+            (flags (lit-val (prop-shape-value g prop-shape "flags"))))
+        (when (and pat (stringp sval))
+          (let ((scanner (if (and flags (search "i" flags))
+                             (cl-ppcre:create-scanner pat :case-insensitive-mode t)
+                             pat)))
+            (unless (cl-ppcre:scan scanner sval)
+              (push (make-violation focus-node path shape
+                                    (format nil "does not match pattern ~A" pat)
+                                    :value val)
+                    violations)))))
       ;; sh:nodeKind
       (let ((nk (prop-shape-value g prop-shape "nodeKind")))
         (when (and nk (not (value-matches-node-kind-p val nk)))
@@ -587,7 +591,8 @@ PATH can be a simple URI or a blank node with path operators."
 (defun check-node-constraints (g focus-node shape)
   "Check constraints placed directly on a NodeShape against the focus node."
   (let ((violations nil)
-        (val focus-node))
+        (val focus-node)
+        (sval (lit-val focus-node)))
     ;; sh:class — focus node must be instance of class
     (let ((cls (prop-shape-value g shape "class")))
       (when (and cls (not (has-triple-p g focus-node *rdf-type* cls)))
@@ -618,11 +623,16 @@ PATH can be a simple URI or a blank node with path operators."
                               (format nil "expected hasValue ~A" required))
               violations)))
     ;; sh:pattern
-    (let ((pat (lit-val (prop-shape-value g shape "pattern"))))
-      (when (and pat (stringp val) (not (cl-ppcre:scan pat val)))
-        (push (make-violation focus-node nil shape
-                              (format nil "does not match pattern ~A" pat))
-              violations)))
+    (let ((pat (lit-val (prop-shape-value g shape "pattern")))
+          (flags (lit-val (prop-shape-value g shape "flags"))))
+      (when (and pat (stringp sval))
+        (let ((scanner (if (and flags (search "i" flags))
+                           (cl-ppcre:create-scanner pat :case-insensitive-mode t)
+                           pat)))
+          (unless (cl-ppcre:scan scanner sval)
+            (push (make-violation focus-node nil shape
+                                  (format nil "does not match pattern ~A" pat))
+                  violations)))))
     ;; sh:minInclusive/maxInclusive/minExclusive/maxExclusive
     (let ((mini (prop-shape-value g shape "minInclusive")))
       (when (and mini (not (shacl-value>= val mini)))
@@ -645,18 +655,18 @@ PATH can be a simple URI or a blank node with path operators."
                               (format nil "value >= maxExclusive ~A" maxe))
               violations)))
     ;; sh:minLength/maxLength
-    (when (stringp val)
-      (let ((min-l (prop-shape-value g shape "minLength")))
+    (when (stringp sval)
+      (let ((min-l (lit-val (prop-shape-value g shape "minLength"))))
         (when min-l
           (let ((n (if (numberp min-l) min-l (parse-integer (princ-to-string min-l) :junk-allowed t))))
-            (when (and n (< (length val) n))
+            (when (and n (< (length sval) n))
               (push (make-violation focus-node nil shape
                                     (format nil "length < minLength ~A" n))
                     violations)))))
-      (let ((max-l (prop-shape-value g shape "maxLength")))
+      (let ((max-l (lit-val (prop-shape-value g shape "maxLength"))))
         (when max-l
           (let ((n (if (numberp max-l) max-l (parse-integer (princ-to-string max-l) :junk-allowed t))))
-            (when (and n (> (length val) n))
+            (when (and n (> (length sval) n))
               (push (make-violation focus-node nil shape
                                     (format nil "length > maxLength ~A" n))
                     violations))))))
@@ -845,7 +855,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
             (let* ((param (triple-object tr))
                    (path (prop-shape-path g param))
                    (opt (prop-shape-value g param "optional")))
-              (list param path (or (eq opt t) (equal opt "true")))))
+              (list param path (let ((v (lit-val opt))) (or (eq v t) (equal v "true"))))))
           (get-triples g :subject component :predicate (sh-uri "parameter"))))
 
 (defun component-validator (g component kind)
@@ -864,9 +874,9 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
          (validator (component-validator g component kind))
          (violations nil))
     (when validator
-      (let ((select-q (prop-shape-value g validator "select"))
-            (ask-q (prop-shape-value g validator "ask"))
-            (message (or (prop-shape-value g validator "message")
+      (let ((select-q (lit-val (prop-shape-value g validator "select")))
+            (ask-q (lit-val (prop-shape-value g validator "ask")))
+            (message (or (lit-val (prop-shape-value g validator "message"))
                          "Custom constraint violation")))
         ;; Collect prefixes from validator
         ;; Check for BIND reassigning pre-bound variables (spec 6.3.3)
@@ -892,9 +902,10 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                      (dolist (pb param-bindings)
                        (let* ((name (car pb))
                               (val (cdr pb))
-                              (replacement (if (stringp val)
-                                               (format nil "\"~A\"" val)
-                                               (princ-to-string val))))
+                              (sv (lit-val val))
+                              (replacement (if (stringp sv)
+                                               (format nil "\"~A\"" sv)
+                                               (princ-to-string sv))))
                          (setf result (cl-ppcre:regex-replace-all
                                        (format nil "\\$~A\\b" name) result replacement))
                          (setf result (cl-ppcre:regex-replace-all
@@ -919,11 +930,12 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                            (list focus-node)))
                      (q-template (substitute-params ask-q)))
                 (dolist (val values-to-check)
-                  (let* ((q (cl-ppcre:regex-replace-all
+                  (let* ((sv (lit-val val))
+                         (q (cl-ppcre:regex-replace-all
                              "\\?value" q-template
-                             (if (stringp val)
-                                 (format nil "\"~A\"" val)
-                                 (format nil "<~A>" val))))
+                             (if (stringp sv)
+                                 (format nil "\"~A\"" sv)
+                                 (format nil "<~A>" sv))))
                          (result (handler-case (sparql g q) (error () t))))
                     (unless result
                       (push (make-violation focus-node
@@ -977,8 +989,8 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                  ;; Direct sh:declare on this node
                  (dolist (dt (get-triples g :subject node :predicate (sh-uri "declare")))
                    (let* ((decl (triple-object dt))
-                          (pfx (prop-shape-value g decl "prefix"))
-                          (ns (prop-shape-value g decl "namespace")))
+                          (pfx (lit-val (prop-shape-value g decl "prefix")))
+                          (ns (lit-val (prop-shape-value g decl "namespace"))))
                      (when (and pfx ns)
                        (push (format nil "PREFIX ~A: <~A>" pfx ns) prefix-strs))))
                  ;; Follow owl:imports
@@ -990,9 +1002,9 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
 
 (defun check-sparql-constraint (g focus-node constraint shape &key path)
   "Execute a sh:sparql constraint against focus-node. Returns list of violations."
-  (let* ((select-query (prop-shape-value g constraint "select"))
-         (ask-query (prop-shape-value g constraint "ask"))
-         (message (or (prop-shape-value g constraint "message") "SPARQL constraint violation"))
+  (let* ((select-query (lit-val (prop-shape-value g constraint "select")))
+         (ask-query (lit-val (prop-shape-value g constraint "ask")))
+         (message (or (lit-val (prop-shape-value g constraint "message")) "SPARQL constraint violation"))
          (prefix-str (let ((p (collect-shacl-prefixes g constraint)))
                        (if (string= p "") (collect-shacl-prefixes g shape) p)))
          (violations nil))

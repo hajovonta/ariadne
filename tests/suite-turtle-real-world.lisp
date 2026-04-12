@@ -163,7 +163,7 @@ second''' .")
 ex:a ex:b \"\"\"She said \"hello\" to him\"\"\" .")
     (is (= 1 (triple-count g)))
     (let ((tr (first (get-triples g))))
-      (is (search "\"hello\"" (triple-object tr))))))
+      (is (search "\"hello\"" (rdf-literal-value (triple-object tr)))))))
 
 (test turtle-long-literal-with-semicolon
   "Long literal followed by semicolon continuation"

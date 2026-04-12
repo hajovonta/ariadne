@@ -28,12 +28,12 @@ Returns T, NIL, or :failure for sht:Failure tests."
       (return-from extract-expected-conforms :failure)))
   (let ((tr (first (get-triples g :predicate "http://www.w3.org/ns/shacl#conforms"))))
     (when tr
-      (let ((val (triple-object tr)))
+      (let ((val (ariadne::lit-val (triple-object tr))))
         (cond
-          ((equal val "true") t)
-          ((equal val "false") nil)
           ((eq val t) t)
           ((null val) nil)
+          ((equal val "true") t)
+          ((equal val "false") nil)
           ((and (stringp val) (search "true" val)) t)
           (t nil))))))
 
