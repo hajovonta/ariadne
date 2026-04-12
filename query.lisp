@@ -802,10 +802,15 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
   (let ((bound-start (and (not (variable-p start)) start))
         (excluded (if (listp excluded-pred) excluded-pred (list excluded-pred)))
         (results nil))
-    (when bound-start
-      (dolist (tr (get-triples g :subject bound-start))
-        (unless (member (triple-predicate tr) excluded :test #'equal)
-          (push (cons bound-start (triple-object tr)) results))))
+    (if bound-start
+        (dolist (tr (get-triples g :subject bound-start))
+          (unless (member (triple-predicate tr) excluded :test #'equal)
+            (push (cons bound-start (triple-object tr)) results)))
+        ;; Unbound start — check all subjects
+        (dolist (subj (all-subjects g))
+          (dolist (tr (get-triples g :subject subj))
+            (unless (member (triple-predicate tr) excluded :test #'equal)
+              (push (cons subj (triple-object tr)) results)))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))
