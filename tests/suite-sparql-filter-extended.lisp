@@ -32,7 +32,7 @@
 (test filter-is-literal
   "FILTER with isLiteral() function"
   (let ((g (make-graph :name "filt-islit")))
-    (add-triple g "http://ex.org/a" "http://ex.org/val" "hello")
+    (add-triple g "http://ex.org/a" "http://ex.org/val" (intern-literal "hello" +xsd-string+))
     (add-triple g "http://ex.org/b" "http://ex.org/val" "http://ex.org/uri")
     (let ((results (sparql g "SELECT ?s WHERE { ?s <http://ex.org/val> ?v . FILTER (isLiteral(?v)) }")))
       (is (>= (length results) 1)))))
