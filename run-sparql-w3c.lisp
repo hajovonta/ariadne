@@ -8,8 +8,7 @@
                                  (asdf:system-source-directory :ariadne)))
 
 (defun slurp (path)
-  (with-open-file (s path :external-format :utf-8)
-    (let ((b (make-string (file-length s)))) (read-sequence b s) b)))
+  (uiop:read-file-string path))
 
 (defun parse-srx (path)
   "Parse .srx into list of alists, or T/NIL for ASK."
@@ -80,16 +79,20 @@
                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action")))))
                      (when qf
                        (handler-case
-                           (progn (parse-sparql (slurp (merge-pathnames qf dir))) (incf pass))
-                         (error () (incf fail) (format t "  FAIL  ~A~%" name))))))
+                           (sb-ext:with-timeout 5
+                             (parse-sparql (slurp (merge-pathnames qf dir))) (incf pass))
+                         (error () (incf fail) (format t "  FAIL  ~A~%" name))
+                         (sb-ext:timeout () (incf fail) (format t "  FAIL  ~A (timeout)~%" name))))))
                   ((equal typ "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#NegativeSyntaxTest11")
                    (let ((qf (triple-object (first (get-triples mg :subject subj
                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action")))))
                      (when qf
                        (handler-case
-                           (progn (parse-sparql (slurp (merge-pathnames qf dir)))
-                                  (incf fail) (format t "  FAIL  ~A (should reject)~%" name))
-                         (error () (incf pass))))))))
+                           (sb-ext:with-timeout 5
+                             (parse-sparql (slurp (merge-pathnames qf dir)))
+                             (incf fail) (format t "  FAIL  ~A (should reject)~%" name))
+                         (error () (incf pass))
+                         (sb-ext:timeout () (incf fail) (format t "  FAIL  ~A (timeout)~%" name))))))))
             (error () (incf err))))))
     (values pass fail err)))
 
