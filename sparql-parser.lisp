@@ -630,8 +630,9 @@
                (let ((sub-toks nil) (depth 1))
                  (loop while (and toks (> depth 0)) do
                    (let ((tok (pop toks)))
-                     (cond ((string= tok "{") (incf depth))
-                           ((string= tok "}") (decf depth)))
+                     (when (stringp tok)
+                       (cond ((string= tok "{") (incf depth))
+                             ((string= tok "}") (decf depth))))
                      (when (> depth 0) (push tok sub-toks))))
                  (let ((st (nreverse sub-toks)))
                    ;; Skip leading SELECT keyword
