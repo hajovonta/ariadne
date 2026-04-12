@@ -260,6 +260,7 @@
   (cond
     ((atom expr) expr)
     ((null (first expr)) (error "Disallowed filter operation: NIL"))
+    ((eq (first expr) 'quote) (second expr))
     ((sym-name-equal (first expr) "SUBQUERY")
      (let ((results (query *query-graph* (second expr))))
        (if (and results (= 1 (length results)) (= 1 (length (first results))))
@@ -310,6 +311,8 @@
                             (string-equal (subseq tag 0 (length range)) range))))))
            ((sym-name-equal op "CONCAT")
             (apply #'concatenate 'string (mapcar #'princ-to-string args)))
+           ((sym-name-equal op "CONCATENATE")
+            (apply #'concatenate (first args) (rest args)))
            ((sym-name-equal op "STR") (princ-to-string (first args)))
            ((sym-name-equal op "STRLEN") (length (princ-to-string (first args))))
            ((sym-name-equal op "UCASE") (string-upcase (princ-to-string (first args))))
@@ -471,7 +474,8 @@
 (defun apply-bind (envs var expr)
   "Add a computed binding to each environment."
   (mapcar (lambda (env)
-            (let ((value (eval (subst-vars expr env))))
+            (let ((value (handler-case (safe-eval (subst-vars expr env))
+                           (error () nil))))
               (cons (cons var value) env)))
           envs))
 
