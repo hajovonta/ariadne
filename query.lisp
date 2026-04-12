@@ -108,6 +108,7 @@
          (minus-patterns nil)
          (values-clause nil)
          (graph-clause nil)
+         (projections nil)
          (group-var nil)
          (having-clause nil)
          (order-var nil)
@@ -128,6 +129,7 @@
           ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
           ((sym-name-equal tag "GRAPH")
            (setf graph-clause (rest clause)))
+          ((sym-name-equal tag "PROJECT") (push (rest clause) projections))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
           ((sym-name-equal tag "HAVING") (setf having-clause (rest clause)))
           ((sym-name-equal tag "ORDER-BY") (setf order-var (second clause)))
@@ -166,10 +168,24 @@
               (resolved-filters (mapcar (lambda (f) (resolve-subquery-in-filter g f)) filters)))
           (setf envs (apply-filters envs resolved-filters))))
 
+      ;; Apply projections (SELECT (expr AS ?var))
+      (dolist (proj projections)
+        (let ((alias (first proj))
+              (expr (second proj)))
+          (if (and (consp expr) (member (car expr) '(COUNT SUM AVG MIN MAX GROUP_CONCAT SAMPLE)
+                                        :test #'sym-name-equal))
+              ;; Aggregate without GROUP BY: compute over all results
+              (unless group-var
+                (let* ((agg-var (cadr expr))
+                       (values (mapcar (lambda (env) (lookup-binding agg-var env)) envs))
+                       (agg-result (compute-aggregate (car expr) values)))
+                  (setf envs (list (list (cons alias agg-result))))))
+              ;; Non-aggregate: compute per row like BIND
+              (setf envs (apply-bind envs alias expr)))))
       ;; GROUP BY + aggregation
       (when group-var
         (return-from execute-select
-          (execute-group-by envs group-var vars having-clause)))
+          (execute-group-by envs group-var vars having-clause projections)))
       ;; Project variables
       (let ((results (project-results vars envs)))
         (when distinct-p
@@ -381,7 +397,7 @@
 ;;; GROUP BY + Aggregation
 ;;; ==========================================================================
 
-(defun execute-group-by (envs group-var vars &optional having-clause)
+(defun execute-group-by (envs group-var vars &optional having-clause projections)
   "Group environments by GROUP-VAR and compute aggregations."
   (let ((groups (make-hash-table :test 'equal)))
     (dolist (env envs)
@@ -395,13 +411,22 @@
                    (eval-having having-clause group-envs vars))
            (let ((row (list key)))
              (dolist (v (rest vars))
-               (if (and (listp v) (>= (length v) 2))
-                   (let ((agg-var (second v)))
-                     (let ((values (mapcar (lambda (env) (lookup-binding agg-var env))
-                                           group-envs))
-                           (separator (third v)))
-                       (push (compute-aggregate (first v) values separator) row)))
-                   (push (lookup-binding v (first group-envs)) row)))
+               (let ((proj (find v projections :key #'first :test #'equal)))
+                 (if proj
+                     ;; Projected aggregate
+                     (let* ((expr (second proj))
+                            (agg-var (when (consp expr) (cadr expr)))
+                            (values (when agg-var
+                                      (mapcar (lambda (env) (lookup-binding agg-var env))
+                                              group-envs))))
+                       (push (if values (compute-aggregate (car expr) values) nil) row))
+                     ;; Regular variable or old-style (AGG ?var)
+                     (if (and (listp v) (>= (length v) 2))
+                         (let ((values (mapcar (lambda (env) (lookup-binding (second v) env))
+                                               group-envs))
+                               (separator (third v)))
+                           (push (compute-aggregate (first v) values separator) row))
+                         (push (lookup-binding v (first group-envs)) row)))))
              (push (nreverse row) results))))
        groups)
       results)))

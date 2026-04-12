@@ -33,10 +33,8 @@
   "Run one evaluation test. Returns :pass, :fail, or :error."
   (handler-case
       (let* ((query-str (slurp (merge-pathnames qf dir)))
-             ;; Skip queries with unsupported features
-             (_ (when (or (cl-ppcre:scan "(?s)SELECT[^{]*\\([A-Z]+\\(" query-str)
-                          (cl-ppcre:scan "(?i)HAVING" query-str)
-                          (cl-ppcre:scan "SELECT\\s+\\*" query-str))
+             ;; Skip queries with SELECT * (not yet fully supported)
+             (_ (when (cl-ppcre:scan "SELECT\\s+\\*" query-str)
                   (return-from run-one-eval-test :skip)))
              (g (make-graph)))
         (declare (ignore _))

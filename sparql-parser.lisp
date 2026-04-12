@@ -144,20 +144,34 @@
   (when (and toks (string-equal (car toks) "DISTINCT"))
     (pop toks)
     (setf distinct-p t))
-  ;; Parse variable list (including aggregations like (COUNT ?var))
-  (let ((vars nil))
+  ;; Parse variable list (including expressions like (COUNT(?var) AS ?alias))
+  (let ((vars nil)
+        (projections nil))  ; list of (alias . expr) for computed columns
     (loop while (and toks
                      (not (and (stringp (car toks)) (string-equal (car toks) "WHERE")))
-                     (not (string= (car toks) "{")))
-          do (if (string= (car toks) "(")
-                 ;; Aggregation: (COUNT ?var)
-                 (progn
-                   (pop toks)
-                   (let ((fn (intern (string-upcase (princ-to-string (pop toks)))))
-                         (var (pop toks)))
-                     (when (and toks (string= (car toks) ")"))
-                       (pop toks))
-                     (push (list fn var) vars)))
+                     (not (and (stringp (car toks)) (string= (car toks) "{"))))
+          do (if (and (stringp (car toks)) (string= (car toks) "("))
+                 ;; Expression: (expr AS ?var) or (AGG ?var)
+                 (let ((depth 1) (expr-toks nil))
+                   (pop toks) ; consume (
+                   ;; Collect tokens until matching )
+                   (loop while (and toks (> depth 0)) do
+                     (cond ((and (stringp (car toks)) (string= (car toks) "(")) (incf depth))
+                           ((and (stringp (car toks)) (string= (car toks) ")")) (decf depth)))
+                     (when (> depth 0) (push (pop toks) expr-toks))
+                     (when (= depth 0) (pop toks))) ; consume final )
+                   (setf expr-toks (nreverse expr-toks))
+                   ;; Find AS — split into expr and alias
+                   (let ((as-pos (position "AS" expr-toks :test #'string-equal :key (lambda (x) (if (stringp x) x "")))))
+                     (if as-pos
+                         (let ((expr-part (subseq expr-toks 0 as-pos))
+                               (alias (nth (1+ as-pos) expr-toks)))
+                           (push alias vars)
+                           (push (cons alias expr-part) projections))
+                         ;; No AS — old style (COUNT ?var)
+                         (let ((fn (intern (string-upcase (princ-to-string (first expr-toks)))))
+                               (var (second expr-toks)))
+                           (push (list fn var) vars)))))
                  (push (pop toks) vars)))
     (setf vars (nreverse vars))
     ;; Expect WHERE
@@ -226,9 +240,20 @@
             (setf expr (append expr (list (cons 'filter filters)))))
           (dolist (b binds)
             (setf expr (append expr (list b))))
+          (dolist (p projections)
+            (let* ((toks (cdr p))
+                   ;; Parse expression tokens into evaluable form
+                   (parsed (parse-projection-expr toks prefixes)))
+              (setf expr (append expr (list (list 'project (car p) parsed))))))
           (dolist (c clauses)
             (setf expr (append expr (list c))))
           expr)))))
+
+(defun parse-projection-expr (toks prefixes)
+  "Parse expression tokens from SELECT (expr AS ?var) into evaluable form."
+  (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
+    (declare (ignore rest))
+    expr))
 
 (defun sparql-parse-ask (toks prefixes)
   "Parse ASK query."
