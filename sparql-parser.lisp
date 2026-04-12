@@ -213,19 +213,10 @@
              (push (list 'group-by (pop toks)) clauses))
             ((string-equal (car toks) "HAVING")
              (pop toks)
-             ;; Parse HAVING expression: (agg ?var) op value
-             (let ((agg-or-paren (pop toks))
-                   having-expr)
-               (if (string= agg-or-paren "(")
-                   ;; (COUNT ?var) > N
-                   (let ((agg-fn (intern (string-upcase (princ-to-string (pop toks)))))
-                         (agg-var (pop toks)))
-                     (pop toks) ; )
-                     (let ((op (intern (string-upcase (princ-to-string (pop toks)))))
-                           (val (sparql-resolve-term (pop toks) prefixes)))
-                       (setf having-expr (list op (list agg-fn agg-var) val))))
-                   (setf having-expr agg-or-paren))
-               (push (list 'having having-expr) clauses)))
+             ;; Parse HAVING expression using full expression parser
+             (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
+               (setf toks rest)
+               (push (list 'having expr) clauses)))
             ((string-equal (car toks) "VALUES")
              (pop toks)
              ;; VALUES ?var { val1 val2 ... } or VALUES (?v1 ?v2) { (v1 v2) ... }
