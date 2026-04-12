@@ -314,7 +314,8 @@
                 (member (first args) '(t nil))))
            ((sym-name-equal op "ISIRI")
             (let ((v (first args)))
-              (and (stringp v) (not (rdf-literal-p v)) (search "://" v))))
+              (and (stringp v) (not (rdf-literal-p v))
+                   (not (and (> (length v) 1) (string= "_:" v :end2 2))))))
            ((sym-name-equal op "ISBLANK")
             (let ((v (first args)))
               (and (stringp v) (not (rdf-literal-p v))
@@ -514,9 +515,9 @@
 
 (defun ariadne-regex (string pattern &optional mode)
   "Regex match using cl-ppcre."
-  (let ((scanner (if (and mode (sym-name-equal mode "CASE-INSENSITIVE-MODE"))
-                     (cl-ppcre:create-scanner pattern :case-insensitive-mode t)
-                     (cl-ppcre:create-scanner pattern))))
+  (let* ((ci (and mode (or (sym-name-equal mode "CASE-INSENSITIVE-MODE")
+                           (and (stringp mode) (search "i" mode)))))
+         (scanner (cl-ppcre:create-scanner pattern :case-insensitive-mode ci)))
     (not (null (cl-ppcre:scan scanner string)))))
 
 (defun subst-vars (expr env)
