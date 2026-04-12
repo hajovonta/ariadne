@@ -104,6 +104,7 @@
       (dolist (tr (get-triples mg :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
         (let ((subj (triple-subject tr))
               (typ (triple-object tr)))
+          (unless (search "Manifest" typ)
           (handler-case
               (let ((name (or (lit-val (triple-object (first (get-triples mg :subject subj
                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#name"))))
@@ -147,8 +148,8 @@
                              (incf fail) (format t "  FAIL  ~A (should reject)~%" name))
                          (error () (incf pass))
                          (sb-ext:timeout () (incf fail) (format t "  FAIL  ~A (timeout)~%" name))))))
-                  (t (incf skip))))
-            (error () (incf skip))))))
+                  (t nil)))
+            (error () (incf skip)))))))
     (values pass fail skip)))
 
 ;; Run all categories when loaded directly
