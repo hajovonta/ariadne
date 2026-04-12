@@ -110,7 +110,7 @@
                  (loop while (and (< pos len)
                                   (not (member (char str pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\{ #\} #\( #\) #\. #\; #\| #\/))))
+                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\!))))
                        do (incf pos))
                  (let ((tok (subseq str start pos)))
                    (push tok tokens)))))))))

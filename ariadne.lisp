@@ -192,6 +192,8 @@
 (defun all-subjects (g) (collect-keys (graph-s g)))
 (defun all-predicates (g) (collect-keys (graph-p g)))
 (defun all-objects (g) (collect-keys (graph-o g)))
+(defun all-nodes (g)
+  (remove-duplicates (append (all-subjects g) (all-objects g)) :test #'equal))
 
 ;;; ==========================================================================
 ;;; Named Graphs (Quads)
