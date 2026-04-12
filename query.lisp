@@ -264,8 +264,9 @@
     ;; IN needs special handling — second arg is a list of exprs, not a function call
     ((sym-name-equal (first expr) "IN")
      (let ((val (safe-eval (second expr)))
-           (list-vals (mapcar #'safe-eval (third expr))))
-       (member val list-vals :test #'equal)))
+           (list-vals (mapcar (lambda (e) (handler-case (safe-eval e) (error () :error)))
+                              (third expr))))
+       (member val (remove :error list-vals) :test #'equal)))
     ((sym-name-equal (first expr) "SUBQUERY")
      (let ((results (query *query-graph* (second expr))))
        (if (and results (= 1 (length results)) (= 1 (length (first results))))

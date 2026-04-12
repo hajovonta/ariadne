@@ -308,7 +308,7 @@
 
 (defun parse-compare-expr (toks prefixes)
   "Parse comparison: expr op expr, or expr IN/NOT IN (list)"
-  (multiple-value-bind (left rest) (parse-unary-expr toks prefixes)
+  (multiple-value-bind (left rest) (parse-additive-expr toks prefixes)
     (cond
       ;; expr IN (val, ...)
       ((and rest (stringp (car rest)) (string-equal (car rest) "IN"))
@@ -327,9 +327,32 @@
       ((and rest (symbolp (car rest))
             (member (car rest) '(= != < > <= >=) :test #'eq))
        (let ((op (pop rest)))
-         (multiple-value-bind (right rest2) (parse-unary-expr rest prefixes)
+         (multiple-value-bind (right rest2) (parse-additive-expr rest prefixes)
            (setf left (list op left right))
            (setf rest rest2)))))
+    (values left rest)))
+
+(defun parse-additive-expr (toks prefixes)
+  "Parse additive: expr (+|-) expr"
+  (multiple-value-bind (left rest) (parse-multiplicative-expr toks prefixes)
+    (loop while (and rest
+                     (or (and (symbolp (car rest)) (member (car rest) '(+ -) :test #'eq))
+                         (and (stringp (car rest)) (member (car rest) '("+" "-") :test #'string=)))) do
+      (let ((op (if (stringp (car rest)) (intern (pop rest)) (pop rest))))
+        (multiple-value-bind (right rest2) (parse-multiplicative-expr rest prefixes)
+          (setf left (list op left right))
+          (setf rest rest2))))
+    (values left rest)))
+
+(defun parse-multiplicative-expr (toks prefixes)
+  "Parse multiplicative: expr (*|/) expr"
+  (multiple-value-bind (left rest) (parse-unary-expr toks prefixes)
+    (loop while (and rest (stringp (car rest))
+                     (member (car rest) '("*" "/") :test #'string=)) do
+      (let ((op (intern (pop rest))))
+        (multiple-value-bind (right rest2) (parse-unary-expr rest prefixes)
+          (setf left (list op left right))
+          (setf rest rest2))))
     (values left rest)))
 
 (defun parse-in-list (toks prefixes)
@@ -555,8 +578,18 @@
                 (o-toks (cdr path-result))
                 (o (sparql-resolve-term (pop o-toks) prefixes)))
            (setf toks o-toks)
-           (push (list s p o) patterns))
-         (when (and toks (string= (car toks) "."))
+           (push (list s p o) patterns)
+           ;; Handle ; (same subject, new predicate-object pairs)
+           (loop while (and toks (stringp (car toks)) (string= (car toks) ";")
+                            (cdr toks) (not (string= (cadr toks) "}"))) do
+             (pop toks)
+             (let* ((pr (parse-sparql-path toks prefixes))
+                    (p2 (car pr))
+                    (o2-toks (cdr pr))
+                    (o2 (sparql-resolve-term (pop o2-toks) prefixes)))
+               (setf toks o2-toks)
+               (push (list s p2 o2) patterns))))
+         (when (and toks (stringp (car toks)) (string= (car toks) "."))
            (pop toks)))))
     (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions) (nreverse binds))))
 
