@@ -18,14 +18,20 @@
         (cond
           ((search "<boolean>true</boolean>" s) (return-from parse-srx t))
           ((search "<boolean>false</boolean>" s) (return-from parse-srx nil))
-          ((string= s "</result>") (push (nreverse bindings) results) (setf bindings nil))
-          ((cl-ppcre:scan "<binding name=\"([^\"]+)\"" s)
-           (setf var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<binding name=\"([^\"]+)\"" s)) 0)))
-          ((cl-ppcre:scan "<uri>([^<]+)</uri>" s)
-           (push (cons var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<uri>([^<]+)</uri>" s)) 0)) bindings))
-          ((cl-ppcre:scan "<literal[^>]*>([^<]*)</literal>" s)
-           (push (cons var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<literal[^>]*>([^<]*)</literal>" s)) 0)) bindings))
-          ((search "<unbound/>" s) (push (cons var nil) bindings)))))
+          (t
+           ;; Extract binding name if present
+           (when (cl-ppcre:scan "<binding name=\"([^\"]+)\"" s)
+             (setf var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<binding name=\"([^\"]+)\"" s)) 0)))
+           ;; Extract value
+           (cond
+             ((cl-ppcre:scan "<uri>([^<]+)</uri>" s)
+              (push (cons var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<uri>([^<]+)</uri>" s)) 0)) bindings))
+             ((cl-ppcre:scan "<literal[^>]*>([^<]*)</literal>" s)
+              (push (cons var (aref (nth-value 1 (cl-ppcre:scan-to-strings "<literal[^>]*>([^<]*)</literal>" s)) 0)) bindings))
+             ((search "<unbound/>" s) (push (cons var nil) bindings)))
+           ;; End of result
+           (when (search "</result>" s)
+             (push (nreverse bindings) results) (setf bindings nil))))))
     (nreverse results)))
 
 (defun run-one-eval-test (dir qf df rf)
