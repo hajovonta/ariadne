@@ -105,6 +105,7 @@
          (filters nil)
          (binds nil)
          (not-exists-patterns nil)
+         (exists-patterns nil)
          (minus-patterns nil)
          (values-clause nil)
          (graph-clause nil)
@@ -125,6 +126,7 @@
           ((sym-name-equal tag "FILTER") (setf filters (rest clause)))
           ((sym-name-equal tag "BIND") (push (rest clause) binds))
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
+          ((sym-name-equal tag "EXISTS") (setf exists-patterns (rest clause)))
           ((sym-name-equal tag "MINUS") (setf minus-patterns (rest clause)))
           ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
           ((sym-name-equal tag "GRAPH")
@@ -153,6 +155,12 @@
       ;; Apply NOT EXISTS
       (when not-exists-patterns
         (setf envs (apply-not-exists g envs not-exists-patterns)))
+      ;; Apply EXISTS (keep only envs where pattern matches)
+      (when exists-patterns
+        (setf envs (remove-if-not
+                    (lambda (env)
+                      (match-patterns-with-envs g exists-patterns (list env)))
+                    envs)))
       ;; Apply MINUS
       (when minus-patterns
         (setf envs (apply-minus g envs minus-patterns)))

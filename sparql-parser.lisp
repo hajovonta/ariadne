@@ -224,8 +224,8 @@
                (push (list 'having having-expr) clauses)))
             (t (return))))
         ;; Build DSL expression
-        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists graph)))) patterns))
-               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists graph)))) patterns))
+        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph)))) patterns))
+               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph)))) patterns))
                (expr (list (if distinct-p 'select-distinct 'select)
                           vars
                           (cons 'where clean-patterns))))
@@ -385,10 +385,23 @@
                  (when (and toks (stringp (car toks)) (string= (car toks) "}"))
                    (pop toks))
                  (push (cons 'not-exists ne-pats) patterns)))
-             ;; Regular FILTER expression
-             (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
-               (setf toks rest)
-               (when expr (push expr filters))))
+             ;; FILTER EXISTS { ... }
+             (if (and toks (stringp (car toks)) (string-equal (car toks) "EXISTS"))
+                 (progn
+                   (pop toks)
+                   (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+                     (pop toks))
+                   (multiple-value-bind (e-pats e-filts e-rest)
+                       (sparql-parse-body toks prefixes)
+                     (declare (ignore e-filts))
+                     (setf toks e-rest)
+                     (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+                       (pop toks))
+                     (push (cons 'exists e-pats) patterns)))
+                 ;; Regular FILTER expression
+                 (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
+                   (setf toks rest)
+                   (when expr (push expr filters)))))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
            (pop toks)))
         ;; BIND (expr AS ?var)
@@ -510,7 +523,8 @@
                 (modifier (when (and toks (stringp (car toks))
                                      (member (car toks) '("+" "*") :test #'string=))
                             (pop toks)))
-                (p-resolved (sparql-resolve-term p-raw prefixes))
+                (p-resolved (let ((r (sparql-resolve-term p-raw prefixes)))
+                              (if (equal r "a") "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" r)))
                 (p (cond
                      ((and inverse-p modifier (string= modifier "+"))
                       (list 'inv+ p-resolved))
