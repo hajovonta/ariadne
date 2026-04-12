@@ -34,13 +34,17 @@
              (push (nreverse bindings) results) (setf bindings nil))))))
     (nreverse results)))
 
-(defun run-one-eval-test (dir qf df rf)
+(defun run-one-eval-test (dir qf df rf &optional graph-data-files)
   "Run one evaluation test with 5s timeout. Returns :pass or :fail."
   (handler-case
       (#+sbcl sb-ext:with-timeout #+sbcl 5
        #-sbcl progn
         (let ((g (make-graph)))
           (when df (import-turtle g (slurp (merge-pathnames df dir))))
+          (dolist (gf graph-data-files)
+            (let ((gpath (merge-pathnames gf dir)))
+              (when (probe-file gpath)
+                (import-turtle g (slurp gpath) :graph-name (namestring gf)))))
           (let ((actual (sparql g (slurp (merge-pathnames qf dir))))
                 (expected (parse-srx (merge-pathnames rf dir))))
             (if (member expected '(t nil))
@@ -71,12 +75,15 @@
                                  :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#query")))))
                           (df (when act (triple-object (first (get-triples mg :subject act
                                  :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#data")))))
+                          (gfs (when act (mapcar #'triple-object
+                                                 (get-triples mg :subject act
+                                                   :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#graphData"))))
                           (rf (triple-object (first (get-triples mg :subject subj
                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result")))))
                      (cond
                        ((not (and qf rf)) (incf err))
                        ((not (cl-ppcre:scan "\\.srx$" rf)) (incf err)) ; skip non-srx
-                       (t (let ((r (run-one-eval-test dir qf df rf)))
+                       (t (let ((r (run-one-eval-test dir qf df rf gfs)))
                             (if (eq r :pass)
                                 (incf pass)
                                 (progn (incf fail) (format t "  FAIL  ~A~%" name))))))))

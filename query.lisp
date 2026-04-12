@@ -707,6 +707,11 @@
       (cond
         ((and (consp p) (symbolp (car p)) (sym-name-equal (car p) "INLINE-BIND"))
          (push p inline-binds))
+        ((and (consp p) (symbolp (car p))
+              (or (sym-name-equal (car p) "EXISTS")
+                  (sym-name-equal (car p) "NOT-EXISTS")
+                  (sym-name-equal (car p) "GRAPH")))
+         nil) ; handled after basic matching
         ((service-pattern-p p) (push p service-pats))
         ((path-pattern-p p) (push p path-pats))
         ((subquery-pattern-p p) (push p subquery-pats))
@@ -748,6 +753,19 @@
               (setf envs (apply-subquery-pattern g envs sq)))
             (dolist (sp (nreverse service-pats))
               (setf envs (apply-service-pattern envs sp)))
+            ;; Apply inline EXISTS/NOT-EXISTS/GRAPH
+            (dolist (p patterns)
+              (when (and (consp p) (symbolp (car p)))
+                (cond
+                  ((sym-name-equal (car p) "EXISTS")
+                   (setf envs (remove-if-not
+                               (lambda (env)
+                                 (match-patterns-with-envs g (rest p) (list env)))
+                               envs)))
+                  ((sym-name-equal (car p) "NOT-EXISTS")
+                   (setf envs (apply-not-exists g envs (rest p))))
+                  ((sym-name-equal (car p) "GRAPH")
+                   (setf envs (match-graph-pattern g envs p))))))
             envs)))))
 
 (defun optimize-pattern-order (patterns)
@@ -1106,6 +1124,20 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
               (push (append ge oe) results)))
           (nreverse results))
         graph-envs)))
+
+(defun match-graph-pattern (g envs graph-pat)
+  "Handle (GRAPH uri patterns...) by matching in the named graph."
+  (let ((graph-name (second graph-pat))
+        (inner-patterns (cddr graph-pat)))
+    (let ((results nil))
+      (dolist (env envs)
+        (let* ((resolved-name (if (variable-p graph-name)
+                                  (or (lookup-binding graph-name env) graph-name)
+                                  graph-name))
+               (new-envs (match-in-graph g inner-patterns resolved-name)))
+          (dolist (ne new-envs)
+            (push (append ne env) results))))
+      (nreverse results))))
 
 (defun match-in-graph (g patterns graph-name)
   "Match patterns only against triples in the named graph.

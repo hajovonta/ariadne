@@ -306,12 +306,12 @@
 ;;; Turtle Import
 ;;; ==========================================================================
 
-(defun import-turtle (g data &key (bnode-counter-start 0))
+(defun import-turtle (g data &key (bnode-counter-start 0) graph-name)
   "Import Turtle format string into graph G.
 Tokenizes the entire input then processes token stream."
   (let ((prefixes (make-hash-table :test 'equal))
         (tokens (turtle-tokenize data)))
-    (turtle-parse-tokens g tokens prefixes bnode-counter-start)))
+    (turtle-parse-tokens g tokens prefixes bnode-counter-start graph-name)))
 
 (defun turtle-tokenize (data)
   "Tokenize Turtle input into a flat list of tokens.
@@ -632,7 +632,7 @@ Returns (remaining-toks anon-counter list-head-node)."
     (when (and toks (string= ")" (car toks))) (pop toks))
     (list toks anon-counter head)))
 
-(defun turtle-parse-tokens (g tokens prefixes &optional (anon-start 0))
+(defun turtle-parse-tokens (g tokens prefixes &optional (anon-start 0) graph-name)
   "Parse a token stream into triples. Uses a context stack for nested blank nodes."
   (let ((toks tokens)
         (subject nil)
@@ -735,7 +735,7 @@ Returns (remaining-toks anon-counter list-head-node)."
                       (setf subject bnode had-predicate t expect-punct nil))
                      ;; Was in object position (subject+predicate were set)
                      ((and subject predicate)
-                      (add-triple g subject predicate bnode)
+                      (add-triple g subject predicate bnode :graph-name graph-name)
                       (setf expect-punct t))
                      ;; Subject set but no predicate — blank node is done as subject
                      (t (setf subject bnode expect-punct nil))))
@@ -759,7 +759,7 @@ Returns (remaining-toks anon-counter list-head-node)."
                 (cond
                   ((null subject) (setf subject bnode))
                   ((null predicate) (error "Blank nodes cannot be predicates"))
-                  (t (add-triple g subject predicate bnode)
+                  (t (add-triple g subject predicate bnode :graph-name graph-name)
                      (setf expect-punct t))))
                ;; Non-empty: push context, parse contents with bnode as subject
                (t
@@ -776,7 +776,7 @@ Returns (remaining-toks anon-counter list-head-node)."
                (cond
                  ((null subject) (setf subject list-node))
                  ((null predicate) (error "Collection cannot be a predicate"))
-                 (t (add-triple g subject predicate list-node)
+                 (t (add-triple g subject predicate list-node :graph-name graph-name)
                     (setf expect-punct t))))))
           ;; "," — same subject and predicate, new object
           ((string= tok ",")
@@ -785,7 +785,7 @@ Returns (remaining-toks anon-counter list-head-node)."
            (when (and subject predicate toks)
              (let ((obj-tok (pop toks)))
                (let ((obj (turtle-resolve obj-tok prefixes)))
-                 (add-triple g subject predicate obj)
+                 (add-triple g subject predicate obj :graph-name graph-name)
                  (setf expect-punct t)))))
           ;; Regular token
           (t
@@ -836,7 +836,7 @@ Returns (remaining-toks anon-counter list-head-node)."
                 ;; 'a' is only valid as predicate at top level
                 (when (and (string= obj-tok "a") (= 0 bracket-depth))
                   (error "'a' is only valid as predicate, not object"))
-                (add-triple g subject predicate obj)
+                (add-triple g subject predicate obj :graph-name graph-name)
                 (setf expect-punct t)))))))
       )
     ;; If we have a subject but no dot was seen, that's an error
