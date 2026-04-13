@@ -49,7 +49,7 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "bob" "knows" "charlie")
-    (let ((result (sparql g "SELECT ?person (COUNT ?friend) WHERE { ?person <knows> ?friend } GROUP BY ?person HAVING (COUNT ?friend) > 1")))
+    (let ((result (sparql g "SELECT ?person (COUNT(?friend) AS ?c) WHERE { ?person <knows> ?friend } GROUP BY ?person HAVING (COUNT(?friend) > 1)")))
       ;; alice has 2 friends, bob has 1 — only alice passes HAVING
       (is (>= (length result) 1)))))
 

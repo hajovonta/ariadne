@@ -145,7 +145,11 @@
            (setf graph-clause (rest clause)))
           ((sym-name-equal tag "PROJECT") (push (rest clause) projections))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
-          ((sym-name-equal tag "HAVING") (setf having-clause (rest clause)))
+          ((sym-name-equal tag "HAVING")
+           (let ((h (second clause)))
+             ;; Normalize: single expr → list of one, list of exprs → as-is
+             (setf having-clause (if (and (consp h) (consp (first h)))
+                                     h (list h)))))
           ((sym-name-equal tag "ORDER-BY") (setf order-var (second clause)))
           ((sym-name-equal tag "LIMIT") (setf limit-n (second clause)))
           ((sym-name-equal tag "OFFSET") (setf offset-n (second clause))))))

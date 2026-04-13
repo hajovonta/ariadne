@@ -243,10 +243,13 @@
              (push (list 'group-by (pop toks)) clauses))
             ((string-equal (car toks) "HAVING")
              (pop toks)
-             ;; Parse HAVING expression using full expression parser
-             (multiple-value-bind (expr rest) (parse-sparql-filter-expr toks prefixes)
-               (setf toks rest)
-               (push (list 'having expr) clauses)))
+             ;; Parse HAVING expressions — each parenthesized condition
+             (let ((exprs nil))
+               (loop while (and toks (stringp (car toks)) (string= (car toks) "(")) do
+                 (multiple-value-bind (expr rest) (parse-or-expr toks prefixes)
+                   (setf toks rest)
+                   (when expr (push expr exprs))))
+               (push (list 'having (nreverse exprs)) clauses)))
             ((string-equal (car toks) "VALUES")
              (pop toks)
              ;; VALUES ?var { val1 val2 ... } or VALUES (?v1 ?v2) { (v1 v2) ... }
@@ -448,6 +451,9 @@
        (when (and rest (stringp (car rest)) (string= (car rest) ")"))
          (pop rest))
        (values expr rest)))
+    ;; Asterisk (for COUNT(*))
+    ((and (stringp (car toks)) (string= (car toks) "*"))
+     (pop toks) (values '* toks))
     ;; Boolean constants
     ((and (stringp (car toks)) (string-equal (car toks) "true"))
      (pop toks) (values t toks))
