@@ -1200,7 +1200,7 @@ CLAUSE is either (?var (val1 val2 ...)) or ((?v1 ?v2) ((a b) (c d) ...))."
                 (loop for var in sq-vars for val in row do
                   (let ((existing (assoc var new-env)))
                     (cond ((null existing) (push (cons var val) new-env))
-                          ((equal (cdr existing) val))
+                          ((equal (lit-val (cdr existing)) (lit-val val)))
                           (t (setf ok nil)))))
                 (when ok (push new-env results)))))
           (nreverse results)))))

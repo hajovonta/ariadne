@@ -1,61 +1,93 @@
 ;;;; rdf-xml.lisp
-;;;; RDF/XML import (regex-based, no XML library dependency)
+;;;; RDF/XML import using CXML
 
 (in-package #:ariadne)
 
+(defvar *blank-counter* 0)
+
+(defun rdf-attr (element local-name)
+  "Get attribute value by local-name in the RDF namespace."
+  (dolist (a (stp:list-attributes element))
+    (when (string= (stp:local-name a) local-name)
+      (return (stp:value a)))))
+
+(defun child-text (element)
+  "Get concatenated text content of an element."
+  (let ((parts nil))
+    (stp:do-children (c element)
+      (when (typep c 'stp:text)
+        (push (stp:data c) parts)))
+    (when parts (apply #'concatenate 'string (nreverse parts)))))
+
+(defun elem-uri (element)
+  "Get full URI for an element (namespace + local-name)."
+  (concatenate 'string (stp:namespace-uri element) (stp:local-name element)))
+
+(defun parse-typed-value (text datatype)
+  "Parse a typed literal value string."
+  (cond
+    ((search "integer" datatype) (parse-integer text :junk-allowed t))
+    ((search "decimal" datatype) (let ((*read-eval* nil)) (read-from-string text)))
+    ((search "double" datatype) (let ((*read-eval* nil)) (read-from-string text)))
+    ((search "float" datatype) (let ((*read-eval* nil)) (read-from-string text)))
+    ((search "boolean" datatype) (string-equal text "true"))
+    (t text)))
+
 (defun import-rdf-xml (g data)
   "Import RDF/XML format string into graph G."
-  (let ((namespaces (make-hash-table :test 'equal))
-        (rdf-type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
-    ;; Extract namespace declarations
-    (cl-ppcre:do-matches-as-strings (m "xmlns:(\\w+)=\"([^\"]+)\"" data)
-      (cl-ppcre:register-groups-bind (prefix uri) ("xmlns:(\\w+)=\"([^\"]+)\"" m)
-        (setf (gethash prefix namespaces) uri)))
-    ;; Process rdf:Description and typed elements
-    (cl-ppcre:do-matches-as-strings
-        (m "<(\\w+:\\w+|rdf:Description)[^>]*rdf:about=\"([^\"]+)\"[^>]*/?>([\\s\\S]*?)</\\1>|<(\\w+:\\w+|rdf:Description)[^>]*rdf:about=\"([^\"]+)\"[^>]*/>" data)
-      (let ((subject nil) (tag nil) (body nil))
-        ;; Try self-closing first
-        (cl-ppcre:register-groups-bind (t1 s1 b1 t2 s2)
-            ("<(\\w+:\\w+|rdf:Description)[^>]*rdf:about=\"([^\"]+)\"[^>]*/?>([\\s\\S]*?)</\\1>|<(\\w+:\\w+|rdf:Description)[^>]*rdf:about=\"([^\"]+)\"[^>]*/>" m)
+  (let* ((rdf-type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+         (doc (cxml:parse data (stp:make-builder)))
+         (root (stp:document-element doc)))
+    (stp:do-children (desc root)
+      (when (typep desc 'stp:element)
+        (import-rdf-xml-description g desc rdf-type)))))
+
+(defun import-rdf-xml-description (g desc rdf-type)
+  "Import one rdf:Description (or typed node) element."
+  (let* ((about (rdf-attr desc "about"))
+         (node-id (rdf-attr desc "nodeID"))
+         (subject (or about
+                      (when node-id (concatenate 'string "_:" node-id))
+                      (format nil "_:rdfxml~A" (incf *blank-counter*)))))
+    ;; Typed node
+    (unless (string= (stp:local-name desc) "Description")
+      (add-triple g subject rdf-type (elem-uri desc)))
+    ;; Properties
+    (stp:do-children (prop desc)
+      (when (typep prop 'stp:element)
+        (let ((pred (elem-uri prop))
+              (resource (rdf-attr prop "resource"))
+              (datatype (rdf-attr prop "datatype"))
+              (lang (rdf-attr prop "lang"))
+              (prop-nid (rdf-attr prop "nodeID"))
+              (parse-type (rdf-attr prop "parseType")))
           (cond
-            (s1 (setf subject s1 tag t1 body b1))
-            (s2 (setf subject s2 tag t2 body ""))))
-        (when subject
-          ;; If tag is not rdf:Description, it's a typed node
-          (when (and tag (not (string= tag "rdf:Description")))
-            (let ((type-uri (expand-rdf-xml-name tag namespaces)))
-              (when type-uri
-                (add-triple g subject rdf-type type-uri))))
-          ;; Parse properties in body
-          (when body
-            (parse-rdf-xml-properties g subject body namespaces)))))))
-
-(defun parse-rdf-xml-properties (g subject body namespaces)
-  "Parse property elements within an rdf:Description body."
-  ;; Resource references: <ex:knows rdf:resource="..."/>
-  (cl-ppcre:do-matches-as-strings
-      (m "<(\\w+:\\w+)\\s+rdf:resource=\"([^\"]+)\"\\s*/>" body)
-    (cl-ppcre:register-groups-bind (pred obj)
-        ("<(\\w+:\\w+)\\s+rdf:resource=\"([^\"]+)\"\\s*/>" m)
-      (let ((pred-uri (expand-rdf-xml-name pred namespaces)))
-        (when pred-uri
-          (add-triple g subject pred-uri obj)))))
-  ;; Literal values: <ex:name>Alice</ex:name>
-  (cl-ppcre:do-matches-as-strings
-      (m "<(\\w+:\\w+)>([^<]+)</\\1>" body)
-    (cl-ppcre:register-groups-bind (pred val)
-        ("<(\\w+:\\w+)>([^<]+)</\\1>" m)
-      (let ((pred-uri (expand-rdf-xml-name pred namespaces)))
-        (when pred-uri
-          (add-triple g subject pred-uri val))))))
-
-(defun expand-rdf-xml-name (name namespaces)
-  "Expand a prefixed name like 'ex:knows' to full URI."
-  (let ((colon (position #\: name)))
-    (when colon
-      (let* ((prefix (subseq name 0 colon))
-             (local (subseq name (1+ colon)))
-             (base (gethash prefix namespaces)))
-        (when base
-          (concatenate 'string base local))))))
+            (resource (add-triple g subject pred resource))
+            (prop-nid (add-triple g subject pred (concatenate 'string "_:" prop-nid)))
+            ((and parse-type (string= parse-type "Resource"))
+             (let ((bnode (format nil "_:rdfxml~A" (incf *blank-counter*))))
+               (add-triple g subject pred bnode)
+               (stp:do-children (inner prop)
+                 (when (typep inner 'stp:element)
+                   (let ((text (child-text inner)))
+                     (when text (add-triple g bnode (elem-uri inner) text)))))))
+            ;; Nested element children → object is a resource
+            ((some (lambda (c) (typep c 'stp:element)) (stp:list-children prop))
+             (stp:do-children (child prop)
+               (when (typep child 'stp:element)
+                 (let ((obj-about (rdf-attr child "about"))
+                       (obj-nid (rdf-attr child "nodeID"))
+                       (bnode (format nil "_:rdfxml~A" (incf *blank-counter*))))
+                   (let ((obj (or obj-about
+                                  (when obj-nid (concatenate 'string "_:" obj-nid))
+                                  bnode)))
+                     (add-triple g subject pred obj)
+                     (import-rdf-xml-description g child rdf-type))))))
+            ;; Literal
+            (t (let ((text (child-text prop)))
+                 (when text
+                   (add-triple g subject pred
+                               (cond
+                                 (datatype (intern-literal (parse-typed-value text datatype) datatype))
+                                 (lang (intern-literal text +rdf-langstring+ lang))
+                                 (t text))))))))))))

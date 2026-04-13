@@ -11,7 +11,8 @@
                #:drakma
                #:com.inuoe.jzon
                #:local-time
-               #:ironclad)
+               #:ironclad
+               #:cxml-stp)
   :serial t
   :components ((:file "package")
                (:file "ariadne")
