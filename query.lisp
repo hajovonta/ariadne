@@ -190,8 +190,11 @@
               ;; Aggregate without GROUP BY: compute over all results
               (unless group-var
                 (let* ((agg-var (cadr expr))
-                       (values (mapcar (lambda (env) (lookup-binding agg-var env)) envs))
-                       (agg-result (compute-aggregate (car expr) values)))
+                       (sep (caddr expr))
+                       (values (if (sym-name-equal agg-var "*")
+                                   envs
+                                   (mapcar (lambda (env) (lookup-binding agg-var env)) envs)))
+                       (agg-result (compute-aggregate (car expr) values sep)))
                   (setf envs (list (list (cons alias agg-result))))))
               ;; Non-aggregate: compute per row like BIND
               (setf envs (apply-bind envs alias expr)))))
@@ -659,10 +662,13 @@
                      ;; Projected aggregate
                      (let* ((expr (second proj))
                             (agg-var (when (consp expr) (cadr expr)))
+                            (sep (when (consp expr) (caddr expr)))
                             (values (when agg-var
-                                      (mapcar (lambda (env) (lookup-binding agg-var env))
-                                              group-envs))))
-                       (push (if values (compute-aggregate (car expr) values) nil) row))
+                                      (if (sym-name-equal agg-var "*")
+                                          group-envs
+                                          (mapcar (lambda (env) (lookup-binding agg-var env))
+                                                  group-envs)))))
+                       (push (if values (compute-aggregate (car expr) values sep) nil) row))
                      ;; Regular variable or old-style (AGG ?var)
                      (if (and (listp v) (>= (length v) 2))
                          (let ((values (mapcar (lambda (env) (lookup-binding (second v) env))
@@ -689,31 +695,44 @@
     ;; Recognize (count ?var), (sum ?var), etc.
     ((and (symbolp (first expr))
           (member (symbol-name (first expr))
-                  '("COUNT" "SUM" "AVG" "MIN" "MAX")
+                  '("COUNT" "SUM" "AVG" "MIN" "MAX" "GROUP_CONCAT" "SAMPLE"
+                    "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT" "MIN-DISTINCT" "MAX-DISTINCT"
+                    "GROUP_CONCAT-DISTINCT" "SAMPLE-DISTINCT")
                   :test #'string-equal)
-          (= 2 (length expr))
-          (variable-p (second expr)))
-     (let ((values (mapcar (lambda (env) (lookup-binding (second expr) env))
-                           group-envs)))
-       (compute-aggregate (first expr) values)))
+          (>= (length expr) 2))
+     (let* ((agg-var (second expr))
+            (values (if (or (sym-name-equal agg-var "*") (not (variable-p agg-var)))
+                        group-envs
+                        (mapcar (lambda (env) (lookup-binding agg-var env))
+                                group-envs))))
+       (compute-aggregate (first expr) values (third expr))))
     (t (mapcar (lambda (x) (subst-having-aggregates x group-envs vars)) expr))))
 
 (defun compute-aggregate (fn values &optional separator)
   "Compute an aggregate function over a list of values."
-  (let ((nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) values))))
+  (let* ((distinct-p (and (symbolp fn) (search "DISTINCT" (symbol-name fn))))
+         (base-fn (if distinct-p
+                      (intern (subseq (symbol-name fn) 0 (search "-DISTINCT" (symbol-name fn))))
+                      fn))
+         (vals (if distinct-p (remove-duplicates values :test #'equal) values))
+         (nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) vals))))
     (cond
-      ((sym-name-equal fn "COUNT") (length values))
-      ((sym-name-equal fn "SUM") (reduce #'+ nums :initial-value 0))
-      ((sym-name-equal fn "AVG")
+      ((sym-name-equal base-fn "COUNT") (length vals))
+      ((sym-name-equal base-fn "SUM") (reduce #'+ nums :initial-value 0))
+      ((sym-name-equal base-fn "AVG")
        (if nums (/ (reduce #'+ nums) (length nums)) 0))
-      ((sym-name-equal fn "MIN") (when nums (reduce #'min nums)))
-      ((sym-name-equal fn "MAX") (when nums (reduce #'max nums)))
-      ((sym-name-equal fn "GROUP-CONCAT")
-       (let ((sep (or separator ", ")))
-         (format nil (concatenate 'string "~{~A~^" sep "~}")
-                 (mapcar #'princ-to-string values))))
-      ((sym-name-equal fn "SAMPLE")
-       (first values))
+      ((sym-name-equal base-fn "MIN") (when nums (reduce #'min nums)))
+      ((sym-name-equal base-fn "MAX") (when nums (reduce #'max nums)))
+      ((or (sym-name-equal base-fn "GROUP_CONCAT")
+           (sym-name-equal base-fn "GROUP-CONCAT"))
+       (let* ((sep (or (when (stringp separator) separator)
+                       (when (rdf-literal-p separator) (rdf-literal-value separator))
+                       " "))
+              (strs (mapcar (lambda (v) (princ-to-string (lit-val v))) vals)))
+         (format nil "~{~A~}" (loop for (s . rest) on strs
+                                     collect s when rest collect sep))))
+      ((sym-name-equal base-fn "SAMPLE")
+       (first vals))
       (t (error "Unknown aggregate function: ~A" fn)))))
 
 ;;; ==========================================================================
