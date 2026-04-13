@@ -768,9 +768,21 @@
                               (let ((v (sparql-resolve-term o2-tok prefixes)))
                                 (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))))
                (setf toks o2-toks)
-               (push (list s p2 o2) patterns))))
+               (push (list s p2 o2) patterns)
+               ;; Handle , (same subject and predicate, new object)
+               (loop while (and toks (stringp (car toks)) (string= (car toks) ",")) do
+                 (pop toks)
+                 (let ((o3 (let ((v (sparql-resolve-term (pop toks) prefixes)))
+                             (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
+                   (push (list s p2 o3) patterns)))))
+           ;; Handle , after first triple (same subject and predicate, new object)
+           (loop while (and toks (stringp (car toks)) (string= (car toks) ",")) do
+             (pop toks)
+             (let ((o2 (let ((v (sparql-resolve-term (pop toks) prefixes)))
+                         (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
+               (push (list s p o2) patterns)))))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
-           (pop toks))))))
+           (pop toks)))))
     (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions) (nreverse binds))))
 
 (defun parse-sparql-path (toks prefixes)
@@ -849,10 +861,19 @@
 
 (defun sparql-parse-construct (toks prefixes)
   "Parse CONSTRUCT { template } WHERE { patterns } or CONSTRUCT WHERE { patterns }."
-  ;; Check for CONSTRUCT WHERE shorthand
-  (if (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
+  ;; Check for CONSTRUCT WHERE shorthand (with optional FROM)
+  (if (and toks (stringp (car toks))
+          (or (string-equal (car toks) "WHERE")
+              (string-equal (car toks) "FROM")))
       (progn
-        (pop toks)
+        ;; Skip FROM clauses
+        (loop while (and toks (stringp (car toks)) (string-equal (car toks) "FROM")) do
+          (pop toks)
+          (when (and toks (stringp (car toks)) (string-equal (car toks) "NAMED"))
+            (pop toks))
+          (pop toks))
+        (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
+          (pop toks))
         (when (and toks (string= (car toks) "{"))
           (pop toks))
         (multiple-value-bind (patterns filters toks-rest)
