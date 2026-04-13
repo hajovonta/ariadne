@@ -66,14 +66,21 @@
           ((sym-name-equal tag "INTO") (setf target-graph (second clause))))))
     (let ((envs (match-with-paths g (expand-property-paths g where-patterns)))
           (results nil))
-      (dolist (env envs)
-        (let ((s (subst-vars (first template) env))
-              (p (subst-vars (second template) env))
-              (o (subst-vars (third template) env)))
-          (push (list s p o) results)
-          (when target-graph
-            (add-triple target-graph s p o))))
-      (nreverse results))))
+      ;; Template: list of triples from SPARQL, or single triple from s-expr API
+      (let ((tmpl (if (and (= 3 (length template))
+                       (not (consp (first template))))
+                      (list template)  ; single triple → wrap
+                      template)))      ; already list of triples
+        (dolist (env envs)
+          (dolist (tp tmpl)
+            (let ((s (subst-vars (first tp) env))
+                  (p (subst-vars (second tp) env))
+                  (o (subst-vars (third tp) env)))
+              (when (and s p o (not (variable-p s)) (not (variable-p p)) (not (variable-p o)))
+                (push (list s p o) results)
+                (when target-graph
+                  (add-triple target-graph s p o)))))))
+      (remove-duplicates (nreverse results) :test #'equal))))
 
 ;;; ==========================================================================
 ;;; DESCRIBE

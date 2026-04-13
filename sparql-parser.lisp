@@ -848,31 +848,40 @@
 
 
 (defun sparql-parse-construct (toks prefixes)
-  "Parse CONSTRUCT { template } WHERE { patterns }."
-  ;; Parse template { s p o }
-  (when (and toks (string= (car toks) "{"))
-    (pop toks))
-  (let ((template nil))
-    (loop while (and toks (not (string= (car toks) "}"))) do
-      (let ((s (sparql-resolve-term (pop toks) prefixes))
-            (p (sparql-resolve-term (pop toks) prefixes))
-            (o (sparql-resolve-term (pop toks) prefixes)))
-        (push (list s p o) template))
-      (when (and toks (string= (car toks) "."))
-        (pop toks)))
-    (when (and toks (string= (car toks) "}"))
-      (pop toks))
-    ;; Parse WHERE
-    (when (and toks (string-equal (car toks) "WHERE"))
-      (pop toks))
-    (when (and toks (string= (car toks) "{"))
-      (pop toks))
-    (multiple-value-bind (patterns filters toks-rest)
-        (sparql-parse-body toks prefixes)
-      (declare (ignore filters toks-rest))
-      (when (and toks (string= (car toks) "}"))
-        (pop toks))
-      (list 'construct (first (nreverse template)) (cons 'where patterns)))))
+  "Parse CONSTRUCT { template } WHERE { patterns } or CONSTRUCT WHERE { patterns }."
+  ;; Check for CONSTRUCT WHERE shorthand
+  (if (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
+      (progn
+        (pop toks)
+        (when (and toks (string= (car toks) "{"))
+          (pop toks))
+        (multiple-value-bind (patterns filters toks-rest)
+            (sparql-parse-body toks prefixes)
+          (declare (ignore filters toks-rest))
+          ;; Template = WHERE patterns
+          (list 'construct patterns (cons 'where patterns))))
+      ;; Normal CONSTRUCT { template } WHERE { patterns }
+      (progn
+        (when (and toks (string= (car toks) "{"))
+          (pop toks))
+        (let ((template nil))
+          (loop while (and toks (not (string= (car toks) "}"))) do
+            (let ((s (sparql-resolve-term (pop toks) prefixes))
+                  (p (sparql-resolve-term (pop toks) prefixes))
+                  (o (sparql-resolve-term (pop toks) prefixes)))
+              (push (list s p o) template))
+            (when (and toks (string= (car toks) "."))
+              (pop toks)))
+          (when (and toks (string= (car toks) "}"))
+            (pop toks))
+          (when (and toks (string-equal (car toks) "WHERE"))
+            (pop toks))
+          (when (and toks (string= (car toks) "{"))
+            (pop toks))
+          (multiple-value-bind (patterns filters toks-rest)
+              (sparql-parse-body toks prefixes)
+            (declare (ignore filters toks-rest))
+            (list 'construct (nreverse template) (cons 'where patterns)))))))
 
 (defun sparql-parse-describe (toks prefixes)
   "Parse DESCRIBE <resource>."
