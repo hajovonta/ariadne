@@ -74,17 +74,23 @@
     (handler-case
         (#+sbcl sb-ext:with-timeout #+sbcl 5
          #-sbcl progn
-          (let ((g (make-graph)))
+          (let ((g (make-graph))
+                (named nil))
             (when df
               (let ((path (merge-pathnames df dir)))
-                (if (cl-ppcre:scan "\\.rdf$" df)
-                    (import-rdf-xml g (slurp path))
-                    (import-turtle g (slurp path)))))
+                (when (probe-file path)
+                  (if (cl-ppcre:scan "\\.rdf$" df)
+                      (import-rdf-xml g (slurp path))
+                      (import-turtle g (slurp path))))))
             (dolist (gf graph-data-files)
-              (let ((gpath (merge-pathnames gf dir)))
+              (let ((ng (make-graph))
+                    (gpath (merge-pathnames gf dir)))
                 (when (probe-file gpath)
-                  (import-turtle g (slurp gpath) :graph-name (namestring gf)))))
-            (let ((actual (sparql-via-algebra g (slurp (merge-pathnames qf dir)))))
+                  (if (cl-ppcre:scan "\\.rdf$" gf)
+                      (import-rdf-xml ng (slurp gpath))
+                      (import-turtle ng (slurp gpath))))
+                (push (cons gf ng) named)))
+            (let ((actual (sparql-via-algebra g (slurp (merge-pathnames qf dir)) named)))
               (cond
                 ;; ASK result
                 ((member expected '(t nil))
