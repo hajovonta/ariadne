@@ -268,12 +268,16 @@
       ;; Both bound or start bound: call directly
       (bound-s
        (let ((pairs (execute-path graph s op pe (if bound-o o nil)))
-             (results nil))
+             (results nil)
+             ;; Sequence/alt paths preserve multiplicity; *, ?, + deduplicate
+             (dedup (member (symbol-name op) '("*" "?" "+" "ZEROORONE") :test #'string-equal)))
          (dolist (pair pairs results)
            (let ((mu nil))
              (when (variable-p s) (push (cons s (car pair)) mu))
              (when (and o (variable-p o)) (push (cons o (cdr pair)) mu))
-             (push mu results)))))
+             (if dedup
+                 (pushnew mu results :test #'equal)
+                 (push mu results))))))
       ;; Unbound start, bound target: try target + all nodes
       (bound-o
        (let ((starts (cons o (all-nodes graph)))
