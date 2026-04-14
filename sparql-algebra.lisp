@@ -293,3 +293,292 @@
 (defun dataset-named-graphs (ds) (cdr ds))
 (defun dataset-get-graph (ds name)
   (cdr (assoc name (cdr ds) :test #'equal)))
+
+;;; ============================================================
+;;; Translation: parsed query → algebra tree (Section 18.2.2)
+;;; ============================================================
+
+(defun translate-query (parsed-expr)
+  "Translate a parsed SPARQL query into an algebra tree.
+   Returns (values algebra-node query-form vars)."
+  (let* ((form (first parsed-expr))  ; SELECT, ASK, CONSTRUCT, etc.
+         (form-name (symbol-name form)))
+    (cond
+      ((or (string-equal form-name "SELECT")
+           (string-equal form-name "SELECT-DISTINCT"))
+       (translate-select parsed-expr))
+      ((string-equal form-name "ASK")
+       (translate-ask parsed-expr))
+      ((string-equal form-name "CONSTRUCT")
+       (translate-construct parsed-expr))
+      (t (error "Unknown query form: ~A" form)))))
+
+(defun translate-select (expr)
+  "Translate SELECT query. Returns (values algebra :select vars)."
+  (let* ((form (first expr))
+         (vars (second expr))
+         (body (cddr expr))
+         (distinct-p (sym-name-equal form "SELECT-DISTINCT"))
+         ;; Extract clauses
+         (where-clause nil)
+         (group-by nil)
+         (group-exprs nil)
+         (having nil)
+         (order-by nil)
+         (limit-n nil)
+         (offset-n nil)
+         (projections nil)
+         (values-clause nil))
+    (dolist (clause body)
+      (let ((tag (and (consp clause) (first clause))))
+        (when tag
+          (cond
+            ((sym-name-equal tag "WHERE") (setf where-clause (rest clause)))
+            ((sym-name-equal tag "PROJECT")
+             (push (list (second clause) (third clause)) projections))
+            ((sym-name-equal tag "GROUP-BY") (setf group-by (second clause)))
+            ((sym-name-equal tag "GROUP-BY-MULTI") (setf group-by (second clause)))
+            ((sym-name-equal tag "GROUP-BY-EXPR")
+             (setf group-by (second clause))
+             (push (list (second clause) (third clause)) group-exprs))
+            ((sym-name-equal tag "HAVING")
+             (setf having (second clause)))
+            ((sym-name-equal tag "ORDER-BY") (setf order-by (second clause)))
+            ((sym-name-equal tag "LIMIT") (setf limit-n (second clause)))
+            ((sym-name-equal tag "OFFSET") (setf offset-n (second clause)))
+            ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
+            ;; OPTIONAL, UNION, MINUS etc. are inside WHERE
+            ))))
+    ;; Collect patterns that belong in the WHERE group
+    ;; Our parser puts FILTER, OPTIONAL, UNION, MINUS, etc. as top-level clauses
+    (let ((group-elements (copy-list where-clause))
+          (extra nil))
+      (dolist (clause body)
+        (let ((tag (and (consp clause) (first clause))))
+          (when tag
+            (when (member (symbol-name tag)
+                          '("FILTER" "OPTIONAL" "UNION" "MINUS" "NOT-EXISTS" "EXISTS" "GRAPH")
+                          :test #'string-equal)
+              (push clause extra)))))
+    ;; Step 1: Translate the WHERE group graph pattern
+    (let ((pattern (translate-group (append group-elements (nreverse extra)))))
+      ;; Step 2: GROUP BY expressions — add Extend nodes
+      (dolist (ge (nreverse group-exprs))
+        (setf pattern (make-alg-extend pattern (first ge) (second ge))))
+      ;; Step 3: Aggregation projections without GROUP BY
+      (when (and (null group-by) projections
+                 (some (lambda (p) (aggregate-expr-p (second p))) projections))
+        ;; Implicit grouping — single group
+        (setf group-by (list 1)))
+      ;; Step 4: GROUP BY
+      (when group-by
+        (setf pattern (make-alg-group
+                       (if (listp group-by) group-by (list group-by))
+                       pattern)))
+      ;; Step 5: HAVING
+      (when having
+        (dolist (h (if (and (consp having) (consp (first having))) having (list having)))
+          (setf pattern (make-alg-filter h pattern))))
+      ;; Step 6: Post-query VALUES
+      (when values-clause
+        (let ((table (make-alg-table (first values-clause) (second values-clause))))
+          (setf pattern (make-join pattern table))))
+      ;; Step 7: SELECT expressions (Extend for computed columns)
+      (dolist (proj (nreverse projections))
+        (unless (aggregate-expr-p (second proj))
+          (setf pattern (make-alg-extend pattern (first proj) (second proj)))))
+      ;; Step 8: Solution modifiers
+      (when order-by
+        (setf pattern (make-alg-order (if (listp order-by) order-by (list order-by)) pattern)))
+      ;; Projection
+      (let ((pv (if (or (eq vars '*) (equal vars '("*")))
+                     nil  ; SELECT * — no projection
+                     vars)))
+        (when pv
+          (setf pattern (make-alg-project pv pattern))))
+      ;; DISTINCT
+      (when distinct-p
+        (setf pattern (make-alg-distinct pattern)))
+      ;; OFFSET/LIMIT
+      (when (or offset-n limit-n)
+        (setf pattern (make-alg-slice pattern
+                                      (when offset-n (if (numberp offset-n) offset-n (parse-integer (princ-to-string offset-n))))
+                                      (when limit-n (if (numberp limit-n) limit-n (parse-integer (princ-to-string limit-n)))))))
+      (values pattern :select vars)))))
+
+(defun translate-ask (expr)
+  "Translate ASK query."
+  (let* ((body (rest expr))
+         (where-clause nil)
+         (filters nil))
+    (dolist (clause body)
+      (let ((tag (and (consp clause) (first clause))))
+        (cond
+          ((and tag (sym-name-equal tag "WHERE")) (setf where-clause (rest clause)))
+          ((and tag (sym-name-equal tag "FILTER")) (setf filters (rest clause)))
+          ((and tag (sym-name-equal tag "BIND")) nil) ; handled in WHERE
+          )))
+    (let ((pattern (translate-group (append where-clause
+                                           (mapcar (lambda (f) (list 'filter f)) filters)))))
+      (values pattern :ask nil))))
+
+(defun translate-construct (expr)
+  "Translate CONSTRUCT query."
+  (let ((template (second expr))
+        (where-clause nil))
+    (dolist (clause (cddr expr))
+      (when (and (consp clause) (sym-name-equal (first clause) "WHERE"))
+        (setf where-clause (rest clause))))
+    (let ((pattern (translate-group where-clause)))
+      (values pattern :construct template))))
+
+;;; ============================================================
+;;; Translate Group Graph Pattern (Section 18.2.2.6)
+;;; ============================================================
+
+(defun translate-group (elements)
+  "Translate a group graph pattern into an algebra node.
+   Implements the algorithm from Section 18.2.2.6."
+  (when (null elements) (return-from translate-group nil))
+  (let ((filters nil)
+        (g nil))  ; starts as empty pattern (nil = Ω0)
+    ;; First pass: collect FILTERs (they apply to the whole group)
+    ;; and translate EXISTS/NOT-EXISTS within them
+    (let ((non-filter-elements nil))
+      (dolist (e elements)
+        (if (and (consp e) (symbolp (car e)) (sym-name-equal (car e) "FILTER"))
+            (push (translate-filter-expr (second e)) filters)
+            (push e non-filter-elements)))
+      (setf non-filter-elements (nreverse non-filter-elements))
+      ;; Second pass: process each element in order
+      (dolist (e non-filter-elements)
+        (cond
+          ;; OPTIONAL {P}
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "OPTIONAL"))
+           (let* ((inner (translate-group (rest e)))
+                  ;; Check if inner is Filter(F, A) — extract F for LeftJoin
+                  (filter-expr (when (alg-filter-p inner) (alg-filter-expr inner)))
+                  (inner-pattern (if (alg-filter-p inner) (alg-filter-pattern inner) inner)))
+             (setf g (make-left-join g inner-pattern (or filter-expr t)))))
+          ;; MINUS {P}
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "MINUS"))
+           (setf g (make-alg-minus g (translate-group (rest e)))))
+          ;; BIND (expr AS var)
+          ((and (consp e) (symbolp (car e))
+                (or (sym-name-equal (car e) "BIND")
+                    (sym-name-equal (car e) "INLINE-BIND")))
+           (setf g (make-alg-extend g (second e) (third e))))
+          ;; VALUES
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "VALUES"))
+           (let ((table (make-alg-table (second e) (third e))))
+             (setf g (make-join g table))))
+          ;; UNION
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "UNION"))
+           (let ((branches (rest e)))
+             (let ((u (translate-group (first branches))))
+               (dolist (b (rest branches))
+                 (setf u (make-alg-union u (translate-group b))))
+               (setf g (make-join g u)))))
+          ;; GRAPH
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "GRAPH"))
+           (let ((name (second e))
+                 (inner (translate-group (cddr e))))
+             (setf g (make-join g (make-alg-graph name inner)))))
+          ;; NOT-EXISTS (as pattern, not in filter)
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "NOT-EXISTS"))
+           (push (make-alg-exists (translate-group (rest e)) t) filters))
+          ;; EXISTS (as pattern, not in filter)
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "EXISTS"))
+           (push (make-alg-exists (translate-group (rest e)) nil) filters))
+          ;; SUBQUERY
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "SUBQUERY"))
+           (multiple-value-bind (sub-alg) (translate-query (second e))
+             (setf g (make-join g sub-alg))))
+          ;; Property path pattern: (s (path-op ...) o)
+          ((and (consp e) (= 3 (length e))
+                (consp (second e)) (symbolp (first (second e))))
+           (setf g (make-join g (make-alg-path (first e) (second e) (third e)))))
+          ;; Triple pattern
+          ((and (consp e) (= 3 (length e)))
+           ;; Collect adjacent triple patterns into a BGP
+           (setf g (make-join g (make-bgp (list e)))))
+          ;; Unknown — skip
+          (t nil))))
+    ;; Apply collected filters to the whole group
+    (dolist (f (nreverse filters))
+      (setf g (make-alg-filter f g)))
+    ;; Simplification: Join(nil, A) → A
+    (simplify-algebra g)))
+
+(defun simplify-algebra (node)
+  "Simplification step (Section 18.2.2.8): remove joins with empty BGP."
+  (cond
+    ((null node) nil)
+    ((alg-join-p node)
+     (let ((l (alg-join-left node))
+           (r (alg-join-right node)))
+       (cond
+         ((null l) r)
+         ((null r) l)
+         ((and (alg-bgp-p l) (null (alg-bgp-triples l))) r)
+         ((and (alg-bgp-p r) (null (alg-bgp-triples r))) l)
+         (t node))))
+    (t node)))
+
+(defun translate-filter-expr (expr)
+  "Translate filter expression, converting EXISTS/NOT-EXISTS patterns."
+  (cond
+    ((atom expr) expr)
+    ((and (symbolp (car expr)) (sym-name-equal (car expr) "NOT-EXISTS"))
+     (make-alg-exists (translate-group (rest expr)) t))
+    ((and (symbolp (car expr)) (sym-name-equal (car expr) "EXISTS"))
+     (make-alg-exists (translate-group (rest expr)) nil))
+    ;; Recurse into compound expressions (AND, OR, NOT, etc.)
+    ((and (symbolp (car expr))
+          (member (symbol-name (car expr)) '("AND" "OR" "NOT") :test #'string-equal))
+     (cons (car expr) (mapcar #'translate-filter-expr (rest expr))))
+    (t expr)))
+
+(defun aggregate-expr-p (expr)
+  "Check if expression is an aggregate function call."
+  (and (consp expr) (symbolp (car expr))
+       (member (symbol-name (car expr))
+               '("COUNT" "SUM" "AVG" "MIN" "MAX" "GROUP_CONCAT" "SAMPLE"
+                 "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT" "MIN-DISTINCT"
+                 "MAX-DISTINCT" "GROUP_CONCAT-DISTINCT" "SAMPLE-DISTINCT"
+                 "GROUP-CONCAT" "GROUP-CONCAT-DISTINCT")
+               :test #'string-equal)))
+
+;;; ============================================================
+;;; New entry point: sparql-via-algebra
+;;; ============================================================
+
+(defun sparql-via-algebra (graph query-string)
+  "Execute a SPARQL query using the algebra evaluator."
+  (let* ((parsed (parse-sparql query-string))
+         (ds (make-dataset graph)))
+    (multiple-value-bind (algebra form vars) (translate-query parsed)
+      (let ((results (eval-algebra algebra graph ds)))
+        (case form
+          (:ask (not (null results)))
+          (:select
+           ;; Project to result rows
+           (if (or (eq vars '*) (equal vars '("*")))
+               (mapcar (lambda (mu)
+                         (mapcar #'cdr (remove-if (lambda (b) (null (cdr b))) mu)))
+                       results)
+               (mapcar (lambda (mu)
+                         (mapcar (lambda (v) (lookup-binding v mu)) vars))
+                       results)))
+          (:construct
+           ;; Template instantiation
+           (let ((tmpl (if (and vars (consp (first vars)) (= 3 (length (first vars))))
+                           vars (list vars))))
+             (let ((triples nil))
+               (dolist (mu results (remove-duplicates (nreverse triples) :test #'equal))
+                 (dolist (tp tmpl)
+                   (let ((s (subst-vars (first tp) mu))
+                         (p (subst-vars (second tp) mu))
+                         (o (subst-vars (third tp) mu)))
+                     (when (and s p o (not (variable-p s)) (not (variable-p p)) (not (variable-p o)))
+                       (push (list s p o) triples)))))))))))))
