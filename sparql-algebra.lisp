@@ -764,6 +764,10 @@
            (flush-bgp)
            (multiple-value-bind (sub-alg) (translate-query (second e))
              (setf g (make-join g sub-alg))))
+          ;; Nested GROUP { ... }
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "GROUP"))
+           (flush-bgp)
+           (setf g (make-join g (translate-group (rest e)))))
           ;; SERVICE <url> { patterns }
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "SERVICE"))
            (flush-bgp)

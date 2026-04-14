@@ -106,9 +106,9 @@
     ))
 
 (defun validate-group (elements)
-  "Validate group graph pattern elements."
-  ;; BIND variable must not already be in scope from the SAME group
-  ;; Nested groups { } start a new scope
+  "Validate group graph pattern elements per Section 19.6.
+   BIND variable must not already be in scope from the SAME group.
+   Variables from nested groups and UNION branches propagate into scope."
   (let ((in-scope nil))
     (dolist (e elements)
       (cond
@@ -117,7 +117,7 @@
                                                     (member (symbol-name (car e))
                                                             '("FILTER" "OPTIONAL" "MINUS" "UNION" "GRAPH"
                                                               "BIND" "INLINE-BIND" "VALUES" "NOT-EXISTS"
-                                                              "EXISTS" "SUBQUERY" "SERVICE")
+                                                              "EXISTS" "SUBQUERY" "SERVICE" "GROUP")
                                                             :test #'string-equal))))
          (dolist (term e)
            (when (and (symbolp term) (> (length (symbol-name term)) 0)
@@ -131,25 +131,62 @@
            (when (member var in-scope)
              (error "BIND variable ~A already in scope" var))
            (pushnew var in-scope)))
+        ;; Nested GROUP — variables propagate, validate inner scope separately
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "GROUP"))
+         (validate-group (rest e))
+         (dolist (v (collect-group-vars (rest e)))
+           (pushnew v in-scope)))
+        ;; UNION — variables from all branches propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "UNION"))
+         (dolist (branch (rest e))
+           (when (consp branch)
+             (validate-group (rest branch))
+             (dolist (v (collect-group-vars (rest branch)))
+               (pushnew v in-scope)))))
+        ;; OPTIONAL — validate inner scope, variables propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "OPTIONAL"))
+         (validate-group (rest e))
+         (dolist (v (collect-group-vars (rest e)))
+           (pushnew v in-scope)))
         ;; Recurse into subqueries
         ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "SUBQUERY"))
          (validate-sparql (second e)))))))
 
 (defun collect-group-vars (elements)
-  "Collect all variables from group pattern elements."
+  "Collect all variables visible from a group pattern (including nested groups/unions)."
   (let ((vars nil))
     (dolist (e elements vars)
-      (when (and (consp e) (>= (length e) 3)
-                 (not (and (symbolp (car e))
-                           (member (symbol-name (car e))
-                                   '("FILTER" "OPTIONAL" "MINUS" "UNION" "GRAPH"
-                                     "BIND" "INLINE-BIND" "VALUES" "NOT-EXISTS"
-                                     "EXISTS" "SUBQUERY" "SERVICE")
-                                   :test #'string-equal))))
-        (dolist (term e)
-          (when (and (symbolp term) (> (length (symbol-name term)) 0)
-                     (char= #\? (char (symbol-name term) 0)))
-            (pushnew term vars)))))))
+      (cond
+        ((and (consp e) (= 3 (length e))
+              (not (and (symbolp (car e))
+                        (member (symbol-name (car e))
+                                '("FILTER" "OPTIONAL" "MINUS" "UNION" "GRAPH"
+                                  "BIND" "INLINE-BIND" "VALUES" "NOT-EXISTS"
+                                  "EXISTS" "SUBQUERY" "SERVICE" "GROUP")
+                                :test #'string-equal))))
+         (dolist (term e)
+           (when (and (symbolp term) (> (length (symbol-name term)) 0)
+                      (char= #\? (char (symbol-name term) 0)))
+             (pushnew term vars))))
+        ;; BIND/INLINE-BIND — the bound variable is in scope
+        ((and (consp e) (symbolp (car e))
+              (or (string-equal (symbol-name (car e)) "BIND")
+                  (string-equal (symbol-name (car e)) "INLINE-BIND")))
+         (pushnew (second e) vars))
+        ;; Nested GROUP — variables propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "GROUP"))
+         (dolist (v (collect-group-vars (rest e)))
+           (pushnew v vars)))
+        ;; UNION — variables from all branches propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "UNION"))
+         (dolist (branch (rest e))
+           (when (consp branch)
+             (dolist (v (collect-group-vars (rest branch)))
+               (pushnew v vars)))))
+        ;; OPTIONAL — variables propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "OPTIONAL"))
+         (dolist (v (collect-group-vars (rest e)))
+           (pushnew v vars)))))))
 
 ;;; ==========================================================================
 ;;; Tokenizer
@@ -1060,8 +1097,8 @@
                                (cons 'where u-patterns)
                                (cons 'where u2-patterns))
                          patterns)))
-               ;; Not UNION, just nested block — treat as patterns
-               (dolist (p u-patterns) (push p patterns))))))
+               ;; Not UNION, just nested block — preserve as group
+               (push (cons 'group u-patterns) patterns)))))
         ;; Triple pattern: s p o .  (with property path detection)
         (t
          (let ((s-tok (pop toks)))
