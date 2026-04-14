@@ -699,7 +699,7 @@
          (let ((s-tok (pop toks)))
            ;; Handle blank node [ pred obj ; ... ] as subject or object
            (when (and (stringp s-tok) (string= s-tok "["))
-             (let ((bnode (format nil "_:sparql-anon~A" (incf *sparql-anon-counter*))))
+             (let ((bnode (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
                ;; Parse predicate-object pairs inside [ ]
                (loop while (and toks (not (string= (car toks) "]"))) do
                  (let* ((bp-result (parse-sparql-path toks prefixes))
@@ -708,7 +708,7 @@
                         (bo-tok (pop bo-toks))
                         (bo (if (and (stringp bo-tok) (string= bo-tok "["))
                                 ;; Nested blank node
-                                (let ((inner (format nil "_:sparql-anon~A" (incf *sparql-anon-counter*))))
+                                (let ((inner (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
                                   (loop while (and bo-toks (not (string= (car bo-toks) "]"))) do
                                     (pop bo-toks))
                                   (when bo-toks (pop bo-toks))
@@ -730,7 +730,7 @@
                 (o (let ((o-tok (pop o-toks)))
                      (if (and (stringp o-tok) (string= o-tok "["))
                          ;; Blank node as object
-                         (let ((bnode (format nil "_:sparql-anon~A" (incf *sparql-anon-counter*))))
+                         (let ((bnode (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
                            (loop while (and o-toks (not (string= (car o-toks) "]"))) do
                              (let* ((bp-r (parse-sparql-path o-toks prefixes))
                                     (bp (car bp-r))
@@ -757,7 +757,7 @@
                     (o2-toks (cdr pr))
                     (o2 (let ((o2-tok (pop o2-toks)))
                           (if (and (stringp o2-tok) (string= o2-tok "["))
-                              (let ((bnode (format nil "_:sparql-anon~A" (incf *sparql-anon-counter*))))
+                              (let ((bnode (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
                                 (loop while (and o2-toks (not (string= (car o2-toks) "]"))) do
                                   (let* ((bp-r (parse-sparql-path o2-toks prefixes))
                                          (bp (car bp-r))
