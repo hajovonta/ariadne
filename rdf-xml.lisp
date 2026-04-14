@@ -33,20 +33,20 @@
     ((search "boolean" datatype) (string-equal text "true"))
     (t text)))
 
-(defun import-rdf-xml (g data)
+(defun import-rdf-xml (g data &key base-uri)
   "Import RDF/XML format string into graph G."
   (let* ((rdf-type "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
          (doc (cxml:parse data (stp:make-builder)))
          (root (stp:document-element doc)))
     (stp:do-children (desc root)
       (when (typep desc 'stp:element)
-        (import-rdf-xml-description g desc rdf-type)))))
+        (import-rdf-xml-description g desc rdf-type base-uri)))))
 
-(defun import-rdf-xml-description (g desc rdf-type)
+(defun import-rdf-xml-description (g desc rdf-type &optional base-uri)
   "Import one rdf:Description (or typed node) element."
   (let* ((about (rdf-attr desc "about"))
          (node-id (rdf-attr desc "nodeID"))
-         (subject (or about
+         (subject (or (and about (if (and base-uri (zerop (length about))) base-uri about))
                       (when node-id (concatenate 'string "_:" node-id))
                       (format nil "_:rdfxml~A" (incf *blank-counter*)))))
     ;; Typed node
@@ -62,7 +62,8 @@
               (prop-nid (rdf-attr prop "nodeID"))
               (parse-type (rdf-attr prop "parseType")))
           (cond
-            (resource (add-triple g subject pred resource))
+            (resource (add-triple g subject pred
+                                  (if (and base-uri (zerop (length resource))) base-uri resource)))
             (prop-nid (add-triple g subject pred (concatenate 'string "_:" prop-nid)))
             ((and parse-type (string= parse-type "Resource"))
              (let ((bnode (format nil "_:rdfxml~A" (incf *blank-counter*))))
