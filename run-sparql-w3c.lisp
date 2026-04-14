@@ -89,11 +89,17 @@
                 ;; ASK result
                 ((member expected '(t nil))
                  (if (eq (not (not actual)) expected) :pass :fail))
-                ;; CONSTRUCT/graph result — compare triple counts
+                ;; CONSTRUCT/graph result — compare triple counts or result set solutions
                 ((eq fmt :ttl)
-                 (if (and (listp actual)
-                          (= (length actual) (graph-count expected)))
-                     :pass :fail))
+                 (let ((rs-solutions (get-triples expected
+                                      :predicate "http://www.w3.org/2001/sw/DataAccess/tests/result-set#solution")))
+                   (if rs-solutions
+                       ;; Result set encoded as RDF — count solutions
+                       (if (= (length actual) (length rs-solutions)) :pass :fail)
+                       ;; CONSTRUCT result — compare triple counts
+                       (if (and (listp actual)
+                                (= (length actual) (graph-count expected)))
+                           :pass :fail))))
                 ;; SELECT result — compare row counts
                 (t (if (= (length actual) (length expected)) :pass :fail))))))
       (error () :fail)

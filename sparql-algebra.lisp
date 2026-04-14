@@ -699,7 +699,8 @@
     (let ((non-filter-elements nil))
       (dolist (e elements)
         (if (and (consp e) (symbolp (car e)) (sym-name-equal (car e) "FILTER"))
-            (push (translate-filter-expr (second e)) filters)
+            (dolist (f (rest e))
+              (push (translate-filter-expr f) filters))
             (push e non-filter-elements)))
       (setf non-filter-elements (nreverse non-filter-elements))
       ;; Second pass: process each element in order
