@@ -128,17 +128,21 @@
                               (subseq subj (1+ (or (position #\# subj :from-end t) -1))))))
                 (cond
                   ((equal typ "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#QueryEvaluationTest")
-                   (let* ((act (triple-object (first (get-triples mg :subject subj
-                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action"))))
-                          (qf (when act (triple-object (first (get-triples mg :subject act
-                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#query")))))
-                          (df (when act (triple-object (first (get-triples mg :subject act
-                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#data")))))
+                   (let* ((act-tr (first (get-triples mg :subject subj
+                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action")))
+                          (act (when act-tr (triple-object act-tr)))
+                          (qf-tr (when act (first (get-triples mg :subject act
+                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#query"))))
+                          (qf (when qf-tr (triple-object qf-tr)))
+                          (df-tr (when act (first (get-triples mg :subject act
+                                 :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#data"))))
+                          (df (when df-tr (triple-object df-tr)))
                           (gfs (when act (mapcar #'triple-object
                                                  (get-triples mg :subject act
                                                    :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-query#graphData"))))
-                          (rf (triple-object (first (get-triples mg :subject subj
-                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result")))))
+                          (rf-tr (first (get-triples mg :subject subj
+                                :predicate "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#result")))
+                          (rf (when rf-tr (triple-object rf-tr))))
                      (cond
                        ((not (and qf rf)) (incf skip))
                        (t (let ((r (run-one-eval-test dir qf df rf gfs)))
