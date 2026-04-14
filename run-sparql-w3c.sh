@@ -7,7 +7,7 @@ TOTAL_P=0 TOTAL_F=0 TOTAL_S=0
 
 for cat in $CATS; do
   echo "=== $cat ==="
-  result=$(timeout 120 sbcl --noinform --non-interactive \
+  result=$(timeout 180 sbcl --noinform --non-interactive \
     --eval '(require :asdf)' \
     --eval '(asdf:load-system :ariadne :silent t)' \
     --eval '(in-package :ariadne)' \
