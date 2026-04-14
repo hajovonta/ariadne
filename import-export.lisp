@@ -306,12 +306,12 @@
 ;;; Turtle Import
 ;;; ==========================================================================
 
-(defun import-turtle (g data &key (bnode-counter-start 0) graph-name)
+(defun import-turtle (g data &key (bnode-counter-start 0) graph-name base-uri)
   "Import Turtle format string into graph G.
 Tokenizes the entire input then processes token stream."
   (let ((prefixes (make-hash-table :test 'equal))
         (tokens (turtle-tokenize data)))
-    (turtle-parse-tokens g tokens prefixes bnode-counter-start graph-name)))
+    (turtle-parse-tokens g tokens prefixes bnode-counter-start graph-name base-uri)))
 
 (defun turtle-tokenize (data)
   "Tokenize Turtle input into a flat list of tokens.
@@ -541,16 +541,16 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                    (push (subseq data start pos) tokens)))))))))
     (nreverse tokens)))
 
-(defun parse-bnode-contents (g toks prefixes anon-counter bnode)
+(defun parse-bnode-contents (g toks prefixes anon-counter bnode &optional base-uri)
   "Parse predicate-object pairs inside a blank node [...]. Returns (toks anon-counter)."
   (loop while (and toks (not (string= "]" (car toks)))) do
-    (let ((bp (turtle-resolve (pop toks) prefixes))
+    (let ((bp (turtle-resolve (pop toks) prefixes base-uri))
           (bo nil))
       (cond
         ;; Object is a collection
         ((and toks (string= "(" (car toks)))
          (pop toks)
-         (let ((r (parse-collection g toks prefixes anon-counter)))
+         (let ((r (parse-collection g toks prefixes anon-counter base-uri)))
            (setf toks (first r) anon-counter (second r) bo (third r))))
         ;; Object is a blank node
         ((and toks (string= "[" (car toks)))
@@ -561,11 +561,11 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                (pop toks)
                (progn
                  (multiple-value-bind (new-toks new-ac)
-                     (parse-bnode-contents g toks prefixes anon-counter inner)
+                     (parse-bnode-contents g toks prefixes anon-counter inner base-uri)
                    (setf toks new-toks anon-counter new-ac))
                  (when (and toks (string= "]" (car toks))) (pop toks))))))
         ;; Simple object
-        (toks (setf bo (turtle-resolve (pop toks) prefixes))))
+        (toks (setf bo (turtle-resolve (pop toks) prefixes base-uri))))
       (when (and bp bo) (add-triple g bnode bp bo))
       ;; Handle , for multiple objects
       (loop while (and toks (string= "," (car toks))) do
@@ -574,7 +574,7 @@ Handles quoted strings, URIs, and punctuation (; , .)."
           (cond
             ((and toks (string= "(" (car toks)))
              (pop toks)
-             (let ((r (parse-collection g toks prefixes anon-counter)))
+             (let ((r (parse-collection g toks prefixes anon-counter base-uri)))
                (setf toks (first r) anon-counter (second r) extra (third r))))
             ((and toks (string= "[" (car toks)))
              (pop toks)
@@ -584,15 +584,15 @@ Handles quoted strings, URIs, and punctuation (; , .)."
                    (pop toks)
                    (progn
                      (multiple-value-bind (new-toks new-ac)
-                         (parse-bnode-contents g toks prefixes anon-counter inner)
+                         (parse-bnode-contents g toks prefixes anon-counter inner base-uri)
                        (setf toks new-toks anon-counter new-ac))
                      (when (and toks (string= "]" (car toks))) (pop toks))))))
-            (toks (setf extra (turtle-resolve (pop toks) prefixes))))
+            (toks (setf extra (turtle-resolve (pop toks) prefixes base-uri))))
           (when (and bp extra) (add-triple g bnode bp extra))))
       (when (and toks (string= ";" (car toks))) (pop toks))))
   (values toks anon-counter))
 
-(defun parse-collection (g toks prefixes anon-counter)
+(defun parse-collection (g toks prefixes anon-counter &optional base-uri)
   "Parse an RDF collection from token stream (after opening paren consumed).
 Returns (remaining-toks anon-counter list-head-node)."
   (let* ((rdf-first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
@@ -609,7 +609,7 @@ Returns (remaining-toks anon-counter list-head-node)."
           ;; Nested collection
           ((string= "(" (car toks))
            (pop toks)
-           (let ((result (parse-collection g toks prefixes anon-counter)))
+           (let ((result (parse-collection g toks prefixes anon-counter base-uri)))
              (setf toks (first result) anon-counter (second result) item (third result))))
           ;; Blank node property list
           ((string= "[" (car toks))
@@ -620,11 +620,11 @@ Returns (remaining-toks anon-counter list-head-node)."
                  (pop toks)
                  (progn
                    (multiple-value-bind (new-toks new-ac)
-                       (parse-bnode-contents g toks prefixes anon-counter bnode)
+                       (parse-bnode-contents g toks prefixes anon-counter bnode base-uri)
                      (setf toks new-toks anon-counter new-ac))
                    (when (and toks (string= "]" (car toks))) (pop toks))))))
           ;; Simple value
-          (t (setf item (turtle-resolve (pop toks) prefixes))))
+          (t (setf item (turtle-resolve (pop toks) prefixes base-uri))))
         (add-triple g node rdf-first item)
         (setf prev node)))
     (when prev (add-triple g prev rdf-rest rdf-nil))
@@ -632,12 +632,12 @@ Returns (remaining-toks anon-counter list-head-node)."
     (when (and toks (string= ")" (car toks))) (pop toks))
     (list toks anon-counter head)))
 
-(defun turtle-parse-tokens (g tokens prefixes &optional (anon-start 0) graph-name)
+(defun turtle-parse-tokens (g tokens prefixes &optional (anon-start 0) graph-name initial-base-uri)
   "Parse a token stream into triples. Uses a context stack for nested blank nodes."
   (let ((toks tokens)
         (subject nil)
         (predicate nil)
-        (base-uri nil)
+        (base-uri initial-base-uri)
         (anon-counter anon-start)
         (had-predicate nil)
         (expect-punct nil)
@@ -769,7 +769,7 @@ Returns (remaining-toks anon-counter list-head-node)."
           ((string= tok "(")
            (pop toks)
            (setf expect-punct nil)
-           (let ((result (parse-collection g toks prefixes anon-counter)))
+           (let ((result (parse-collection g toks prefixes anon-counter base-uri)))
              (setf toks (first result)
                    anon-counter (second result))
              (let ((list-node (third result)))
@@ -789,19 +789,19 @@ Returns (remaining-toks anon-counter list-head-node)."
                 (pop toks)
                 (let ((bnode (format nil "_:anon~A" (incf anon-counter))))
                   (multiple-value-bind (new-toks new-ac)
-                      (parse-bnode-contents g toks prefixes anon-counter bnode)
+                      (parse-bnode-contents g toks prefixes anon-counter bnode base-uri)
                     (setf toks new-toks anon-counter new-ac))
                   (add-triple g subject predicate bnode :graph-name graph-name)
                   (setf expect-punct t)))
                ;; Collection as object
                ((string= (car toks) "(")
                 (pop toks)
-                (let ((result (parse-collection g toks prefixes anon-counter)))
+                (let ((result (parse-collection g toks prefixes anon-counter base-uri)))
                   (setf toks (first result) anon-counter (second result))
                   (add-triple g subject predicate (third result) :graph-name graph-name)
                   (setf expect-punct t)))
                ;; Regular object
-               (t (let ((obj (turtle-resolve (pop toks) prefixes)))
+               (t (let ((obj (turtle-resolve (pop toks) prefixes base-uri)))
                     (add-triple g subject predicate obj :graph-name graph-name)
                     (setf expect-punct t))))))
           ;; Regular token
@@ -821,7 +821,7 @@ Returns (remaining-toks anon-counter list-head-node)."
                 (when (member tok '("true" "false" "a") :test #'string=)
                   (when (not (position #\: tok))
                     (error "Keywords cannot be subjects: ~A" tok)))
-                (setf subject (turtle-resolve tok prefixes))))
+                (setf subject (turtle-resolve tok prefixes base-uri))))
              ;; Need predicate
              ((null predicate)
               (let ((tok (pop toks)))
@@ -844,12 +844,12 @@ Returns (remaining-toks anon-counter list-head-node)."
                 ;; Reject uppercase A
                 (when (string= tok "A")
                   (error "'a' shorthand must be lowercase"))
-                (setf predicate (turtle-resolve tok prefixes)
+                (setf predicate (turtle-resolve tok prefixes base-uri)
                       had-predicate t)))
              ;; Have both — this is the object
              (t
               (let* ((obj-tok (pop toks))
-                     (obj (turtle-resolve obj-tok prefixes)))
+                     (obj (turtle-resolve obj-tok prefixes base-uri)))
                 ;; 'a' is only valid as predicate at top level
                 (when (and (string= obj-tok "a") (= 0 bracket-depth))
                   (error "'a' is only valid as predicate, not object"))
@@ -859,7 +859,7 @@ Returns (remaining-toks anon-counter list-head-node)."
     ;; If we have a subject but no dot was seen, that's an error
     (when subject
       (error "Unterminated triple statement"))))
-(defun turtle-resolve (token prefixes)
+(defun turtle-resolve (token prefixes &optional base-uri)
   "Resolve a Turtle token to a value."
   (flet ((expand-prefix (term)
            (let ((colon-pos (position #\: term)))
@@ -870,12 +870,21 @@ Returns (remaining-toks anon-counter list-head-node)."
                    (if base
                        (concatenate 'string base local)
                        (error "Undefined prefix: ~A" prefix)))
-                 term))))
+                 term)))
+         (resolve-iri (uri)
+           (if (and base-uri (> (length base-uri) 0)
+                    (or (zerop (length uri))
+                        (and (not (position #\: uri))
+                             (not (and (> (length uri) 0) (char= #\/ (char uri 0)))))))
+               (if (zerop (length uri))
+                   base-uri
+                   (concatenate 'string base-uri uri))
+               uri)))
     (cond
     ;; URI: <http://...>
     ((and (> (length token) 1)
           (char= #\< (char token 0)))
-     (subseq token 1 (1- (length token))))
+     (resolve-iri (subseq token 1 (1- (length token)))))
     ;; Quoted string (possibly with type/lang)
     ((and (> (length token) 0)
           (or (char= #\" (char token 0))
