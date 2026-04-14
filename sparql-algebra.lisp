@@ -648,10 +648,17 @@
             (push e non-filter-elements)))
       (setf non-filter-elements (nreverse non-filter-elements))
       ;; Second pass: process each element in order
+      ;; Adjacent triple patterns are collected into a single BGP (Section 18.2.2.5)
+      (let ((pending-triples nil))
+        (flet ((flush-bgp ()
+                 (when pending-triples
+                   (setf g (make-join g (make-bgp (nreverse pending-triples))))
+                   (setf pending-triples nil))))
       (dolist (e non-filter-elements)
         (cond
           ;; OPTIONAL {P}
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "OPTIONAL"))
+           (flush-bgp)
            (let* ((inner (translate-group (rest e)))
                   ;; Check if inner is Filter(F, A) — extract F for LeftJoin
                   (filter-expr (when (alg-filter-p inner) (alg-filter-expr inner)))
@@ -659,18 +666,22 @@
              (setf g (make-left-join g inner-pattern (or filter-expr t)))))
           ;; MINUS {P}
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "MINUS"))
+           (flush-bgp)
            (setf g (make-alg-minus g (translate-group (rest e)))))
           ;; BIND (expr AS var)
           ((and (consp e) (symbolp (car e))
                 (or (sym-name-equal (car e) "BIND")
                     (sym-name-equal (car e) "INLINE-BIND")))
+           (flush-bgp)
            (setf g (make-alg-extend g (second e) (third e))))
           ;; VALUES
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "VALUES"))
+           (flush-bgp)
            (let ((table (make-alg-table (second e) (third e))))
              (setf g (make-join g table))))
           ;; UNION
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "UNION"))
+           (flush-bgp)
            (let ((branches (rest e)))
              (let ((u (translate-group (first branches))))
                (dolist (b (rest branches))
@@ -678,29 +689,35 @@
                (setf g (make-join g u)))))
           ;; GRAPH
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "GRAPH"))
+           (flush-bgp)
            (let ((name (second e))
                  (inner (translate-group (cddr e))))
              (setf g (make-join g (make-alg-graph name inner)))))
           ;; NOT-EXISTS (as pattern, not in filter)
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "NOT-EXISTS"))
+           (flush-bgp)
            (push (make-alg-exists (translate-group (rest e)) t) filters))
           ;; EXISTS (as pattern, not in filter)
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "EXISTS"))
+           (flush-bgp)
            (push (make-alg-exists (translate-group (rest e)) nil) filters))
           ;; SUBQUERY
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "SUBQUERY"))
+           (flush-bgp)
            (multiple-value-bind (sub-alg) (translate-query (second e))
              (setf g (make-join g sub-alg))))
           ;; Property path pattern: (s (path-op ...) o)
           ((and (consp e) (= 3 (length e))
                 (consp (second e)) (symbolp (first (second e))))
+           (flush-bgp)
            (setf g (make-join g (make-alg-path (first e) (second e) (third e)))))
-          ;; Triple pattern
+          ;; Triple pattern — collect into pending BGP
           ((and (consp e) (= 3 (length e)))
-           ;; Collect adjacent triple patterns into a BGP
-           (setf g (make-join g (make-bgp (list e)))))
+           (push e pending-triples))
           ;; Unknown — skip
-          (t nil))))
+          (t nil)))
+      ;; Flush any remaining pending triples
+      (flush-bgp))))
     ;; Apply collected filters to the whole group
     (dolist (f (nreverse filters))
       (setf g (make-alg-filter f g)))
