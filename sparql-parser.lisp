@@ -1123,6 +1123,23 @@
                ;; Not UNION, just nested block — preserve as group with filters
                (let ((elts (if u-filters (append u-patterns (mapcar (lambda (f) (list 'filter f)) u-filters)) u-patterns)))
                  (push (cons 'group elts) patterns))))))
+        ;; Bare SubSelect: SELECT ... appearing directly in group
+        ((and (stringp (car toks)) (string-equal (car toks) "SELECT"))
+         (let ((sub-toks nil) (depth 0))
+           ;; Collect all tokens for the subquery (until we hit } at depth 0)
+           (loop while toks do
+             (let ((tok (car toks)))
+               (when (and (stringp tok) (string= tok "}") (= depth 0))
+                 (return))
+               (pop toks)
+               (when (stringp tok)
+                 (cond ((string= tok "{") (incf depth))
+                       ((string= tok "}") (decf depth))))
+               (push tok sub-toks)))
+           (let ((st (nreverse sub-toks)))
+             (when (and st (stringp (car st)) (string-equal (car st) "SELECT"))
+               (pop st))
+             (push (list 'subquery (sparql-parse-select st prefixes nil)) patterns))))
         ;; Triple pattern: s p o .  (with property path detection)
         (t
          (let ((s-tok (pop toks)))
