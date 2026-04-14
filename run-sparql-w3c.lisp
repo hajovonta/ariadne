@@ -84,7 +84,7 @@
               (let ((gpath (merge-pathnames gf dir)))
                 (when (probe-file gpath)
                   (import-turtle g (slurp gpath) :graph-name (namestring gf)))))
-            (let ((actual (sparql g (slurp (merge-pathnames qf dir)))))
+            (let ((actual (sparql-via-algebra g (slurp (merge-pathnames qf dir)))))
               (cond
                 ;; ASK result
                 ((member expected '(t nil))

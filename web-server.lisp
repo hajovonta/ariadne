@@ -248,7 +248,7 @@ function selectAll(){
 (defun sparql-query-json (g query-string)
   "Execute SPARQL query and return JSON result string."
   (handler-case
-      (let ((results (sparql g query-string)))
+      (let ((results (sparql-via-algebra g query-string)))
         (cond
           ((eq results t) (jzon:stringify (let ((ht (make-hash-table :test 'equal)))
                                            (setf (gethash "boolean" ht) t) ht)))

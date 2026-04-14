@@ -12,7 +12,7 @@
   "Parse a simple SELECT query"
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
-    (let ((results (sparql g "SELECT ?who WHERE { <alice> <knows> ?who }")))
+    (let ((results (sparql-via-algebra g "SELECT ?who WHERE { <alice> <knows> ?who }")))
       (is (= 1 (length results))))))
 
 (test sparql-parse-two-variables
@@ -20,7 +20,7 @@
   (let ((g (make-graph)))
     (add-triple g "alice" "age" 30)
     (add-triple g "bob" "age" 25)
-    (let ((results (sparql g "SELECT ?person ?age WHERE { ?person <age> ?age }")))
+    (let ((results (sparql-via-algebra g "SELECT ?person ?age WHERE { ?person <age> ?age }")))
       (is (= 2 (length results))))))
 
 (test sparql-parse-join
@@ -28,7 +28,7 @@
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
     (add-triple g "bob" "knows" "charlie")
-    (let ((results (sparql g "SELECT ?fof WHERE { <alice> <knows> ?f . ?f <knows> ?fof }")))
+    (let ((results (sparql-via-algebra g "SELECT ?fof WHERE { <alice> <knows> ?f . ?f <knows> ?fof }")))
       (is (= 1 (length results)))
       (is (equal "charlie" (caar results))))))
 
@@ -40,7 +40,7 @@
   "Parse query with PREFIX declaration"
   (let ((g (make-graph)))
     (add-triple g "http://example.org/alice" "http://example.org/knows" "http://example.org/bob")
-    (let ((results (sparql g "PREFIX ex: <http://example.org/>
+    (let ((results (sparql-via-algebra g "PREFIX ex: <http://example.org/>
                               SELECT ?who WHERE { ex:alice ex:knows ?who }")))
       (is (= 1 (length results))))))
 
@@ -53,7 +53,7 @@
   (let ((g (make-graph)))
     (add-triple g "alice" "age" 30)
     (add-triple g "bob" "age" 25)
-    (let ((results (sparql g "SELECT ?person WHERE { ?person <age> ?age FILTER(?age > 28) }")))
+    (let ((results (sparql-via-algebra g "SELECT ?person WHERE { ?person <age> ?age FILTER(?age > 28) }")))
       (is (= 1 (length results))))))
 
 ;; =============================================================================
@@ -64,8 +64,8 @@
   "Parse ASK query"
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
-    (is-true (sparql g "ASK { <alice> <knows> <bob> }"))
-    (is-false (sparql g "ASK { <alice> <knows> <charlie> }"))))
+    (is-true (sparql-via-algebra g "ASK { <alice> <knows> <bob> }"))
+    (is-false (sparql-via-algebra g "ASK { <alice> <knows> <charlie> }"))))
 
 ;; =============================================================================
 ;; DISTINCT / LIMIT / ORDER BY
@@ -77,7 +77,7 @@
     (add-triple g "alice" "type" "person")
     (add-triple g "bob" "type" "person")
     (add-triple g "acme" "type" "company")
-    (let ((results (sparql g "SELECT DISTINCT ?type WHERE { ?x <type> ?type }")))
+    (let ((results (sparql-via-algebra g "SELECT DISTINCT ?type WHERE { ?x <type> ?type }")))
       (is (= 2 (length results))))))
 
 (test sparql-parse-limit
@@ -86,5 +86,5 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "alice" "knows" "dave")
-    (let ((results (sparql g "SELECT ?who WHERE { <alice> <knows> ?who } LIMIT 2")))
+    (let ((results (sparql-via-algebra g "SELECT ?who WHERE { <alice> <knows> ?who } LIMIT 2")))
       (is (= 2 (length results))))))

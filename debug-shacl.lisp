@@ -8,5 +8,5 @@
          (query (format nil "SELECT ?path ?value WHERE { <~A> ?path ?value . FILTER (?path = <http://www.w3.org/2000/01/rdf-schema#label>) }" focus)))
     (format t "Query: ~A~%" query)
     (handler-case
-        (format t "Results: ~S~%" (sparql g query))
+        (format t "Results: ~S~%" (sparql-via-algebra g query))
       (error (e) (format t "ERROR: ~A~%" e)))))

@@ -913,7 +913,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                      (concatenate 'string prefix-str result))))
             (when select-q
               (let* ((q (substitute-params select-q))
-                     (results (handler-case (sparql g q) (error () nil))))
+                     (results (handler-case (sparql-via-algebra g q) (error () nil))))
                 (when (and results (listp results))
                   (dolist (row results)
                     (let ((row-list (if (listp row) row (list row))))
@@ -936,7 +936,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                              (if (stringp sv)
                                  (format nil "\"~A\"" sv)
                                  (format nil "<~A>" sv))))
-                         (result (handler-case (sparql g q) (error () t))))
+                         (result (handler-case (sparql-via-algebra g q) (error () t))))
                     (unless result
                       (push (make-violation focus-node
                                             (when path path)
@@ -1029,7 +1029,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                     "\\$currentShape" w (format nil "<~A>" shape)))
                            w))
              (fixed-query (concatenate 'string prefix-str fixed-select fixed-where))
-             (results (sparql g fixed-query)))
+             (results (sparql-via-algebra g fixed-query)))
         (when (and results (listp results))
           (dolist (row results)
             (let ((row-list (if (listp row) row (list row))))
@@ -1046,7 +1046,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                            "\\$this"
                            clean-ask
                            (format nil "<~A>" focus-node)))
-               (result (sparql g (concatenate 'string prefix-str query-str))))
+               (result (sparql-via-algebra g (concatenate 'string prefix-str query-str))))
           (unless result
             (push (make-violation focus-node nil shape
                                   (if (stringp message) message (princ-to-string message)))

@@ -107,6 +107,7 @@
    #:named-graphs
    ;; SPARQL string parser
    #:sparql
+   #:sparql-via-algebra
    ;; Visualization
    #:visualize-graph
    #:describe-graph

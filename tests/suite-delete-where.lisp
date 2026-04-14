@@ -46,13 +46,13 @@ DELETE WHERE { ex:alice ex:knows ?o }")
     (add-triple g "http://ex.org/alice" "http://ex.org/knows" "http://ex.org/bob")
     (add-triple g "http://ex.org/bob" "http://ex.org/knows" "http://ex.org/alice")
     (add-triple g "http://ex.org/carol" "http://ex.org/age" "30")
-    (let ((results (sparql g "DESCRIBE <http://ex.org/alice>")))
+    (let ((results (sparql-via-algebra g "DESCRIBE <http://ex.org/alice>")))
       (is (= 2 (length results))))))
 
 (test sparql-describe-with-prefix
   "SPARQL DESCRIBE works with PREFIX"
   (let ((g (make-graph :name "desc-prefix")))
     (add-triple g "http://ex.org/alice" "http://ex.org/knows" "http://ex.org/bob")
-    (let ((results (sparql g "PREFIX ex: <http://ex.org/>
+    (let ((results (sparql-via-algebra g "PREFIX ex: <http://ex.org/>
 DESCRIBE ex:alice")))
       (is (= 1 (length results))))))

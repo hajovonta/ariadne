@@ -152,12 +152,12 @@
     ((null expr) t)
     ((alg-exists-p expr)
      (let* ((inner (alg-exists-pattern expr))
-            (result (eval-algebra inner graph dataset)))
-       ;; Substitute current bindings into the inner pattern results
-       ;; Per spec: exists(P) is true iff eval(D(G), substitute(P, μ)) is non-empty
-       ;; For now, we check if any inner result is compatible with mu
+            ;; Per spec: exists(P) is true iff eval(D(G), substitute(P, μ)) is non-empty
+            ;; Substitute μ into the pattern: resolve GRAPH variables, inject bindings
+            (subst-inner (substitute-algebra inner mu))
+            (result (eval-algebra subst-inner graph dataset)))
        (let ((found (some (lambda (mu2) (mappings-compatible-p mu mu2)) result)))
-       (if (alg-exists-negated expr) (not found) found))))
+         (if (alg-exists-negated expr) (not found) found))))
     (t (handler-case
            (let ((val (safe-eval (subst-vars expr mu))))
              (sparql-ebv val))
@@ -175,6 +175,46 @@
     ((rdf-literal-p val) (sparql-ebv (rdf-literal-value val)))
     (t t)))
 
+
+(defun substitute-algebra (node mu)
+  "Substitute bindings from μ into algebra node (Section 18.6 substitute)."
+  (etypecase node
+    (null nil)
+    (alg-bgp (make-bgp (mapcar (lambda (tp)
+                                 (list (subst-var-in-term (first tp) mu)
+                                       (subst-var-in-term (second tp) mu)
+                                       (subst-var-in-term (third tp) mu)))
+                               (alg-bgp-triples node))))
+    (alg-join (make-join (substitute-algebra (alg-join-left node) mu)
+                        (substitute-algebra (alg-join-right node) mu)))
+    (alg-left-join (make-left-join (substitute-algebra (alg-left-join-left node) mu)
+                                   (substitute-algebra (alg-left-join-right node) mu)
+                                   (alg-left-join-expr node)))
+    (alg-filter (make-alg-filter (alg-filter-expr node)
+                                 (substitute-algebra (alg-filter-pattern node) mu)))
+    (alg-union (make-alg-union (substitute-algebra (alg-union-left node) mu)
+                               (substitute-algebra (alg-union-right node) mu)))
+    (alg-minus (make-alg-minus (substitute-algebra (alg-minus-left node) mu)
+                               (substitute-algebra (alg-minus-right node) mu)))
+    (alg-graph (make-alg-graph (subst-var-in-term (alg-graph-name node) mu)
+                               (substitute-algebra (alg-graph-pattern node) mu)))
+    (alg-path (make-alg-path (subst-var-in-term (alg-path-subject node) mu)
+                             (alg-path-path-expr node)
+                             (subst-var-in-term (alg-path-object node) mu)))
+    (alg-extend (make-alg-extend (substitute-algebra (alg-extend-pattern node) mu)
+                                 (alg-extend-var node) (alg-extend-expr node)))
+    (alg-table node)
+    (alg-project (make-alg-project (alg-project-vars node)
+                                   (substitute-algebra (alg-project-pattern node) mu)))
+    (alg-exists (make-alg-exists (substitute-algebra (alg-exists-pattern node) mu)
+                                 (alg-exists-negated node)))))
+
+(defun subst-var-in-term (term mu)
+  "If term is a variable bound in μ, return its value; otherwise return term."
+  (if (variable-p term)
+      (let ((b (assoc term mu)))
+        (if (and b (cdr b)) (cdr b) term))
+      term))
 (defun eval-minus-node (omega1 omega2)
   "Minus(Ω1, Ω2) — Section 18.5 definition."
   (remove-if
@@ -688,8 +728,10 @@
           ;; GRAPH
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "GRAPH"))
            (flush-bgp)
-           (let ((name (second e))
-                 (inner (translate-group (cddr e))))
+           (let* ((name (second e))
+                  (body (third e))
+                  (inner (translate-group (if (and (consp body) (consp (first body)))
+                                             body (list body)))))
              (setf g (make-join g (make-alg-graph name inner)))))
           ;; NOT-EXISTS (as pattern, not in filter)
           ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "NOT-EXISTS"))
@@ -803,10 +845,11 @@
 ;;; New entry point: sparql-via-algebra
 ;;; ============================================================
 
-(defun sparql-via-algebra (graph query-string)
-  "Execute a SPARQL query using the algebra evaluator."
+(defun sparql-via-algebra (graph query-string &optional named-graphs)
+  "Execute a SPARQL query using the algebra evaluator.
+   NAMED-GRAPHS is an alist of (name . graph) pairs."
   (let* ((parsed (parse-sparql query-string))
-         (ds (make-dataset graph)))
+         (ds (make-dataset graph named-graphs)))
     (multiple-value-bind (algebra form vars) (translate-query parsed)
       (let ((results (eval-algebra algebra graph ds)))
         (case form

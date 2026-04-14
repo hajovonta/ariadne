@@ -13,7 +13,7 @@
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
     (add-triple g "bob" "knows" "charlie")
-    (let ((result (sparql g "CONSTRUCT { ?a <friendOf> ?b } WHERE { ?a <knows> ?b }")))
+    (let ((result (sparql-via-algebra g "CONSTRUCT { ?a <friendOf> ?b } WHERE { ?a <knows> ?b }")))
       (is (= 2 (length result)))
       (is (equal "friendOf" (second (first result)))))))
 
@@ -27,7 +27,7 @@
     (add-triple g "alice" "name" "Alice")
     (add-triple g "alice" "age" 30)
     (add-triple g "bob" "name" "Bob")
-    (let ((result (sparql g "SELECT ?name ?age WHERE { ?p <name> ?name . OPTIONAL { ?p <age> ?age } }")))
+    (let ((result (sparql-via-algebra g "SELECT ?name ?age WHERE { ?p <name> ?name . OPTIONAL { ?p <age> ?age } }")))
       (is (= 2 (length result))))))
 
 ;; =============================================================================
@@ -40,7 +40,7 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "bob" "knows" "charlie")
-    (let ((result (sparql g "SELECT ?person (COUNT ?friend) WHERE { ?person <knows> ?friend } GROUP BY ?person")))
+    (let ((result (sparql-via-algebra g "SELECT ?person (COUNT ?friend) WHERE { ?person <knows> ?friend } GROUP BY ?person")))
       (is (= 2 (length result))))))
 
 (test sparql-parse-having
@@ -49,7 +49,7 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "bob" "knows" "charlie")
-    (let ((result (sparql g "SELECT ?person (COUNT(?friend) AS ?c) WHERE { ?person <knows> ?friend } GROUP BY ?person HAVING (COUNT(?friend) > 1)")))
+    (let ((result (sparql-via-algebra g "SELECT ?person (COUNT(?friend) AS ?c) WHERE { ?person <knows> ?friend } GROUP BY ?person HAVING (COUNT(?friend) > 1)")))
       ;; alice has 2 friends, bob has 1 — only alice passes HAVING
       (is (>= (length result) 1)))))
 
@@ -62,7 +62,7 @@
   (let ((g (make-graph)))
     (add-triple g "alice" "knows" "bob")
     (add-triple g "charlie" "likes" "bob")
-    (let ((result (sparql g "SELECT ?who WHERE { { ?who <knows> <bob> } UNION { ?who <likes> <bob> } }")))
+    (let ((result (sparql-via-algebra g "SELECT ?who WHERE { { ?who <knows> <bob> } UNION { ?who <likes> <bob> } }")))
       (is (= 2 (length result))))))
 
 ;; =============================================================================
@@ -75,5 +75,5 @@
     (add-triple g "a" "p" "1")
     (add-triple g "b" "p" "2")
     (add-triple g "c" "p" "3")
-    (let ((result (sparql g "SELECT ?s WHERE { ?s <p> ?o } LIMIT 1 OFFSET 1")))
+    (let ((result (sparql-via-algebra g "SELECT ?s WHERE { ?s <p> ?o } LIMIT 1 OFFSET 1")))
       (is (= 1 (length result))))))

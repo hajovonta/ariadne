@@ -32,7 +32,7 @@
     ;; Start remote endpoint
     (start-web-server remote :port 19876)
     (unwind-protect
-         (let ((results (sparql local
+         (let ((results (sparql-via-algebra local
                           "SELECT ?name ?age WHERE { ?s <http://ex.org/name> ?name . SERVICE <http://localhost:19876/sparql> { ?s <http://ex.org/age> ?age } }")))
            (is (= 2 (length results)))
            ;; Each result should have name and age
@@ -49,7 +49,7 @@
     (add-triple remote "http://ex.org/carol" "http://ex.org/age" "40")
     (start-web-server remote :port 19877)
     (unwind-protect
-         (let ((results (sparql local
+         (let ((results (sparql-via-algebra local
                           "SELECT ?name ?age WHERE { ?s <http://ex.org/name> ?name . SERVICE <http://localhost:19877/sparql> { ?s <http://ex.org/age> ?age } }")))
            (is (= 0 (length results))))
       (stop-web-server))))
