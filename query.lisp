@@ -146,6 +146,7 @@
            (setf graph-clause (rest clause)))
           ((sym-name-equal tag "PROJECT") (push (rest clause) projections))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
+          ((sym-name-equal tag "GROUP-BY-MULTI") (setf group-var (second clause)))
           ((sym-name-equal tag "GROUP-BY-EXPR")
            (setf group-var (second clause))
            (push (list (second clause) (third clause)) group-exprs))
@@ -221,7 +222,8 @@
         ;; Apply GROUP BY expressions (compute and bind alias)
         (dolist (ge group-exprs)
           (setf envs (mapcar (lambda (env)
-                               (let ((val (handler-case (safe-eval (second ge) env)
+                               (let ((val (handler-case
+                                              (safe-eval (subst-vars (second ge) env))
                                             (error () nil))))
                                  (acons (first ge) val env)))
                              envs)))
@@ -669,10 +671,13 @@
 ;;; ==========================================================================
 
 (defun execute-group-by (envs group-var vars &optional having-clause projections)
-  "Group environments by GROUP-VAR and compute aggregations."
-  (let ((groups (make-hash-table :test 'equal)))
+  "Group environments by GROUP-VAR (single var or list of vars) and compute aggregations."
+  (let ((groups (make-hash-table :test 'equal))
+        (multi-p (listp group-var)))
     (dolist (env envs)
-      (let ((key (lookup-binding group-var env)))
+      (let ((key (if multi-p
+                     (mapcar (lambda (v) (lit-val (lookup-binding v env))) group-var)
+                     (lit-val (lookup-binding group-var env)))))
         (push env (gethash key groups))))
     (let ((results nil))
       (maphash
@@ -680,8 +685,11 @@
          ;; Check HAVING before including this group
          (when (or (null having-clause)
                    (eval-having having-clause group-envs vars))
-           (let ((row (list key)))
-             (dolist (v (rest vars))
+           (let ((row (if multi-p (copy-list key) (list key))))
+             (let ((remaining-vars (if multi-p
+                                       (nthcdr (length group-var) vars)
+                                       (rest vars))))
+             (dolist (v remaining-vars)
                (let ((proj (find v projections :key #'first :test #'equal)))
                  (if proj
                      ;; Projected aggregate
@@ -700,7 +708,7 @@
                                                group-envs))
                                (separator (third v)))
                            (push (compute-aggregate (first v) values separator) row))
-                         (push (lookup-binding v (first group-envs)) row)))))
+                         (push (lookup-binding v (first group-envs)) row))))))
              (push (nreverse row) results))))
        groups)
       results)))
