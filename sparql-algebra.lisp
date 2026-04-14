@@ -257,23 +257,46 @@
 
 (defun eval-path-node (node graph)
   "Property path — delegates to existing path evaluator.
-   Handles unbound start by iterating all graph nodes."
+   Handles unbound start/target by iterating graph nodes."
   (let* ((s (alg-path-subject node))
          (o (alg-path-object node))
          (pe (alg-path-path-expr node))
-         (op (first pe)))
-    ;; If start is unbound, try all nodes as starting points
-    (let ((starts (if (variable-p s) (all-nodes graph) (list s)))
-          (results nil))
-      (dolist (start starts)
-        (let ((pairs (execute-path graph start op pe
-                                   (if (variable-p o) nil o))))
-          (dolist (pair pairs)
-            (let ((mu nil))
-              (when (variable-p s) (push (cons s (car pair)) mu))
-              (when (variable-p o) (push (cons o (cdr pair)) mu))
-              (pushnew mu results :test #'equal)))))
-      results)))
+         (op (first pe))
+         (bound-s (not (variable-p s)))
+         (bound-o (and o (not (variable-p o)))))
+    (cond
+      ;; Both bound or start bound: call directly
+      (bound-s
+       (let ((pairs (execute-path graph s op pe (if bound-o o nil)))
+             (results nil))
+         (dolist (pair pairs results)
+           (let ((mu nil))
+             (when (variable-p s) (push (cons s (car pair)) mu))
+             (when (and o (variable-p o)) (push (cons o (cdr pair)) mu))
+             (pushnew mu results :test #'equal)))))
+      ;; Unbound start, bound target: try target + all nodes
+      (bound-o
+       (let ((starts (cons o (all-nodes graph)))
+             (results nil))
+         (dolist (start (remove-duplicates starts :test #'equal))
+           (let ((pairs (execute-path graph start op pe o)))
+             (dolist (pair pairs)
+               (let ((mu nil))
+                 (when (variable-p s) (push (cons s (car pair)) mu))
+                 (when (variable-p o) (push (cons o (cdr pair)) mu))
+                 (pushnew mu results :test #'equal)))))
+         results))
+      ;; Both unbound: all nodes as starts
+      (t
+       (let ((results nil))
+         (dolist (start (all-nodes graph))
+           (let ((pairs (execute-path graph start op pe nil)))
+             (dolist (pair pairs)
+               (let ((mu nil))
+                 (when (variable-p s) (push (cons s (car pair)) mu))
+                 (when (variable-p o) (push (cons o (cdr pair)) mu))
+                 (pushnew mu results :test #'equal)))))
+         results)))))
 
 (defun eval-group-node (node graph dataset)
   "Group(exprlist, Ω) → hash {key → list-of-solutions}.
