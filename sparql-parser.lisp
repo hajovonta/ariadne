@@ -77,6 +77,19 @@
         (when (member p seen)
           (error "Duplicate alias ~A in SELECT" p))
         (push p seen)))
+    ;; Rule: SELECT alias must not conflict with inner subquery projection
+    (let ((where (find-if (lambda (c) (and (consp c) (symbolp (car c))
+                                           (string-equal (symbol-name (car c)) "WHERE")))
+                          body)))
+      (when where
+        (dolist (e (rest where))
+          (when (and (consp e) (symbolp (car e))
+                     (string-equal (symbol-name (car e)) "SUBQUERY"))
+            (let ((sub-vars (second (second e))))
+              (when (listp sub-vars)
+                (dolist (p projections)
+                  (when (member p sub-vars)
+                    (error "SELECT alias ~A conflicts with variable from inner subquery" p)))))))))
     ;; Rule: SELECT variables must be symbols (not strings or lists)
     (when (listp vars)
       (dolist (v vars)
@@ -186,7 +199,14 @@
         ;; OPTIONAL — variables propagate
         ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "OPTIONAL"))
          (dolist (v (collect-group-vars (rest e)))
-           (pushnew v vars)))))))
+           (pushnew v vars)))
+        ;; SUBQUERY — projected variables propagate
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "SUBQUERY"))
+         (let* ((sub (second e))
+                (sub-vars (when (consp sub) (second sub))))
+           (when (listp sub-vars)
+             (dolist (v sub-vars)
+               (when (symbolp v) (pushnew v vars))))))))))
 
 ;;; ==========================================================================
 ;;; Tokenizer
@@ -882,6 +902,12 @@
              (when (and toks (stringp (car toks)) (string= (car toks) ")"))
                (pop toks))
              (let ((result (cons (intern fname) (nreverse args))))
+               ;; Validate aggregate arity: built-in aggregates take exactly 1 arg
+               (when (member fname '("SUM" "AVG" "MIN" "MAX" "COUNT" "SAMPLE" "GROUP_CONCAT")
+                             :test #'string=)
+                 (let ((nargs (length (cdr result))))
+                   (when (> nargs 1)
+                     (error "Aggregate ~A takes 1 argument, got ~A" fname nargs))))
                (when distinct-agg
                  (setf result (list (intern (concatenate 'string fname "-DISTINCT"))
                                     (second result))))
