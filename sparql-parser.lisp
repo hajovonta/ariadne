@@ -1386,13 +1386,41 @@
       (progn
         (when (and toks (string= (car toks) "{"))
           (pop toks))
-        (let ((template nil))
+        (let ((template nil)
+              (construct-anon 0))
           (loop while (and toks (not (and (stringp (car toks)) (string= (car toks) "}")))) do
-            (let ((s (sparql-resolve-term (pop toks) prefixes))
-                  (p (sparql-resolve-term (pop toks) prefixes))
-                  (o (sparql-resolve-term (pop toks) prefixes)))
-              (push (list s p o) template))
-            (when (and toks (string= (car toks) "."))
+            (let ((s-tok (car toks)))
+              (if (and (stringp s-tok) (string= s-tok "("))
+                  ;; RDF collection in subject position
+                  (progn
+                    (pop toks)
+                    (let ((items nil))
+                      (loop while (and toks (not (and (stringp (car toks)) (string= (car toks) ")")))) do
+                        (push (sparql-resolve-term (pop toks) prefixes) items))
+                      (when toks (pop toks)) ; consume )
+                      (setf items (nreverse items))
+                      ;; Build list structure
+                      (let ((head nil) (prev nil))
+                        (dolist (item items)
+                          (let ((node (intern (format nil "?_COLL~A" (incf construct-anon)))))
+                            (unless head (setf head node))
+                            (when prev
+                              (push (list prev "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest" node) template))
+                            (push (list node "http://www.w3.org/1999/02/22-rdf-syntax-ns#first" item) template)
+                            (setf prev node)))
+                        (when prev
+                          (push (list prev "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"
+                                      "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil") template))
+                        ;; Read predicate and object
+                        (let ((p (sparql-resolve-term (pop toks) prefixes))
+                              (o (sparql-resolve-term (pop toks) prefixes)))
+                          (push (list head p o) template)))))
+                  ;; Regular triple
+                  (let ((s (sparql-resolve-term (pop toks) prefixes))
+                        (p (sparql-resolve-term (pop toks) prefixes))
+                        (o (sparql-resolve-term (pop toks) prefixes)))
+                    (push (list s p o) template))))
+            (when (and toks (stringp (car toks)) (string= (car toks) "."))
               (pop toks)))
           (when (and toks (string= (car toks) "}"))
             (pop toks))
