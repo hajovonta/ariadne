@@ -22,8 +22,15 @@
 (defstruct (alg-distinct (:constructor make-alg-distinct (pattern))) pattern)
 (defstruct (alg-slice (:constructor make-alg-slice (pattern start length))) pattern start length)
 (defstruct (alg-order (:constructor make-alg-order (conditions pattern))) conditions pattern)
+;; Group(exprlist, Ω) → {key→Ω_k} — Section 18.5.1
 (defstruct (alg-group (:constructor make-alg-group (keys pattern))) keys pattern)
-(defstruct (alg-agg-join (:constructor make-agg-join (aggregations group-node))) aggregations group-node)
+;; Aggregation(exprlist, func, scalarvals, {key→Ω}) → {key→value} — Section 18.5.1
+(defstruct (alg-aggregation (:constructor make-alg-aggregation
+                                (exprlist func scalarvals distinct-p group-node)))
+  exprlist func scalarvals distinct-p group-node)
+;; AggregateJoin(A1,...,An) — Section 18.5.1
+(defstruct (alg-agg-join (:constructor make-agg-join (aggregations group-node)))
+  aggregations group-node)
 (defstruct (alg-exists (:constructor make-alg-exists (pattern negated))) pattern negated)
 (defstruct (alg-subquery (:constructor make-alg-subquery (query))) query)
 
@@ -71,7 +78,8 @@
     (alg-order    (eval-order-node
                    (eval-algebra (alg-order-pattern node) graph dataset)
                    (alg-order-conditions node)))
-    (alg-group    (eval-group-node node graph dataset))
+    (alg-group    (error "alg-group should not be evaluated directly; use via alg-agg-join"))
+    (alg-aggregation (error "alg-aggregation should not be evaluated directly; use via alg-agg-join"))
     (alg-agg-join (eval-agg-join-node node graph dataset))
     (alg-subquery (eval-algebra (alg-subquery-query node) graph dataset))))
 
@@ -261,25 +269,127 @@
             pairs)))
 
 (defun eval-group-node (node graph dataset)
-  "Group + Aggregation — placeholder, will expand."
+  "Group(exprlist, Ω) → hash {key → list-of-solutions}.
+   Section 18.5.1: Group evaluates exprlist against each μ to produce keys."
   (let* ((omega (eval-algebra (alg-group-pattern node) graph dataset))
          (keys (alg-group-keys node))
          (groups (make-hash-table :test 'equal)))
     (dolist (mu omega)
       (let ((key (mapcar (lambda (k)
                            (if (variable-p k)
-                               (lit-val (lookup-binding k mu))
+                               (lookup-binding k mu)
+                               ;; Expression or constant (e.g. implicit group key = 1)
                                (handler-case (safe-eval (subst-vars k mu))
-                                 (error () nil))))
+                                 (error () :error))))
                          keys)))
         (push mu (gethash key groups))))
-    ;; Return grouped results — aggregation applied by caller
     groups))
 
+(defun eval-aggregation (agg-node graph dataset)
+  "Aggregation(exprlist, func, scalarvals, {key→Ω}) → hash {key → scalar}.
+   Section 18.5.1."
+  (let* ((grouped (eval-group-node (alg-aggregation-group-node agg-node) graph dataset))
+         (exprlist (alg-aggregation-exprlist agg-node))
+         (func (alg-aggregation-func agg-node))
+         (scalarvals (alg-aggregation-scalarvals agg-node))
+         (distinct-p (alg-aggregation-distinct-p agg-node))
+         (result (make-hash-table :test 'equal)))
+    (maphash
+     (lambda (key omega-k)
+       ;; M(Ω) = { ListEval(exprlist, μ) | μ in Ω }
+       (let ((m (mapcar (lambda (mu)
+                          (mapcar (lambda (e)
+                                    (if (and (symbolp e) (sym-name-equal e "*"))
+                                        mu  ; COUNT(*) special case
+                                        (handler-case
+                                            (let ((v (if (variable-p e)
+                                                         (lookup-binding e mu)
+                                                         (safe-eval (subst-vars e mu)))))
+                                              v)
+                                          (error () :error))))
+                                  exprlist))
+                        omega-k)))
+         ;; Apply DISTINCT if specified
+         (when distinct-p
+           (setf m (remove-duplicates m :test #'equal)))
+         ;; F(Ω) = func(M(Ω), scalarvals)
+         (setf (gethash key result)
+               (apply-set-function func m scalarvals (length omega-k)))))
+     grouped)
+    result))
+
+(defun apply-set-function (func m scalarvals group-size)
+  "Apply a SPARQL set function. Section 18.5.1.1-8.
+   M is a list of value-lists (from ListEval). Flatten first."
+  (let* ((flat (loop for row in m append row))
+         ;; Remove errors
+         (clean (remove :error flat))
+         (fname (if (symbolp func) (symbol-name func) func)))
+    (cond
+      ;; COUNT — Section 18.5.1.2
+      ((string-equal fname "COUNT")
+       ;; Special case: COUNT(*) uses group size
+       (if (and (first (first m)) (not (atom (first (first m)))))
+           group-size  ; COUNT(*) — m contains full solution mappings
+           (length clean)))
+      ;; SUM — Section 18.5.1.3
+      ((string-equal fname "SUM")
+       (let ((nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) clean))))
+         (if nums (reduce #'+ nums) 0)))
+      ;; AVG — Section 18.5.1.4
+      ((string-equal fname "AVG")
+       (let ((nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) clean))))
+         (if nums (/ (reduce #'+ nums) (length nums)) 0)))
+      ;; MIN — Section 18.5.1.5
+      ((string-equal fname "MIN")
+       (let ((nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) clean))))
+         (when nums (reduce #'min nums))))
+      ;; MAX — Section 18.5.1.6
+      ((string-equal fname "MAX")
+       (let ((nums (remove nil (mapcar (lambda (v) (let ((n (lit-val v))) (when (numberp n) n))) clean))))
+         (when nums (reduce #'max nums))))
+      ;; GROUP_CONCAT — Section 18.5.1.7
+      ((string-equal fname "GROUP_CONCAT")
+       (let ((sep (or (cdr (assoc "separator" scalarvals :test #'string-equal)) " "))
+             (strs (mapcar (lambda (v) (princ-to-string (lit-val v))) clean)))
+         (format nil "~{~A~}" (loop for (s . rest) on strs collect s when rest collect sep))))
+      ;; SAMPLE — Section 18.5.1.8
+      ((string-equal fname "SAMPLE")
+       (first clean))
+      (t (error "Unknown aggregate: ~A" func)))))
+
 (defun eval-agg-join-node (node graph dataset)
-  "AggregateJoin — placeholder."
-  (declare (ignore node graph dataset))
-  (list nil))
+  "AggregateJoin(A1,...,An) — Section 18.5.1.
+   Combines multiple aggregation results into solution mappings."
+  (let* ((aggs (alg-agg-join-aggregations node))
+         ;; Evaluate each aggregation → hash {key → value}
+         (agg-results (mapcar (lambda (a)
+                                (cons (car a) (eval-aggregation (cdr a) graph dataset)))
+                              aggs))
+         ;; Collect all keys
+         (all-keys (make-hash-table :test 'equal))
+         (results nil))
+    ;; Gather keys from all aggregations
+    (dolist (ar agg-results)
+      (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k all-keys) t))
+               (cdr ar)))
+    ;; For each key, build a solution mapping
+    (maphash
+     (lambda (key _)
+       (declare (ignore _))
+       (let ((mu nil))
+         ;; Add group key bindings
+         (let ((group-keys (alg-group-keys (alg-agg-join-group-node node))))
+           (loop for k in group-keys for v in key do
+             (when (variable-p k)
+               (push (cons k v) mu))))
+         ;; Add aggregate bindings
+         (dolist (ar agg-results)
+           (let ((val (gethash key (cdr ar))))
+             (push (cons (car ar) val) mu)))
+         (push mu results)))
+     all-keys)
+    results))
 
 ;;; ============================================================
 ;;; Dataset abstraction
@@ -365,16 +475,62 @@
       ;; Step 2: GROUP BY expressions — add Extend nodes
       (dolist (ge (nreverse group-exprs))
         (setf pattern (make-alg-extend pattern (first ge) (second ge))))
-      ;; Step 3: Aggregation projections without GROUP BY
+      ;; Step 3: Implicit grouping if aggregates used without GROUP BY
       (when (and (null group-by) projections
                  (some (lambda (p) (aggregate-expr-p (second p))) projections))
-        ;; Implicit grouping — single group
         (setf group-by (list 1)))
-      ;; Step 4: GROUP BY
+      ;; Step 4: GROUP BY + Aggregation + AggregateJoin (Section 18.2.4.1)
       (when group-by
-        (setf pattern (make-alg-group
-                       (if (listp group-by) group-by (list group-by))
-                       pattern)))
+        (let* ((group-keys (if (listp group-by) group-by (list group-by)))
+               (group-node (make-alg-group group-keys pattern))
+               (agg-pairs nil)
+               (agg-counter 0)
+               (extend-pairs nil))
+          ;; For each aggregate in projections, create an Aggregation node
+          (dolist (proj projections)
+            (let ((alias (first proj))
+                  (expr (second proj)))
+              (when (aggregate-expr-p expr)
+                (incf agg-counter)
+                (let* ((fn-name (symbol-name (car expr)))
+                       (distinct-p (search "DISTINCT" fn-name))
+                       (base-fn (if distinct-p
+                                    (subseq fn-name 0 (search "-DISTINCT" fn-name))
+                                    fn-name))
+                       (agg-var (cadr expr))
+                       (sep (caddr expr))
+                       (scalarvals (when sep (list (cons "separator"
+                                                        (if (rdf-literal-p sep)
+                                                            (rdf-literal-value sep)
+                                                            sep)))))
+                       (exprlist (if (and (symbolp agg-var) (sym-name-equal agg-var "*"))
+                                     (list '*)
+                                     (list agg-var)))
+                       (agg (make-alg-aggregation exprlist base-fn scalarvals distinct-p group-node)))
+                  (push (cons alias agg) agg-pairs)))))
+          ;; Non-aggregate projections that reference group vars → Extend later
+          (dolist (proj projections)
+            (unless (aggregate-expr-p (second proj))
+              (push proj extend-pairs)))
+          ;; Also scan HAVING for aggregates and create Aggregation nodes
+          (when having
+            (let ((having-list (if (and (consp having) (consp (first having))) having (list having)))
+                  (new-having nil))
+              (dolist (h having-list)
+                (multiple-value-bind (new-h new-pairs new-c)
+                    (replace-aggregates-with-vars h group-node agg-pairs agg-counter)
+                  (setf agg-pairs new-pairs agg-counter new-c)
+                  (push new-h new-having)))
+              (setf having (nreverse new-having))))
+          (if agg-pairs
+              ;; Build AggregateJoin
+              (progn
+                (setf pattern (make-agg-join (nreverse agg-pairs) group-node))
+                ;; Apply Extend for non-aggregate projections
+                (dolist (ep (nreverse extend-pairs))
+                  (setf pattern (make-alg-extend pattern (first ep) (second ep)))))
+              ;; GROUP BY without aggregates — just group and take one per group
+              (setf pattern (make-agg-join nil group-node)))))
       ;; Step 5: HAVING
       (when having
         (dolist (h (if (and (consp having) (consp (first having))) having (list having)))
@@ -383,10 +539,11 @@
       (when values-clause
         (let ((table (make-alg-table (first values-clause) (second values-clause))))
           (setf pattern (make-join pattern table))))
-      ;; Step 7: SELECT expressions (Extend for computed columns)
-      (dolist (proj (nreverse projections))
-        (unless (aggregate-expr-p (second proj))
-          (setf pattern (make-alg-extend pattern (first proj) (second proj)))))
+      ;; Step 7: SELECT expressions (Extend for non-grouped computed columns)
+      (when (null group-by)
+        (dolist (proj (nreverse projections))
+          (unless (aggregate-expr-p (second proj))
+            (setf pattern (make-alg-extend pattern (first proj) (second proj))))))
       ;; Step 8: Solution modifiers
       (when order-by
         (setf pattern (make-alg-order (if (listp order-by) order-by (list order-by)) pattern)))
@@ -548,6 +705,44 @@
                  "MAX-DISTINCT" "GROUP_CONCAT-DISTINCT" "SAMPLE-DISTINCT"
                  "GROUP-CONCAT" "GROUP-CONCAT-DISTINCT")
                :test #'string-equal)))
+
+(defun replace-aggregates-with-vars (expr group-node agg-pairs counter)
+  "Walk expr, replace aggregate calls with temp variables, push Aggregation nodes.
+   Returns (values new-expr new-agg-pairs new-counter)."
+  (cond
+    ((atom expr) (values expr agg-pairs counter))
+    ((aggregate-expr-p expr)
+     (incf counter)
+     (let* ((temp-var (intern (format nil "?_HAVING_AGG~A" counter)))
+            (fn-name (symbol-name (car expr)))
+            (distinct-p (search "DISTINCT" fn-name))
+            (base-fn (if distinct-p
+                         (subseq fn-name 0 (search "-DISTINCT" fn-name))
+                         fn-name))
+            (agg-var (cadr expr))
+            (sep (caddr expr))
+            (scalarvals (when sep (list (cons "separator"
+                                              (if (rdf-literal-p sep) (rdf-literal-value sep) sep)))))
+            (exprlist (if (and (symbolp agg-var) (sym-name-equal agg-var "*"))
+                          (list '*) (list agg-var)))
+            (agg (make-alg-aggregation exprlist base-fn scalarvals distinct-p group-node)))
+       (push (cons temp-var agg) agg-pairs)
+       (values temp-var agg-pairs counter)))
+    (t (multiple-value-bind (new-car ap1 c1)
+           (replace-aggregates-with-vars (car expr) group-node agg-pairs counter)
+         (multiple-value-bind (new-cdr ap2 c2)
+             (replace-aggregates-with-vars (cdr expr) group-node ap1 c1)
+           (values (cons new-car new-cdr) ap2 c2))))))
+
+(defun replace-agg-in-expr (expr group-node agg-pairs counter)
+  "Convenience wrapper — returns only the new expression, mutates agg-pairs via setf."
+  (multiple-value-bind (new-expr new-pairs new-counter)
+      (replace-aggregates-with-vars expr group-node agg-pairs counter)
+    ;; We need to propagate the side effects back. Use a trick:
+    ;; Return the new expr. Caller must capture new pairs/counter.
+    ;; Actually, since we can't mutate the caller's bindings, let's just
+    ;; return all three and have the caller destructure.
+    (values new-expr new-pairs new-counter)))
 
 ;;; ============================================================
 ;;; New entry point: sparql-via-algebra
