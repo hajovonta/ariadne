@@ -155,30 +155,155 @@
 ;;; Tokenizer
 ;;; ==========================================================================
 
+(defun pn-chars-base-p (c)
+  "PN_CHARS_BASE per SPARQL grammar [164]."
+  (let ((code (char-code c)))
+    (or (<= (char-code #\A) code (char-code #\Z))
+        (<= (char-code #\a) code (char-code #\z))
+        (<= #x00C0 code #x00D6) (<= #x00D8 code #x00F6)
+        (<= #x00F8 code #x02FF) (<= #x0370 code #x037D)
+        (<= #x037F code #x1FFF) (<= #x200C code #x200D)
+        (<= #x2070 code #x218F) (<= #x2C00 code #x2FEF)
+        (<= #x3001 code #xD7FF) (<= #xF900 code #xFDCF)
+        (<= #xFDF0 code #xFFFD) (<= #x10000 code #xEFFFF))))
+
+(defun pn-chars-u-p (c)
+  "PN_CHARS_U per SPARQL grammar [165]."
+  (or (pn-chars-base-p c) (char= c #\_)))
+
+(defun pn-chars-p (c)
+  "PN_CHARS per SPARQL grammar [167]."
+  (or (pn-chars-u-p c) (char= c #\-)
+      (digit-char-p c)
+      (let ((code (char-code c)))
+        (or (= code #x00B7)
+            (<= #x0300 code #x036F)
+            (<= #x203F code #x2040)))))
+
+(defun varname-char-p (c)
+  "VARNAME character per SPARQL grammar [166]."
+  (or (pn-chars-u-p c) (digit-char-p c)
+      (let ((code (char-code c)))
+        (or (= code #x00B7)
+            (<= #x0300 code #x036F)
+            (<= #x203F code #x2040)))))
+
+(defun validate-string-escapes (s)
+  "Validate unicode escapes in string token. Reject surrogate codepoints."
+  (let ((i 0) (len (length s)))
+    (loop while (< i len) do
+      (if (and (char= #\\ (char s i)) (< (1+ i) len))
+          (let ((nc (char s (1+ i))))
+            (cond
+              ((char= nc #\u)
+               (when (< (+ i 6) len)
+                 (let ((cp (parse-integer s :start (+ i 2) :end (+ i 6) :radix 16 :junk-allowed t)))
+                   (when (and cp (<= #xD800 cp #xDFFF))
+                     (error "Invalid surrogate codepoint in string: \\u~4,'0X" cp))))
+               (incf i 6))
+              ((char= nc #\U)
+               (when (< (+ i 10) len)
+                 (let ((cp (parse-integer s :start (+ i 2) :end (+ i 10) :radix 16 :junk-allowed t)))
+                   (when (and cp (<= #xD800 cp #xDFFF))
+                     (error "Invalid surrogate codepoint in string: \\U~8,'0X" cp))))
+               (incf i 10))
+              (t (incf i 2))))
+          (incf i)))))
+
 (defun sparql-tokenize (str)
-  "Tokenize a SPARQL query string."
+  "Tokenize a SPARQL query string per SPARQL 1.1 grammar."
   (let ((tokens nil)
         (pos 0)
         (len (length str)))
-    (flet ((skip-ws ()
-             (loop
-               (loop while (and (< pos len)
-                                (member (char str pos) '(#\Space #\Tab #\Newline #\Return)))
-                     do (incf pos))
-               (if (and (< pos len) (char= (char str pos) #\#))
-                   (loop while (and (< pos len) (char/= (char str pos) #\Newline))
-                         do (incf pos))
-                   (return)))))
+    (labels
+        ((skip-ws ()
+           (loop
+             (loop while (and (< pos len)
+                              (member (char str pos) '(#\Space #\Tab #\Newline #\Return)))
+                   do (incf pos))
+             (if (and (< pos len) (char= (char str pos) #\#))
+                 (loop while (and (< pos len) (char/= (char str pos) #\Newline))
+                       do (incf pos))
+                 (return))))
+         (read-string (quote-char)
+           ;; Handle single and triple-quoted strings
+           (let ((start pos) (triple nil))
+             ;; Check for triple quote
+             (when (and (<= (+ pos 3) len)
+                        (char= quote-char (char str (1+ pos)))
+                        (char= quote-char (char str (+ pos 2))))
+               (setf triple t))
+             (if triple
+                 (progn
+                   (incf pos 3) ; skip opening """/' ''
+                   (loop while (< pos len) do
+                     (cond
+                       ((and (<= (+ pos 3) len)
+                             (char= quote-char (char str pos))
+                             (char= quote-char (char str (1+ pos)))
+                             (char= quote-char (char str (+ pos 2))))
+                        (incf pos 3) (return))
+                       ((char= #\\ (char str pos)) (incf pos 2))
+                       (t (incf pos)))))
+                 (progn
+                   (incf pos) ; skip opening quote
+                   (loop while (and (< pos len) (char/= quote-char (char str pos)))
+                         do (when (char= #\\ (char str pos)) (incf pos))
+                            (incf pos))
+                   (when (< pos len) (incf pos)))) ; skip closing quote
+             ;; Consume ^^type or @lang suffix
+             (cond
+               ((and (<= (+ pos 2) len) (char= #\^ (char str pos)) (char= #\^ (char str (1+ pos))))
+                (incf pos 2)
+                (if (and (< pos len) (char= #\< (char str pos)))
+                    (let ((end (position #\> str :start pos)))
+                      (when end (setf pos (1+ end))))
+                    (loop while (and (< pos len)
+                                     (not (member (char str pos)
+                                                  '(#\Space #\Tab #\Newline #\Return
+                                                    #\. #\) #\} #\; #\,))))
+                          do (incf pos))))
+               ((and (< pos len) (char= #\@ (char str pos)))
+                (loop while (and (< pos len)
+                                 (not (member (char str pos)
+                                              '(#\Space #\Tab #\Newline #\Return
+                                                #\. #\) #\} #\; #\,))))
+                      do (incf pos))))
+             (let ((tok (subseq str start pos)))
+               (validate-string-escapes tok)
+               (push tok tokens))))
+         (pn-local-esc-p (c)
+           ;; PN_LOCAL_ESC [173]: characters that can follow '\' in PN_LOCAL
+           (member c '(#\_ #\~ #\. #\- #\! #\$ #\& #\' #\( #\) #\* #\+ #\, #\; #\= #\/ #\? #\# #\@ #\%)))
+         (read-pn-local ()
+           ;; PN_LOCAL: (PN_CHARS_U|':'|[0-9]|PLX) ((PN_CHARS|'.'|':'|PLX)* (PN_CHARS|':'|PLX))?
+           (when (and (< pos len)
+                      (let ((c (char str pos)))
+                        (or (pn-chars-u-p c) (char= c #\:) (digit-char-p c)
+                            (and (char= c #\\) (< (1+ pos) len) (pn-local-esc-p (char str (1+ pos))))
+                            (char= c #\%))))
+             (when (char= #\\ (char str pos)) (incf pos)) ; PLX escape
+             (incf pos)
+             (loop while (and (< pos len)
+                              (let ((c (char str pos)))
+                                (or (pn-chars-p c) (char= c #\.) (char= c #\:)
+                                    (and (char= c #\\) (< (1+ pos) len) (pn-local-esc-p (char str (1+ pos))))
+                                    (char= c #\%))))
+                   do (when (char= #\\ (char str pos)) (incf pos))
+                      (incf pos))
+             ;; Must not end with '.'
+             (loop while (and (> pos 0) (char= #\. (char str (1- pos))))
+                   do (decf pos)))))
       (loop while (< pos len) do
         (skip-ws)
         (when (< pos len)
           (let ((ch (char str pos)))
             (cond
               ;; Punctuation
-              ((member ch '(#\{ #\} #\( #\) #\. #\+ #\* #\^ #\;))
+              ((member ch '(#\{ #\} #\( #\) #\[ #\] #\. #\+ #\* #\^ #\;))
                (push (string ch) tokens)
                (incf pos))
-              ;; | or || 
+              ;; | or ||
               ((char= ch #\|)
                (if (and (< (1+ pos) len) (char= #\| (char str (1+ pos))))
                    (progn (push "||" tokens) (incf pos 2))
@@ -187,55 +312,41 @@
               ((char= ch #\/)
                (push "/" tokens)
                (incf pos))
-              ;; Variable ?name or ? path operator
-              ((char= ch #\?)
-               (if (and (< (1+ pos) len) (alphanumericp (char str (1+ pos))))
+              ;; Variable ?name or $name or ? path operator
+              ((or (char= ch #\?) (char= ch #\$))
+               (if (and (< (1+ pos) len) (varname-char-p (char str (1+ pos))))
                    (let ((start pos))
                      (incf pos)
-                     (loop while (and (< pos len) (alphanumericp (char str pos)))
+                     (loop while (and (< pos len) (varname-char-p (char str pos)))
                            do (incf pos))
                      (push (intern (string-upcase (subseq str start pos))) tokens))
-                   (progn (push "?" tokens) (incf pos))))
-              ;; URI <...>
-              ;; URI <...> or comparison operator <
+                   (progn (push (string ch) tokens) (incf pos))))
+              ;; URI <...> or comparison operator <, <=
               ((char= ch #\<)
-               (if (and (< (1+ pos) len)
-                        (or (alpha-char-p (char str (1+ pos)))
-                            (char= #\/ (char str (1+ pos)))))
-                   ;; URI
-                   (let ((end (position #\> str :start (1+ pos))))
-                     (when end
-                       (push (subseq str (1+ pos) end) tokens)
-                       (setf pos (1+ end))))
-                   ;; Comparison operator
-                   (let ((start pos))
-                     (incf pos)
-                     (when (and (< pos len) (char= #\= (char str pos)))
-                       (incf pos))
-                     (push (intern (subseq str start pos)) tokens))))
-              ;; String "..." possibly with ^^type or @lang
-              ((char= ch #\")
-               (let ((start pos))
-                 (incf pos)
-                 (loop while (and (< pos len) (char/= #\" (char str pos)))
-                       do (when (char= #\\ (char str pos)) (incf pos))
-                          (incf pos))
-                 (when (< pos len) (incf pos)) ; skip closing quote
-                 ;; Consume ^^type or @lang suffix
-                 (cond
-                   ((and (<= (+ pos 2) len) (char= #\^ (char str pos)) (char= #\^ (char str (1+ pos))))
-                    (incf pos 2)
-                    (if (and (< pos len) (char= #\< (char str pos)))
-                        (let ((end (position #\> str :start pos)))
-                          (when end (setf pos (1+ end))))
-                        (loop while (and (< pos len)
-                                         (not (member (char str pos) '(#\Space #\Tab #\Newline #\Return #\. #\) #\} #\;))))
-                              do (incf pos))))
-                   ((and (< pos len) (char= #\@ (char str pos)))
-                    (loop while (and (< pos len)
-                                     (not (member (char str pos) '(#\Space #\Tab #\Newline #\Return #\. #\) #\} #\;))))
-                          do (incf pos))))
-                 (push (subseq str start pos) tokens)))
+               (cond
+                 ;; <> empty URI
+                 ((and (< (1+ pos) len) (char= #\> (char str (1+ pos))))
+                  (push "" tokens) (incf pos 2))
+                 ;; URI: < followed by non-whitespace, non-> (heuristic: not space/tab/nl/=)
+                 ((and (< (1+ pos) len)
+                       (not (member (char str (1+ pos))
+                                    '(#\Space #\Tab #\Newline #\Return #\=))))
+                  (let ((end (position #\> str :start (1+ pos))))
+                    (if end
+                        (let ((uri (subseq str (1+ pos) end)))
+                          ;; Validate: no bare \u/\U re-escaping
+                          (push uri tokens)
+                          (setf pos (1+ end)))
+                        (error "Unterminated URI at position ~A" pos))))
+                 ;; Comparison operator < or <=
+                 (t
+                  (incf pos)
+                  (when (and (< pos len) (char= #\= (char str pos)))
+                    (incf pos))
+                  (push (intern (subseq str (- pos (if (and (> pos 1) (char= #\= (char str (1- pos)))) 2 1)) pos)) tokens))))
+              ;; String literals " or '
+              ((or (char= ch #\") (char= ch #\'))
+               (read-string ch))
               ;; Number
               ((or (digit-char-p ch)
                    (and (char= ch #\-) (< (1+ pos) len) (digit-char-p (char str (1+ pos)))))
@@ -245,6 +356,13 @@
                                   (or (digit-char-p (char str pos))
                                       (char= #\. (char str pos))))
                        do (incf pos))
+                 ;; Check for exponent
+                 (when (and (< pos len) (member (char str pos) '(#\e #\E)))
+                   (incf pos)
+                   (when (and (< pos len) (member (char str pos) '(#\+ #\-)))
+                     (incf pos))
+                   (loop while (and (< pos len) (digit-char-p (char str pos)))
+                         do (incf pos)))
                  (push (read-from-string (subseq str start pos)) tokens)))
               ;; Comparison operators (>, >=, =, !=, !)
               ((member ch '(#\> #\= #\!))
@@ -261,51 +379,56 @@
               ((char= ch #\,)
                (push "," tokens)
                (incf pos))
-              ;; Blank node _:label
+              ;; Blank node _:label per [142] BLANK_NODE_LABEL
               ((and (char= ch #\_) (< (1+ pos) len) (char= #\: (char str (1+ pos))))
-               (incf pos 2) ; skip _:
-               (let ((start (- pos 2)))
+               (let ((start pos))
+                 (incf pos 2) ; skip _:
+                 ;; First char must be PN_CHARS_U | [0-9]
+                 (unless (and (< pos len)
+                              (let ((c (char str pos)))
+                                (or (pn-chars-u-p c) (digit-char-p c))))
+                   (error "Invalid blank node label at position ~A" start))
+                 (incf pos)
+                 ;; Rest: (PN_CHARS | '.')* PN_CHARS — no ':' allowed
                  (loop while (and (< pos len)
                                   (let ((c (char str pos)))
-                                    (or (alphanumericp c) (char= c #\_) (char= c #\-) (char= c #\.))))
+                                    (or (pn-chars-p c) (char= c #\.))))
                        do (incf pos))
-                 ;; Blank node label must not end with '.'
+                 ;; Must not end with '.'
                  (loop while (and (> pos (+ start 2)) (char= #\. (char str (1- pos))))
                        do (decf pos))
-                 (let ((label (subseq str start pos)))
-                   ;; Validate: no ':' in blank node label after _:
-                   (when (position #\: label :start 2)
-                     (error "Invalid blank node label: ~A" label))
-                   (push label tokens))))
-              ;; Keyword, prefixed name, or bare local name starting with ':'
-              (t
+                 (push (subseq str start pos) tokens)))
+              ;; Prefixed name starting with ':' (empty prefix)
+              ((char= ch #\:)
                (let ((start pos))
-                 ;; Read prefix part (before first ':')
+                 (incf pos) ; consume ':'
+                 (read-pn-local)
+                 (push (subseq str start pos) tokens)))
+              ;; Keyword or prefixed name (prefix:local)
+              ((pn-chars-base-p ch)
+               (let ((start pos))
+                 ;; Read PN_PREFIX: PN_CHARS_BASE ((PN_CHARS|'.')* PN_CHARS)?
+                 (incf pos)
                  (loop while (and (< pos len)
                                   (let ((c (char str pos)))
-                                    (or (alphanumericp c) (char= c #\_) (char= c #\-)
-                                        (char= c #\\))))
-                       do (when (char= #\\ (char str pos)) (incf pos)) ; skip escaped char
-                          (incf pos))
+                                    (or (pn-chars-p c) (char= c #\.))))
+                       do (incf pos))
+                 ;; PN_PREFIX must not end with '.'
+                 (loop while (and (> pos start) (char= #\. (char str (1- pos))))
+                       do (decf pos))
                  (cond
-                   ;; Hit a colon — this is a prefixed name
+                   ;; Hit ':' — this is PNAME_NS (possibly followed by PN_LOCAL)
                    ((and (< pos len) (char= #\: (char str pos)))
-                    (incf pos) ; consume the ':'
-                    ;; Read local part — can contain ':', alphanumeric, '_', '-', '.', '\' escapes
-                    (loop while (and (< pos len)
-                                     (let ((c (char str pos)))
-                                       (or (alphanumericp c) (char= c #\_) (char= c #\-)
-                                           (char= c #\.) (char= c #\:) (char= c #\\)
-                                           (char= c #\%))))
-                          do (when (char= #\\ (char str pos)) (incf pos))
-                             (incf pos))
-                    ;; Local part must not end with '.'
-                    (loop while (and (> pos start) (char= #\. (char str (1- pos))))
-                          do (decf pos))
+                    (incf pos) ; consume ':'
+                    (read-pn-local)
                     (push (subseq str start pos) tokens))
-                   ;; No colon — plain keyword/name
+                   ;; No colon — plain keyword
                    (t
-                    (push (subseq str start pos) tokens))))))))))
+                    (push (subseq str start pos) tokens)))))
+              ;; Anything else is an error
+              (t
+               (error "Unexpected character '~A' (code ~A) at position ~A"
+                      ch (char-code ch) pos)))))))
     (nreverse tokens)))
 
 ;;; ==========================================================================
