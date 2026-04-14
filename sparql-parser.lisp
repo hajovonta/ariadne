@@ -261,17 +261,51 @@
               ((char= ch #\,)
                (push "," tokens)
                (incf pos))
-              ;; Keyword or prefixed name
+              ;; Blank node _:label
+              ((and (char= ch #\_) (< (1+ pos) len) (char= #\: (char str (1+ pos))))
+               (incf pos 2) ; skip _:
+               (let ((start (- pos 2)))
+                 (loop while (and (< pos len)
+                                  (let ((c (char str pos)))
+                                    (or (alphanumericp c) (char= c #\_) (char= c #\-) (char= c #\.))))
+                       do (incf pos))
+                 ;; Blank node label must not end with '.'
+                 (loop while (and (> pos (+ start 2)) (char= #\. (char str (1- pos))))
+                       do (decf pos))
+                 (let ((label (subseq str start pos)))
+                   ;; Validate: no ':' in blank node label after _:
+                   (when (position #\: label :start 2)
+                     (error "Invalid blank node label: ~A" label))
+                   (push label tokens))))
+              ;; Keyword, prefixed name, or bare local name starting with ':'
               (t
                (let ((start pos))
+                 ;; Read prefix part (before first ':')
                  (loop while (and (< pos len)
-                                  (not (member (char str pos)
-                                               '(#\Space #\Tab #\Newline #\Return
-                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\! #\?
-                                                 #\, #\= #\< #\>))))
-                       do (incf pos))
-                 (let ((tok (subseq str start pos)))
-                   (push tok tokens)))))))))
+                                  (let ((c (char str pos)))
+                                    (or (alphanumericp c) (char= c #\_) (char= c #\-)
+                                        (char= c #\\))))
+                       do (when (char= #\\ (char str pos)) (incf pos)) ; skip escaped char
+                          (incf pos))
+                 (cond
+                   ;; Hit a colon — this is a prefixed name
+                   ((and (< pos len) (char= #\: (char str pos)))
+                    (incf pos) ; consume the ':'
+                    ;; Read local part — can contain ':', alphanumeric, '_', '-', '.', '\' escapes
+                    (loop while (and (< pos len)
+                                     (let ((c (char str pos)))
+                                       (or (alphanumericp c) (char= c #\_) (char= c #\-)
+                                           (char= c #\.) (char= c #\:) (char= c #\\)
+                                           (char= c #\%))))
+                          do (when (char= #\\ (char str pos)) (incf pos))
+                             (incf pos))
+                    ;; Local part must not end with '.'
+                    (loop while (and (> pos start) (char= #\. (char str (1- pos))))
+                          do (decf pos))
+                    (push (subseq str start pos) tokens))
+                   ;; No colon — plain keyword/name
+                   (t
+                    (push (subseq str start pos) tokens))))))))))
     (nreverse tokens)))
 
 ;;; ==========================================================================
@@ -294,6 +328,12 @@
          (pop toks)
          (let ((prefix-name (pop toks))
                (uri (pop toks)))
+           ;; Validate prefix name: must be PN_PREFIX? ':' (e.g. "ex:" or ":")
+           (unless (and (stringp prefix-name)
+                        (> (length prefix-name) 0)
+                        (char= #\: (char prefix-name (1- (length prefix-name))))
+                        (not (position #\: prefix-name :end (1- (length prefix-name)))))
+             (error "Invalid PREFIX declaration: ~A" prefix-name))
            (setf (gethash prefix-name prefixes) uri)))))
     ;; Parse query form
     (let ((form (pop toks)))
