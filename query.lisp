@@ -113,8 +113,7 @@
          (binds nil)
          (not-exists-patterns nil)
          (exists-patterns nil)
-         (minus-patterns nil)
-         (minus-filters nil)
+         (minus-clauses nil)
          (values-clause nil)
          (graph-clause nil)
          (projections nil)
@@ -137,10 +136,11 @@
           ((sym-name-equal tag "NOT-EXISTS") (setf not-exists-patterns (rest clause)))
           ((sym-name-equal tag "EXISTS") (setf exists-patterns (rest clause)))
           ((sym-name-equal tag "MINUS")
-           (let ((parts (rest clause)))
-             (setf minus-patterns (remove-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts))
-             (let ((f (find-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts)))
-               (when f (setf minus-filters (rest f))))))
+           (let* ((parts (rest clause))
+                  (pats (remove-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts))
+                  (f (find-if (lambda (p) (and (consp p) (sym-name-equal (car p) "FILTER"))) parts))
+                  (filts (when f (rest f))))
+             (push (list pats filts) minus-clauses)))
           ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
           ((sym-name-equal tag "GRAPH")
            (setf graph-clause (rest clause)))
@@ -182,9 +182,9 @@
                     (lambda (env)
                       (match-patterns-with-envs g exists-patterns (list env)))
                     envs)))
-      ;; Apply MINUS
-      (when minus-patterns
-        (setf envs (apply-minus g envs minus-patterns minus-filters)))
+      ;; Apply MINUS (each clause independently)
+      (dolist (mc (nreverse minus-clauses))
+        (setf envs (apply-minus g envs (first mc) (second mc))))
       ;; Apply VALUES
       (when values-clause
         (setf envs (apply-values-clause envs values-clause)))
