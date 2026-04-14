@@ -87,21 +87,23 @@
 
 (defun validate-construct (expr)
   "Validate CONSTRUCT query."
-  (let ((body (cddr expr)))
-    ;; CONSTRUCT WHERE restrictions: no FILTER, no GRAPH in shorthand form
-    (let ((where (find-if (lambda (c) (and (consp c) (symbolp (car c))
-                                           (string-equal (symbol-name (car c)) "WHERE")))
-                          body)))
-      ;; Check if this is CONSTRUCT WHERE (no explicit template — template = WHERE patterns)
-      (when (and where (not (consp (second expr))))
-        ;; Shorthand CONSTRUCT WHERE
-        (dolist (e (rest where))
-          (when (and (consp e) (symbolp (car e)))
-            (let ((tag (symbol-name (car e))))
-              (when (string-equal tag "FILTER")
-                (error "FILTER not allowed in CONSTRUCT WHERE shorthand"))
-              (when (string-equal tag "GRAPH")
-                (error "GRAPH not allowed in CONSTRUCT WHERE shorthand")))))))))
+  ;; Check for CONSTRUCT WHERE shorthand: template = WHERE patterns
+  ;; In shorthand form, FILTER and GRAPH are not allowed
+  (let* ((body (cddr expr))
+         (where (find-if (lambda (c) (and (consp c) (symbolp (car c))
+                                          (string-equal (symbol-name (car c)) "WHERE")))
+                         body))
+         (template (second expr)))
+    ;; Shorthand: template equals WHERE patterns
+    (when (and where template (equal template (list (rest where))))
+      ;; This is CONSTRUCT WHERE — check restrictions
+      ;; Actually we need to check the original query, not the parsed form
+      ;; The parser already strips FILTER from CONSTRUCT WHERE
+      ;; So we check if the template has the same patterns as WHERE
+      nil)
+    ;; Check for FROM in CONSTRUCT WHERE (constructwhere04)
+    ;; This is handled by checking if there's a FROM clause
+    ))
 
 (defun validate-group (elements)
   "Validate group graph pattern elements."
@@ -1099,25 +1101,38 @@
 (defun sparql-parse-construct (toks prefixes)
   "Parse CONSTRUCT { template } WHERE { patterns } or CONSTRUCT WHERE { patterns }."
   ;; Check for CONSTRUCT WHERE shorthand (with optional FROM)
-  (if (and toks (stringp (car toks))
-          (or (string-equal (car toks) "WHERE")
-              (string-equal (car toks) "FROM")))
+  (if (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
       (progn
-        ;; Skip FROM clauses
-        (loop while (and toks (stringp (car toks)) (string-equal (car toks) "FROM")) do
-          (pop toks)
-          (when (and toks (stringp (car toks)) (string-equal (car toks) "NAMED"))
-            (pop toks))
-          (pop toks))
-        (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
-          (pop toks))
-        (when (and toks (string= (car toks) "{"))
+        ;; CONSTRUCT WHERE shorthand — no FROM, no FILTER, no GRAPH
+        (pop toks)
+        (when (and toks (stringp (car toks)) (string= (car toks) "{"))
           (pop toks))
         (multiple-value-bind (patterns filters toks-rest)
             (sparql-parse-body toks prefixes)
-          (declare (ignore filters toks-rest))
-          ;; Template = WHERE patterns
+          (declare (ignore toks-rest))
+          (when filters
+            (error "FILTER not allowed in CONSTRUCT WHERE shorthand"))
+          (dolist (p patterns)
+            (when (and (consp p) (symbolp (car p))
+                       (string-equal (symbol-name (car p)) "GRAPH"))
+              (error "GRAPH not allowed in CONSTRUCT WHERE shorthand")))
           (list 'construct patterns (cons 'where patterns))))
+      (if (and toks (stringp (car toks)) (string-equal (car toks) "FROM"))
+          (progn
+            ;; CONSTRUCT FROM ... WHERE — skip FROM clauses, template = WHERE patterns
+            (loop while (and toks (stringp (car toks)) (string-equal (car toks) "FROM")) do
+              (pop toks)
+              (when (and toks (stringp (car toks)) (string-equal (car toks) "NAMED"))
+                (pop toks))
+              (pop toks))
+            (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
+              (pop toks))
+            (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+              (pop toks))
+            (multiple-value-bind (patterns filters toks-rest)
+                (sparql-parse-body toks prefixes)
+              (declare (ignore filters toks-rest))
+              (list 'construct patterns (cons 'where patterns))))
       ;; Normal CONSTRUCT { template } WHERE { patterns }
       (progn
         (when (and toks (string= (car toks) "{"))
@@ -1139,7 +1154,7 @@
           (multiple-value-bind (patterns filters toks-rest)
               (sparql-parse-body toks prefixes)
             (declare (ignore filters toks-rest))
-            (list 'construct (nreverse template) (cons 'where patterns)))))))
+            (list 'construct (nreverse template) (cons 'where patterns))))))))
 
 (defun sparql-parse-describe (toks prefixes)
   "Parse DESCRIBE <resource>."
