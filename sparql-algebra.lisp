@@ -308,11 +308,16 @@
       (let ((key (mapcar (lambda (k)
                            (if (variable-p k)
                                (lookup-binding k mu)
-                               ;; Expression or constant (e.g. implicit group key = 1)
                                (handler-case (safe-eval (subst-vars k mu))
                                  (error () :error))))
                          keys)))
         (push mu (gethash key groups))))
+    ;; Per spec: implicit grouping (constant key like 1) always produces
+    ;; at least one group, even if Ω is empty
+    (when (and (null omega)
+               (every (lambda (k) (not (variable-p k))) keys))
+      (let ((key (mapcar (lambda (k) (handler-case (safe-eval k) (error () k))) keys)))
+        (setf (gethash key groups) nil)))
     groups))
 
 (defun eval-aggregation (agg-node graph dataset)
@@ -392,33 +397,38 @@
   "AggregateJoin(A1,...,An) — Section 18.5.1.
    Combines multiple aggregation results into solution mappings."
   (let* ((aggs (alg-agg-join-aggregations node))
-         ;; Evaluate each aggregation → hash {key → value}
-         (agg-results (mapcar (lambda (a)
-                                (cons (car a) (eval-aggregation (cdr a) graph dataset)))
-                              aggs))
-         ;; Collect all keys
-         (all-keys (make-hash-table :test 'equal))
+         (group-node (alg-agg-join-group-node node))
+         (grouped (eval-group-node group-node graph dataset))
+         (group-keys (alg-group-keys group-node))
          (results nil))
-    ;; Gather keys from all aggregations
-    (dolist (ar agg-results)
-      (maphash (lambda (k v) (declare (ignore v)) (setf (gethash k all-keys) t))
-               (cdr ar)))
-    ;; For each key, build a solution mapping
-    (maphash
-     (lambda (key _)
-       (declare (ignore _))
-       (let ((mu nil))
-         ;; Add group key bindings
-         (let ((group-keys (alg-group-keys (alg-agg-join-group-node node))))
-           (loop for k in group-keys for v in key do
-             (when (variable-p k)
-               (push (cons k v) mu))))
-         ;; Add aggregate bindings
-         (dolist (ar agg-results)
-           (let ((val (gethash key (cdr ar))))
-             (push (cons (car ar) val) mu)))
-         (push mu results)))
-     all-keys)
+    (if (null aggs)
+        ;; GROUP BY without aggregates — one row per group key
+        (maphash
+         (lambda (key _)
+           (declare (ignore _))
+           (let ((mu nil))
+             (loop for k in group-keys for v in key do
+               (when (variable-p k) (push (cons k v) mu)))
+             (push mu results)))
+         grouped)
+        ;; With aggregates — evaluate each, combine
+        (let ((agg-results (mapcar (lambda (a)
+                                     (cons (car a) (eval-aggregation (cdr a) graph dataset)))
+                                   aggs)))
+          ;; Gather all keys from the group
+          (maphash
+           (lambda (key _)
+             (declare (ignore _))
+             (let ((mu nil))
+               ;; Add group key bindings
+               (loop for k in group-keys for v in key do
+                 (when (variable-p k) (push (cons k v) mu)))
+               ;; Add aggregate bindings
+               (dolist (ar agg-results)
+                 (let ((val (gethash key (cdr ar))))
+                   (push (cons (car ar) val) mu)))
+               (push mu results)))
+           grouped)))
     results))
 
 ;;; ============================================================
