@@ -14,7 +14,145 @@
   "Parse a SPARQL query string into an Ariadne DSL expression."
   (let ((tokens (sparql-tokenize str))
         (prefixes (make-hash-table :test 'equal)))
-    (sparql-parse-query tokens prefixes)))
+    (let ((result (sparql-parse-query tokens prefixes)))
+      (validate-sparql result)
+      result)))
+
+(defun validate-sparql (expr)
+  "Validate parsed SPARQL expression per spec. Signals error on invalid queries."
+  (when (and (consp expr) (symbolp (first expr)))
+    (let ((form (symbol-name (first expr))))
+      (when (or (string-equal form "SELECT") (string-equal form "SELECT-DISTINCT"))
+        (validate-select expr))
+      (when (string-equal form "CONSTRUCT")
+        (validate-construct expr))
+      ;; Validate subqueries in WHERE
+      (let ((where (find-if (lambda (c) (and (consp c) (symbolp (car c))
+                                             (string-equal (symbol-name (car c)) "WHERE")))
+                            (cddr expr))))
+        (when where (validate-group (rest where)))))))
+
+(defun validate-select (expr)
+  "Validate SELECT query per spec Section 18.2.4."
+  (let* ((vars (second expr))
+         (body (cddr expr))
+         (group-by nil)
+         (projections nil)
+         (has-aggregate nil))
+    ;; Collect clauses
+    (dolist (clause body)
+      (when (and (consp clause) (symbolp (car clause)))
+        (let ((tag (symbol-name (car clause))))
+          (cond
+            ((or (string-equal tag "GROUP-BY") (string-equal tag "GROUP-BY-MULTI")
+                 (string-equal tag "GROUP-BY-EXPR"))
+             (setf group-by (second clause)))
+            ((string-equal tag "PROJECT")
+             (push (second clause) projections)
+             (when (and (consp (third clause)) (symbolp (car (third clause)))
+                        (member (symbol-name (car (third clause)))
+                                '("COUNT" "SUM" "AVG" "MIN" "MAX" "GROUP_CONCAT" "SAMPLE"
+                                  "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT" "GROUP-CONCAT"
+                                  "GROUP-CONCAT-DISTINCT")
+                                :test #'string-equal))
+               (setf has-aggregate t)))))))
+    ;; Rule: SELECT * with GROUP BY is not allowed
+    (when (and group-by (or (eq vars '*) (equal vars '("*"))))
+      (error "SELECT * not allowed with GROUP BY"))
+    ;; Rule: with GROUP BY, non-aggregated SELECT variables must be in GROUP BY
+    (when group-by
+      (let ((group-vars (if (listp group-by) group-by (list group-by))))
+        (dolist (v (if (listp vars) vars nil))
+          (when (and (symbolp v) (not (member v group-vars))
+                     (not (member v projections)))
+            (error "Variable ~A in SELECT is not in GROUP BY and not aggregated" v)))))
+    ;; Rule: mixing aggregates and bare variables without GROUP BY
+    (when (and has-aggregate (not group-by) (listp vars))
+      (dolist (v vars)
+        (when (and (symbolp v) (not (member v projections)))
+          (error "Variable ~A used with aggregate but no GROUP BY" v))))
+    ;; Rule: duplicate aliases
+    (let ((seen nil))
+      (dolist (p projections)
+        (when (member p seen)
+          (error "Duplicate alias ~A in SELECT" p))
+        (push p seen)))))
+
+(defun validate-construct (expr)
+  "Validate CONSTRUCT query."
+  (let ((body (cddr expr)))
+    ;; CONSTRUCT WHERE restrictions: no FILTER, no GRAPH in shorthand form
+    (let ((where (find-if (lambda (c) (and (consp c) (symbolp (car c))
+                                           (string-equal (symbol-name (car c)) "WHERE")))
+                          body)))
+      ;; Check if this is CONSTRUCT WHERE (no explicit template — template = WHERE patterns)
+      (when (and where (not (consp (second expr))))
+        ;; Shorthand CONSTRUCT WHERE
+        (dolist (e (rest where))
+          (when (and (consp e) (symbolp (car e)))
+            (let ((tag (symbol-name (car e))))
+              (when (string-equal tag "FILTER")
+                (error "FILTER not allowed in CONSTRUCT WHERE shorthand"))
+              (when (string-equal tag "GRAPH")
+                (error "GRAPH not allowed in CONSTRUCT WHERE shorthand")))))))))
+
+(defun validate-group (elements)
+  "Validate group graph pattern elements."
+  ;; BIND variable must not already be in scope
+  (let ((in-scope nil))
+    (dolist (e elements)
+      (cond
+        ;; Triple pattern — variables go in scope
+        ((and (consp e) (= 3 (length e)) (not (and (symbolp (car e))
+                                                    (member (symbol-name (car e))
+                                                            '("FILTER" "OPTIONAL" "MINUS" "UNION" "GRAPH"
+                                                              "BIND" "INLINE-BIND" "VALUES" "NOT-EXISTS"
+                                                              "EXISTS" "SUBQUERY" "SERVICE")
+                                                            :test #'string-equal))))
+         (dolist (term e)
+           (when (and (symbolp term) (> (length (symbol-name term)) 0)
+                      (char= #\? (char (symbol-name term) 0)))
+             (pushnew term in-scope))))
+        ;; BIND / INLINE-BIND — target variable must not be in scope
+        ((and (consp e) (symbolp (car e))
+              (or (string-equal (symbol-name (car e)) "BIND")
+                  (string-equal (symbol-name (car e)) "INLINE-BIND")))
+         (let ((var (second e)))
+           (when (member var in-scope)
+             (error "BIND variable ~A already in scope" var))
+           (pushnew var in-scope)))
+        ;; UNION — variables from both sides go in scope
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "UNION"))
+         (dolist (branch (rest e))
+           (when (consp branch)
+             (dolist (v (collect-group-vars (if (and (symbolp (car branch))
+                                                    (string-equal (symbol-name (car branch)) "WHERE"))
+                                               (rest branch) (list branch))))
+               (pushnew v in-scope)))))
+        ;; OPTIONAL, SUBQUERY — variables go in scope
+        ((and (consp e) (symbolp (car e))
+              (member (symbol-name (car e)) '("OPTIONAL") :test #'string-equal))
+         (dolist (v (collect-group-vars (rest e)))
+           (pushnew v in-scope)))
+        ;; Recurse into subqueries
+        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "SUBQUERY"))
+         (validate-sparql (second e)))))))
+
+(defun collect-group-vars (elements)
+  "Collect all variables from group pattern elements."
+  (let ((vars nil))
+    (dolist (e elements vars)
+      (when (and (consp e) (>= (length e) 3)
+                 (not (and (symbolp (car e))
+                           (member (symbol-name (car e))
+                                   '("FILTER" "OPTIONAL" "MINUS" "UNION" "GRAPH"
+                                     "BIND" "INLINE-BIND" "VALUES" "NOT-EXISTS"
+                                     "EXISTS" "SUBQUERY" "SERVICE")
+                                   :test #'string-equal))))
+        (dolist (term e)
+          (when (and (symbolp term) (> (length (symbol-name term)) 0)
+                     (char= #\? (char (symbol-name term) 0)))
+            (pushnew term vars)))))))
 
 ;;; ==========================================================================
 ;;; Tokenizer
