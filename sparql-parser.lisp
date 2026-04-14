@@ -259,21 +259,21 @@
                    ;; Multi-variable: VALUES (?v1 ?v2) { ... }
                    (progn
                      (pop toks)
-                     (loop until (or (null toks) (string= (car toks) ")")) do
+                     (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
                        (push (pop toks) val-vars))
                      (when toks (pop toks))
                      (setf val-vars (nreverse val-vars)))
                    ;; Single variable
                    (push (pop toks) val-vars))
                ;; Parse { val1 val2 ... } or { (v1 v2) (v3 v4) ... }
-               (when (and toks (string= (car toks) "{"))
+               (when (and toks (stringp (car toks)) (string= (car toks) "{"))
                  (pop toks)
-                 (loop until (or (null toks) (string= (car toks) "}")) do
+                 (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) "}"))) do
                    (if (and (stringp (car toks)) (string= (car toks) "("))
                        (progn
                          (pop toks)
                          (let ((row nil))
-                           (loop until (or (null toks) (string= (car toks) ")")) do
+                           (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
                              (let ((tok (pop toks)))
                                (push (if (and (stringp tok) (string-equal tok "UNDEF"))
                                          nil
