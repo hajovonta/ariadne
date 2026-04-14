@@ -52,14 +52,15 @@
               ((char= ch #\/)
                (push "/" tokens)
                (incf pos))
-              ;; Variable ?name
+              ;; Variable ?name or ? path operator
               ((char= ch #\?)
-               (let ((start pos))
-                 (incf pos)
-                 (loop while (and (< pos len)
-                                  (alphanumericp (char str pos)))
-                       do (incf pos))
-                 (push (intern (string-upcase (subseq str start pos))) tokens)))
+               (if (and (< (1+ pos) len) (alphanumericp (char str (1+ pos))))
+                   (let ((start pos))
+                     (incf pos)
+                     (loop while (and (< pos len) (alphanumericp (char str pos)))
+                           do (incf pos))
+                     (push (intern (string-upcase (subseq str start pos))) tokens))
+                   (progn (push "?" tokens) (incf pos))))
               ;; URI <...>
               ;; URI <...> or comparison operator <
               ((char= ch #\<)
@@ -131,7 +132,7 @@
                  (loop while (and (< pos len)
                                   (not (member (char str pos)
                                                '(#\Space #\Tab #\Newline #\Return
-                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\!
+                                                 #\{ #\} #\( #\) #\. #\; #\| #\/ #\* #\+ #\^ #\! #\?
                                                  #\, #\= #\< #\>))))
                        do (incf pos))
                  (let ((tok (subseq str start pos)))
