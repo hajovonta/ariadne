@@ -1029,7 +1029,9 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                     "\\$currentShape" w (format nil "<~A>" shape)))
                            w))
              (fixed-query (concatenate 'string prefix-str fixed-select fixed-where))
-             (results (sparql-via-algebra g fixed-query)))
+             (shapes-graph-uri (or (graph-name g) "urn:ariadne:default"))
+             (results (sparql-via-algebra g fixed-query
+                                          (list (cons shapes-graph-uri g)))))
         (when (and results (listp results))
           (dolist (row results)
             (let ((row-list (if (listp row) row (list row))))
