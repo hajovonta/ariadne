@@ -31,6 +31,7 @@
                (:file "analytics")
                (:file "reactive")
                (:file "sparql-parser")
+               (:file "sparql-algebra")
                (:file "graph-ops")
                (:file "web-server")
                (:file "owl")
