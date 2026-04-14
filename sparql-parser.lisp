@@ -1104,7 +1104,6 @@
              ;; Regular nested block or UNION
              (multiple-value-bind (u-patterns u-filters u-rest)
              (sparql-parse-body toks prefixes)
-           (declare (ignore u-filters))
            (setf toks u-rest)
            (when (and toks (string= (car toks) "}"))
              (pop toks))
@@ -1115,16 +1114,15 @@
                    (pop toks))
                  (multiple-value-bind (u2-patterns u2-filters u2-rest)
                      (sparql-parse-body toks prefixes)
-                   (declare (ignore u2-filters))
                    (setf toks u2-rest)
                    (when (and toks (string= (car toks) "}"))
                      (pop toks))
-                   (push (list 'union
-                               (cons 'where u-patterns)
-                               (cons 'where u2-patterns))
-                         patterns)))
-               ;; Not UNION, just nested block — preserve as group
-               (push (cons 'group u-patterns) patterns)))))
+                   (let ((b1 (if u-filters (append u-patterns (mapcar (lambda (f) (list 'filter f)) u-filters)) u-patterns))
+                         (b2 (if u2-filters (append u2-patterns (mapcar (lambda (f) (list 'filter f)) u2-filters)) u2-patterns)))
+                     (push (list 'union (cons 'where b1) (cons 'where b2)) patterns))))
+               ;; Not UNION, just nested block — preserve as group with filters
+               (let ((elts (if u-filters (append u-patterns (mapcar (lambda (f) (list 'filter f)) u-filters)) u-patterns)))
+                 (push (cons 'group elts) patterns))))))
         ;; Triple pattern: s p o .  (with property path detection)
         (t
          (let ((s-tok (pop toks)))
