@@ -877,6 +877,9 @@
     ((rdf-literal-p term) term)
     ((stringp term)
      (cond
+       ;; Empty blank node []
+       ((string= term "[]")
+        (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*))))
        ;; Quoted string literal
        ((and (> (length term) 1) (char= #\" (char term 0)))
         (resolve-sparql-token term prefixes))
