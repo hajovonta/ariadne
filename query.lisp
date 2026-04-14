@@ -119,6 +119,7 @@
          (graph-clause nil)
          (projections nil)
          (group-var nil)
+         (group-exprs nil)
          (having-clause nil)
          (order-var nil)
          (limit-n nil)
@@ -145,6 +146,9 @@
            (setf graph-clause (rest clause)))
           ((sym-name-equal tag "PROJECT") (push (rest clause) projections))
           ((sym-name-equal tag "GROUP-BY") (setf group-var (second clause)))
+          ((sym-name-equal tag "GROUP-BY-EXPR")
+           (setf group-var (second clause))
+           (push (list (second clause) (third clause)) group-exprs))
           ((sym-name-equal tag "HAVING")
            (let ((h (second clause)))
              ;; Normalize: single expr → list of one, list of exprs → as-is
@@ -214,6 +218,13 @@
               (setf envs (apply-bind envs alias expr)))))
       ;; GROUP BY + aggregation
       (when group-var
+        ;; Apply GROUP BY expressions (compute and bind alias)
+        (dolist (ge group-exprs)
+          (setf envs (mapcar (lambda (env)
+                               (let ((val (handler-case (safe-eval (second ge) env)
+                                            (error () nil))))
+                                 (acons (first ge) val env)))
+                             envs)))
         (return-from execute-select
           (execute-group-by envs group-var vars having-clause projections)))
       ;; Project variables

@@ -239,9 +239,27 @@
              (push (list 'order-by (pop toks)) clauses))
             ((string-equal (car toks) "GROUP")
              (pop toks)
-             (when (and toks (string-equal (car toks) "BY"))
+             (when (and toks (stringp (car toks)) (string-equal (car toks) "BY"))
                (pop toks))
-             (push (list 'group-by (pop toks)) clauses))
+             (if (and toks (stringp (car toks)) (string= (car toks) "("))
+                 ;; GROUP BY (expr AS ?var)
+                 (let ((depth 1) (expr-toks nil))
+                   (pop toks)
+                   (loop while (and toks (> depth 0)) do
+                     (cond ((and (stringp (car toks)) (string= (car toks) "(")) (incf depth))
+                           ((and (stringp (car toks)) (string= (car toks) ")")) (decf depth)))
+                     (when (> depth 0) (push (pop toks) expr-toks))
+                     (when (= depth 0) (pop toks)))
+                   (setf expr-toks (nreverse expr-toks))
+                   (let ((as-pos (position "AS" expr-toks :test #'string-equal
+                                           :key (lambda (x) (if (stringp x) x "")))))
+                     (if as-pos
+                         (let ((alias (nth (1+ as-pos) expr-toks))
+                               (e-toks (subseq expr-toks 0 as-pos)))
+                           (push (list 'group-by-expr alias
+                                       (parse-projection-expr e-toks prefixes)) clauses))
+                         (push (list 'group-by (first expr-toks)) clauses))))
+                 (push (list 'group-by (pop toks)) clauses)))
             ((string-equal (car toks) "HAVING")
              (pop toks)
              ;; Parse HAVING expressions — each parenthesized condition
