@@ -17,6 +17,7 @@
 (defstruct (alg-extend (:constructor make-alg-extend (pattern var expr))) pattern var expr)
 (defstruct (alg-graph (:constructor make-alg-graph (name pattern))) name pattern)
 (defstruct (alg-path (:constructor make-alg-path (subject path-expr object))) subject path-expr object)
+(defstruct (alg-service (:constructor make-alg-service (url patterns))) url patterns)
 (defstruct (alg-table (:constructor make-alg-table (vars rows))) vars rows)
 (defstruct (alg-project (:constructor make-alg-project (vars pattern))) vars pattern)
 (defstruct (alg-distinct (:constructor make-alg-distinct (pattern))) pattern)
@@ -66,6 +67,7 @@
                    (alg-extend-var node) (alg-extend-expr node)))
     (alg-graph    (eval-graph-node node dataset))
     (alg-path     (eval-path-node node graph))
+    (alg-service  (eval-service-node node))
     (alg-table    (eval-table-node node))
     (alg-project  (eval-project-node
                    (eval-algebra (alg-project-pattern node) graph dataset)
@@ -204,6 +206,7 @@
     (alg-extend (make-alg-extend (substitute-algebra (alg-extend-pattern node) mu)
                                  (alg-extend-var node) (alg-extend-expr node)))
     (alg-table node)
+    (alg-service node)
     (alg-project (make-alg-project (alg-project-vars node)
                                    (substitute-algebra (alg-project-pattern node) mu)))
     (alg-exists (make-alg-exists (substitute-algebra (alg-exists-pattern node) mu)
@@ -295,6 +298,18 @@
         (let ((g (dataset-get-graph dataset name)))
           (if g (eval-algebra pattern g dataset) nil)))))
 
+
+(defun eval-service-node (node)
+  "SERVICE <url> { patterns } — federated query via HTTP.
+   Reuses query-remote-sparql from the old engine."
+  (let* ((url (alg-service-url node))
+         (patterns (alg-service-patterns node))
+         (vars (collect-variables patterns))
+         (query-str (patterns-to-sparql patterns vars))
+         (remote-results (query-remote-sparql url query-str)))
+    (mapcar (lambda (row)
+              (mapcar #'cons vars row))
+            remote-results)))
 (defun eval-path-node (node graph)
   "Property path — delegates to existing path evaluator.
    Handles unbound start/target by iterating graph nodes."
@@ -505,6 +520,8 @@
        (translate-ask parsed-expr))
       ((string-equal form-name "CONSTRUCT")
        (translate-construct parsed-expr))
+      ((string-equal form-name "DESCRIBE")
+       (values parsed-expr :describe nil))
       (t (error "Unknown query form: ~A" form)))))
 
 (defun translate-select (expr)
@@ -746,6 +763,10 @@
            (flush-bgp)
            (multiple-value-bind (sub-alg) (translate-query (second e))
              (setf g (make-join g sub-alg))))
+          ;; SERVICE <url> { patterns }
+          ((and (consp e) (symbolp (car e)) (sym-name-equal (car e) "SERVICE"))
+           (flush-bgp)
+           (setf g (make-join g (make-alg-service (second e) (third e)))))
           ;; Property path pattern: (s (path-op ...) o)
           ((and (consp e) (= 3 (length e))
                 (consp (second e)) (symbolp (first (second e))))
@@ -851,10 +872,13 @@
   (let* ((parsed (parse-sparql query-string))
          (ds (make-dataset graph named-graphs)))
     (multiple-value-bind (algebra form vars) (translate-query parsed)
-      (let ((results (eval-algebra algebra graph ds)))
-        (case form
-          (:ask (not (null results)))
-          (:select
+      (case form
+        (:describe (execute-describe graph algebra))
+        (t
+         (let ((results (eval-algebra algebra graph ds)))
+           (case form
+             (:ask (not (null results)))
+             (:select
            ;; Project to result rows
            (if (or (eq vars '*) (equal vars '("*")))
                (mapcar (lambda (mu)
@@ -874,4 +898,4 @@
                          (p (subst-vars (second tp) mu))
                          (o (subst-vars (third tp) mu)))
                      (when (and s p o (not (variable-p s)) (not (variable-p p)) (not (variable-p o)))
-                       (push (list s p o) triples)))))))))))))
+                       (push (list s p o) triples)))))))))))))))
