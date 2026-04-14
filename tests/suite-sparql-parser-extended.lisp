@@ -40,7 +40,7 @@
     (add-triple g "alice" "knows" "bob")
     (add-triple g "alice" "knows" "charlie")
     (add-triple g "bob" "knows" "charlie")
-    (let ((result (sparql-via-algebra g "SELECT ?person (COUNT ?friend) WHERE { ?person <knows> ?friend } GROUP BY ?person")))
+    (let ((result (sparql-via-algebra g "SELECT ?person (COUNT(?friend) AS ?cnt) WHERE { ?person <knows> ?friend } GROUP BY ?person")))
       (is (= 2 (length result))))))
 
 (test sparql-parse-having

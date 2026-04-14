@@ -76,7 +76,14 @@
       (dolist (p projections)
         (when (member p seen)
           (error "Duplicate alias ~A in SELECT" p))
-        (push p seen)))))
+        (push p seen)))
+    ;; Rule: SELECT variables must be symbols (not strings or lists)
+    (when (listp vars)
+      (dolist (v vars)
+        (unless (or (symbolp v) (stringp v))
+          (error "Invalid SELECT variable: ~A" v))
+        (when (and (stringp v) (not (string= v "*")))
+          (error "Invalid SELECT variable: ~A" v))))))
 
 (defun validate-construct (expr)
   "Validate CONSTRUCT query."
@@ -98,7 +105,8 @@
 
 (defun validate-group (elements)
   "Validate group graph pattern elements."
-  ;; BIND variable must not already be in scope
+  ;; BIND variable must not already be in scope from the SAME group
+  ;; Nested groups { } start a new scope
   (let ((in-scope nil))
     (dolist (e elements)
       (cond
@@ -113,7 +121,7 @@
            (when (and (symbolp term) (> (length (symbol-name term)) 0)
                       (char= #\? (char (symbol-name term) 0)))
              (pushnew term in-scope))))
-        ;; BIND / INLINE-BIND — target variable must not be in scope
+        ;; BIND / INLINE-BIND — target variable must not be in scope in THIS group
         ((and (consp e) (symbolp (car e))
               (or (string-equal (symbol-name (car e)) "BIND")
                   (string-equal (symbol-name (car e)) "INLINE-BIND")))
@@ -121,19 +129,6 @@
            (when (member var in-scope)
              (error "BIND variable ~A already in scope" var))
            (pushnew var in-scope)))
-        ;; UNION — variables from both sides go in scope
-        ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "UNION"))
-         (dolist (branch (rest e))
-           (when (consp branch)
-             (dolist (v (collect-group-vars (if (and (symbolp (car branch))
-                                                    (string-equal (symbol-name (car branch)) "WHERE"))
-                                               (rest branch) (list branch))))
-               (pushnew v in-scope)))))
-        ;; OPTIONAL, SUBQUERY — variables go in scope
-        ((and (consp e) (symbolp (car e))
-              (member (symbol-name (car e)) '("OPTIONAL") :test #'string-equal))
-         (dolist (v (collect-group-vars (rest e)))
-           (pushnew v in-scope)))
         ;; Recurse into subqueries
         ((and (consp e) (symbolp (car e)) (string-equal (symbol-name (car e)) "SUBQUERY"))
          (validate-sparql (second e)))))))
@@ -457,6 +452,8 @@
                                val-data))))
                  (when toks (pop toks)))
                (push (list 'values val-vars (nreverse val-data)) clauses)))
+            ((string-equal (car toks) "BINDINGS")
+             (error "BINDINGS is not valid SPARQL 1.1 syntax; use VALUES"))
             (t (return))))
         ;; Build DSL expression
         ;; All group graph pattern elements are in `patterns` in parse order
