@@ -967,19 +967,32 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
     (t (error "Unknown path operator: ~A" op))))
 
 (defun negated-property-set (g start excluded-pred target)
-  "Match any predicate EXCEPT the excluded one(s)."
-  (let ((bound-start (and (not (variable-p start)) start))
-        (excluded (if (listp excluded-pred) excluded-pred (list excluded-pred)))
-        (results nil))
-    (if bound-start
-        (dolist (tr (get-triples g :subject bound-start))
-          (unless (member (triple-predicate tr) excluded :test #'equal)
-            (push (cons bound-start (triple-object tr)) results)))
-        ;; Unbound start — check all subjects
-        (dolist (subj (all-subjects g))
-          (dolist (tr (get-triples g :subject subj))
-            (unless (member (triple-predicate tr) excluded :test #'equal)
-              (push (cons subj (triple-object tr)) results)))))
+  "Match any predicate EXCEPT the excluded one(s). Exclusions can be strings or (INV string)."
+  (let* ((bound-start (and (not (variable-p start)) start))
+         (excluded (if (and (listp excluded-pred) (not (sym-name-equal (car excluded-pred) "INV")))
+                       excluded-pred (list excluded-pred)))
+         (direct-excl (remove-if #'consp excluded))
+         (inverse-excl (mapcar #'second (remove-if-not #'consp excluded)))
+         (results nil))
+    ;; Direct matches (only if there are direct exclusions, or no inverse exclusions)
+    (when direct-excl
+      (if bound-start
+          (dolist (tr (get-triples g :subject bound-start))
+            (unless (member (triple-predicate tr) direct-excl :test #'equal)
+              (push (cons bound-start (triple-object tr)) results)))
+          (dolist (subj (all-subjects g))
+            (dolist (tr (get-triples g :subject subj))
+              (unless (member (triple-predicate tr) direct-excl :test #'equal)
+                (push (cons subj (triple-object tr)) results))))))
+    ;; Inverse matches (only if there are inverse exclusions)
+    (when inverse-excl
+      (if bound-start
+          (dolist (tr (get-triples g :object bound-start))
+            (unless (member (triple-predicate tr) inverse-excl :test #'equal)
+              (push (cons bound-start (triple-subject tr)) results)))
+          (dolist (tr (get-triples g))
+            (unless (member (triple-predicate tr) inverse-excl :test #'equal)
+              (push (cons (triple-object tr) (triple-subject tr)) results)))))
     (if (and target (not (variable-p target)))
         (remove-if-not (lambda (pair) (equal (cdr pair) target)) results)
         results)))

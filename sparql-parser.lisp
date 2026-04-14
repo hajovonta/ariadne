@@ -817,6 +817,32 @@
                      (pop toks) t))
         (negated-p (when (and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
                      (pop toks) t)))
+    ;; Negated property set: !pred, !^pred, !(pred|^pred|...)
+    (when negated-p
+      (let ((excluded nil))
+        (if (and toks (stringp (car toks)) (string= (car toks) "("))
+            ;; Parenthesized list: !(p1|^p2|...)
+            (progn
+              (pop toks)
+              (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
+                (let ((inv (when (and toks (stringp (car toks)) (string= (car toks) "^"))
+                             (pop toks) t)))
+                  (let* ((raw (pop toks))
+                         (r (sparql-resolve-term raw prefixes))
+                         (pred (if (equal r "a") "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" r)))
+                    (push (if inv (list 'inv pred) pred) excluded)))
+                (when (and toks (stringp (car toks)) (string= (car toks) "|"))
+                  (pop toks)))
+              (when (and toks (stringp (car toks)) (string= (car toks) ")"))
+                (pop toks)))
+            ;; Single: !pred or !^pred
+            (let ((inv (when (and toks (stringp (car toks)) (string= (car toks) "^"))
+                         (pop toks) t)))
+              (let* ((raw (pop toks))
+                     (r (sparql-resolve-term raw prefixes))
+                     (pred (if (equal r "a") "http://www.w3.org/1999/02/22-rdf-syntax-ns#type" r)))
+                (push (if inv (list 'inv pred) pred) excluded))))
+        (return-from parse-sparql-path-elt (cons (list 'neg (nreverse excluded)) toks))))
     ;; Primary: URI, 'a', or '(' path ')'
     (let* ((primary
              (cond
@@ -835,7 +861,6 @@
                                 (member (car toks) '("+" "*" "?") :test #'string=))
                        (pop toks)))
            (path primary))
-      (when negated-p (setf path (list 'neg path)))
       (when inverse-p (setf path (list 'inv path)))
       (when modifier
         (setf path (cond ((string= modifier "+") (list '+ path))
