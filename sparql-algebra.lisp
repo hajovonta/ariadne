@@ -154,16 +154,49 @@
     ((null expr) t)
     ((alg-exists-p expr)
      (let* ((inner (alg-exists-pattern expr))
-            ;; Per spec: exists(P) is true iff eval(D(G), substitute(P, μ)) is non-empty
-            ;; Substitute μ into the pattern: resolve GRAPH variables, inject bindings
             (subst-inner (substitute-algebra inner mu))
             (result (eval-algebra subst-inner graph dataset)))
        (let ((found (some (lambda (mu2) (mappings-compatible-p mu mu2)) result)))
          (if (alg-exists-negated expr) (not found) found))))
+    ;; Compound expressions that may contain EXISTS
+    ((and (consp expr) (symbolp (car expr))
+          (string-equal (symbol-name (car expr)) "OR"))
+     (or (eval-filter-expr-alg (second expr) mu graph dataset)
+         (eval-filter-expr-alg (third expr) mu graph dataset)))
+    ((and (consp expr) (symbolp (car expr))
+          (string-equal (symbol-name (car expr)) "AND"))
+     (and (eval-filter-expr-alg (second expr) mu graph dataset)
+          (eval-filter-expr-alg (third expr) mu graph dataset)))
+    ((and (consp expr) (symbolp (car expr))
+          (string-equal (symbol-name (car expr)) "NOT"))
+     (not (eval-filter-expr-alg (second expr) mu graph dataset)))
+    ;; Check if any sub-expression contains an EXISTS struct
+    ((and (consp expr) (some #'alg-exists-p (flatten-expr expr)))
+     ;; Evaluate by recursively resolving EXISTS sub-expressions first
+     (let ((resolved (resolve-exists-in-expr expr mu graph dataset)))
+       (handler-case
+           (sparql-ebv (safe-eval (subst-vars resolved mu)))
+         (error () nil))))
     (t (handler-case
            (let ((val (safe-eval (subst-vars expr mu))))
              (sparql-ebv val))
          (error () nil)))))
+
+(defun flatten-expr (expr)
+  "Collect all atoms and structs from an expression tree."
+  (cond ((null expr) nil)
+        ((atom expr) (list expr))
+        ((typep expr 'structure-object) (list expr))
+        (t (mapcan #'flatten-expr expr))))
+
+(defun resolve-exists-in-expr (expr mu graph dataset)
+  "Replace EXISTS structs in expr with their boolean results."
+  (cond ((null expr) nil)
+        ((alg-exists-p expr)
+         (if (eval-filter-expr-alg expr mu graph dataset) t nil))
+        ((atom expr) expr)
+        (t (cons (resolve-exists-in-expr (car expr) mu graph dataset)
+                 (resolve-exists-in-expr (cdr expr) mu graph dataset)))))
 
 (defun sparql-ebv (val)
   "Effective Boolean Value (Section 17.2.2)."
