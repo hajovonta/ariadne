@@ -327,7 +327,13 @@
           (dolist (ng (dataset-named-graphs dataset) results)
             (let ((sub (eval-algebra pattern (cdr ng) dataset)))
               (dolist (mu sub)
-                (push (acons name (car ng) mu) results)))))
+                (let ((existing (assoc name mu)))
+                  (if (and existing (cdr existing))
+                      ;; Variable already bound — check compatibility
+                      (when (equal (cdr existing) (car ng))
+                        (push mu results))
+                      ;; Not bound — add binding
+                      (push (acons name (car ng) mu) results)))))))
         (let ((g (dataset-get-graph dataset name)))
           (if g (eval-algebra pattern g dataset) nil)))))
 
