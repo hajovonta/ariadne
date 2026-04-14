@@ -1364,20 +1364,24 @@
           (list 'construct patterns (cons 'where patterns))))
       (if (and toks (stringp (car toks)) (string-equal (car toks) "FROM"))
           (progn
-            ;; CONSTRUCT FROM ... WHERE — skip FROM clauses, template = WHERE patterns
-            (loop while (and toks (stringp (car toks)) (string-equal (car toks) "FROM")) do
-              (pop toks)
-              (when (and toks (stringp (car toks)) (string-equal (car toks) "NAMED"))
+            ;; CONSTRUCT FROM ... WHERE — collect FROM clauses, template = WHERE patterns
+            (let ((from-default nil) (from-named nil))
+              (loop while (and toks (stringp (car toks)) (string-equal (car toks) "FROM")) do
+                (pop toks)
+                (if (and toks (stringp (car toks)) (string-equal (car toks) "NAMED"))
+                    (progn (pop toks) (push (sparql-resolve-term (pop toks) prefixes) from-named))
+                    (push (sparql-resolve-term (pop toks) prefixes) from-default)))
+              (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
                 (pop toks))
-              (pop toks))
-            (when (and toks (stringp (car toks)) (string-equal (car toks) "WHERE"))
-              (pop toks))
-            (when (and toks (stringp (car toks)) (string= (car toks) "{"))
-              (pop toks))
-            (multiple-value-bind (patterns filters toks-rest)
-                (sparql-parse-body toks prefixes)
-              (declare (ignore filters toks-rest))
-              (list 'construct patterns (cons 'where patterns))))
+              (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+                (pop toks))
+              (multiple-value-bind (patterns filters toks-rest)
+                  (sparql-parse-body toks prefixes)
+                (declare (ignore filters toks-rest))
+                (let ((result (list 'construct patterns (cons 'where patterns))))
+                  (when from-default (setf result (append result (list (list 'from (nreverse from-default))))))
+                  (when from-named (setf result (append result (list (list 'from-named (nreverse from-named))))))
+                  result))))
       ;; Normal CONSTRUCT { template } WHERE { patterns }
       (progn
         (when (and toks (string= (car toks) "{"))

@@ -914,12 +914,24 @@
   "Execute a SPARQL query using the algebra evaluator.
    NAMED-GRAPHS is an alist of (name . graph) pairs."
   (let* ((parsed (parse-sparql query-string))
-         (ds (make-dataset graph named-graphs)))
+         ;; Handle FROM clause: merge specified named graphs into default graph
+         (from-clause (find-if (lambda (c) (and (consp c) (symbolp (car c))
+                                                (sym-name-equal (car c) "FROM")))
+                               (cddr parsed)))
+         (active-graph (if from-clause
+                           (let ((merged (copy-graph graph)))
+                             (dolist (uri (second from-clause) merged)
+                               (let ((ng (cdr (assoc uri named-graphs :test #'equal))))
+                                 (when ng (dolist (tr (get-triples ng))
+                                            (add-triple merged (triple-subject tr)
+                                                        (triple-predicate tr) (triple-object tr)))))))
+                           graph))
+         (ds (make-dataset active-graph named-graphs)))
     (multiple-value-bind (algebra form vars) (translate-query parsed)
       (case form
         (:describe (execute-describe graph algebra))
         (t
-         (let ((results (eval-algebra algebra graph ds)))
+         (let ((results (eval-algebra algebra active-graph ds)))
            (case form
              (:ask (not (null results)))
              (:select
