@@ -1035,9 +1035,9 @@ Bound constants score 2, variables already bound by prior patterns score 1, unbo
         (bound-target (and target (not (variable-p target)) target))
         (results nil))
     (when bound-start
-      (push (cons bound-start bound-start) results)
+      (pushnew (cons bound-start bound-start) results :test #'equal)
       (dolist (next (one-hop g bound-start pred))
-        (push (cons bound-start next) results)))
+        (pushnew (cons bound-start next) results :test #'equal)))
     (when (and bound-target (not bound-start))
       ;; Unbound start, bound target: target matches itself + inverse one-hop
       (pushnew (cons bound-target bound-target) results :test #'equal)
