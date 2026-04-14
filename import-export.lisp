@@ -918,7 +918,9 @@ Returns (remaining-toks anon-counter list-head-node)."
      (let ((val (ignore-errors (read-from-string token))))
        (if (numberp val)
            (intern-literal val (cond ((integerp val) +xsd-integer+)
-                                     ((typep val 'double-float) +xsd-double+)
+                                     ((floatp val)
+                                      (if (or (search "e" token) (search "E" token))
+                                          +xsd-double+ +xsd-decimal+))
                                      (t +xsd-decimal+)))
            token)))
     ;; Blank node _:...
