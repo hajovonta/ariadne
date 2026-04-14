@@ -196,7 +196,10 @@
       (dolist (proj projections)
         (let ((alias (first proj))
               (expr (second proj)))
-          (if (and (consp expr) (member (car expr) '(COUNT SUM AVG MIN MAX GROUP_CONCAT SAMPLE)
+          (if (and (consp expr) (member (car expr)
+                                        '(COUNT SUM AVG MIN MAX GROUP_CONCAT SAMPLE
+                                          COUNT-DISTINCT SUM-DISTINCT AVG-DISTINCT MIN-DISTINCT
+                                          MAX-DISTINCT GROUP_CONCAT-DISTINCT SAMPLE-DISTINCT)
                                         :test #'sym-name-equal))
               ;; Aggregate without GROUP BY: compute over all results
               (unless group-var
