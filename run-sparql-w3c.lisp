@@ -33,18 +33,23 @@
 
 (defun parse-srj (path)
   "Parse .srj (JSON) into list of alists, or T/NIL for ASK."
-  (let ((json (slurp path)) (results nil))
+  (let ((json (com.inuoe.jzon:parse (slurp path))))
     ;; ASK results
-    (when (cl-ppcre:scan "\"boolean\"\\s*:\\s*true" json) (return-from parse-srj t))
-    (when (cl-ppcre:scan "\"boolean\"\\s*:\\s*false" json) (return-from parse-srj nil))
-    ;; SELECT results: extract each binding object
-    (cl-ppcre:do-matches-as-strings (block "\\{[^{}]*\"type\"[^{}]*\\}" json)
-      (let ((bindings nil))
-        (cl-ppcre:do-register-groups (name val)
-            ("\"(\\w+)\"\\s*:\\s*\\{[^}]*\"value\"\\s*:\\s*\"([^\"]*)\""  block)
-          (push (cons name val) bindings))
-        (when bindings (push (nreverse bindings) results))))
-    (nreverse results)))
+    (let ((bool (gethash "boolean" json)))
+      (when (not (null bool)) (return-from parse-srj (if (eq bool t) t nil))))
+    ;; SELECT results
+    (let ((results-obj (gethash "results" json)))
+      (when results-obj
+        (let ((bindings (gethash "bindings" results-obj)))
+          (when bindings
+            (map 'list
+                 (lambda (row)
+                   (let ((alist nil))
+                     (maphash (lambda (k v)
+                                (push (cons k (gethash "value" v)) alist))
+                              row)
+                     (nreverse alist)))
+                 bindings)))))))
 
 (defun parse-expected-graph (path)
   "Parse .ttl result into a graph and return triple count."
