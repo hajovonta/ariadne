@@ -273,7 +273,7 @@
            (let ((mu nil))
              (when (variable-p s) (push (cons s (car pair)) mu))
              (when (and o (variable-p o)) (push (cons o (cdr pair)) mu))
-             (pushnew mu results :test #'equal)))))
+             (push mu results)))))
       ;; Unbound start, bound target: try target + all nodes
       (bound-o
        (let ((starts (cons o (all-nodes graph)))
@@ -498,20 +498,14 @@
             ((sym-name-equal tag "OFFSET") (setf offset-n (second clause)))
             ((sym-name-equal tag "VALUES") (setf values-clause (rest clause)))
             ;; OPTIONAL, UNION, MINUS etc. are inside WHERE
+            ;; FILTER is top-level — append to WHERE for translate-group
+            ((sym-name-equal tag "FILTER")
+             (dolist (f (rest clause))
+               (setf where-clause (append where-clause (list (list 'filter f))))))
             ))))
-    ;; Collect patterns that belong in the WHERE group
-    ;; Our parser puts FILTER, OPTIONAL, UNION, MINUS, etc. as top-level clauses
-    (let ((group-elements (copy-list where-clause))
-          (extra nil))
-      (dolist (clause body)
-        (let ((tag (and (consp clause) (first clause))))
-          (when tag
-            (when (member (symbol-name tag)
-                          '("FILTER" "OPTIONAL" "UNION" "MINUS" "NOT-EXISTS" "EXISTS" "GRAPH")
-                          :test #'string-equal)
-              (push clause extra)))))
     ;; Step 1: Translate the WHERE group graph pattern
-    (let ((pattern (translate-group (append group-elements (nreverse extra)))))
+    ;; All group elements (triples, OPTIONAL, MINUS, UNION, etc.) are in where-clause in parse order
+    (let ((pattern (translate-group where-clause)))
       ;; Step 2: GROUP BY expressions — add Extend nodes
       (dolist (ge (nreverse group-exprs))
         (setf pattern (make-alg-extend pattern (first ge) (second ge))))
@@ -601,7 +595,7 @@
         (setf pattern (make-alg-slice pattern
                                       (when offset-n (if (numberp offset-n) offset-n (parse-integer (princ-to-string offset-n))))
                                       (when limit-n (if (numberp limit-n) limit-n (parse-integer (princ-to-string limit-n)))))))
-      (values pattern :select vars)))))
+      (values pattern :select vars))))
 
 (defun translate-ask (expr)
   "Translate ASK query."

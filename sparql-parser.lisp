@@ -321,25 +321,16 @@
                (push (list 'values val-vars (nreverse val-data)) clauses)))
             (t (return))))
         ;; Build DSL expression
-        (let* ((ne-and-graph (remove-if-not (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph minus)))) patterns))
-               (clean-patterns (remove-if (lambda (p) (and (consp p) (member (car p) '(not-exists exists graph minus)))) patterns))
-               (expr (list (if distinct-p 'select-distinct 'select)
+        ;; All group graph pattern elements are in `patterns` in parse order
+        ;; (triples, OPTIONAL, MINUS, UNION, GRAPH, BIND, VALUES, subquery, NOT-EXISTS, EXISTS)
+        (let* ((expr (list (if distinct-p 'select-distinct 'select)
                           vars
-                          (cons 'where clean-patterns))))
-          ;; Extract NOT-EXISTS and GRAPH from patterns
-          (dolist (p ne-and-graph)
-            (setf expr (append expr (list p))))
-          (dolist (opt optionals)
-            (setf expr (append expr (list opt))))
-          (dolist (u unions)
-            (setf expr (append expr (list u))))
+                          (cons 'where patterns))))
+          ;; Filters apply to the whole group (Section 18.2.2.6)
           (when filters
             (setf expr (append expr (list (cons 'filter filters)))))
-          (dolist (b binds)
-            (setf expr (append expr (list b))))
           (dolist (p projections)
             (let* ((toks (cdr p))
-                   ;; Parse expression tokens into evaluable form
                    (parsed (parse-projection-expr toks prefixes)))
               (setf expr (append expr (list (list 'project (car p) parsed))))))
           (dolist (c clauses)
@@ -544,7 +535,7 @@
         (optionals nil)
         (unions nil)
         (binds nil))
-    (loop while (and toks (not (string= (car toks) "}"))) do
+    (loop while (and toks (not (and (stringp (car toks)) (string= (car toks) "}")))) do
       (cond
         ;; FILTER
         ((string-equal (car toks) "FILTER")
@@ -611,14 +602,14 @@
                  (when toks (pop toks))
                  (setf val-vars (nreverse val-vars)))
                (push (pop toks) val-vars))
-           (when (and toks (string= (car toks) "{"))
+           (when (and toks (stringp (car toks)) (string= (car toks) "{"))
              (pop toks)
-             (loop until (or (null toks) (string= (car toks) "}")) do
+             (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) "}"))) do
                (if (and (stringp (car toks)) (string= (car toks) "("))
                    (progn
                      (pop toks)
                      (let ((row nil))
-                       (loop until (or (null toks) (string= (car toks) ")")) do
+                       (loop until (or (null toks) (and (stringp (car toks)) (string= (car toks) ")"))) do
                          (let ((tok (pop toks)))
                            (push (if (and (stringp tok) (string-equal tok "UNDEF"))
                                      nil (sparql-resolve-term tok prefixes))
@@ -630,6 +621,10 @@
                                      nil (sparql-resolve-term tok prefixes)))
                            val-data))))
              (when toks (pop toks)))
+           (let ((nv (length val-vars)))
+             (dolist (row val-data)
+               (unless (= (length row) nv)
+                 (error "VALUES row length ~A does not match ~A variables" (length row) nv))))
            (push (list 'values val-vars (nreverse val-data)) patterns)))
         ;; SERVICE <url> { ... }
         ((string-equal (car toks) "SERVICE")
@@ -668,7 +663,7 @@
            (setf toks opt-rest)
            (when (and toks (string= (car toks) "}"))
              (pop toks))
-           (push (cons 'optional opt-patterns) optionals)))
+           (push (cons 'optional opt-patterns) patterns)))
         ;; MINUS { ... }
         ((string-equal (car toks) "MINUS")
          (pop toks)
@@ -723,7 +718,7 @@
                    (push (list 'union
                                (cons 'where u-patterns)
                                (cons 'where u2-patterns))
-                         unions)))
+                         patterns)))
                ;; Not UNION, just nested block — treat as patterns
                (dolist (p u-patterns) (push p patterns))))))
         ;; Triple pattern: s p o .  (with property path detection)
@@ -952,7 +947,7 @@
         (when (and toks (string= (car toks) "{"))
           (pop toks))
         (let ((template nil))
-          (loop while (and toks (not (string= (car toks) "}"))) do
+          (loop while (and toks (not (and (stringp (car toks)) (string= (car toks) "}")))) do
             (let ((s (sparql-resolve-term (pop toks) prefixes))
                   (p (sparql-resolve-term (pop toks) prefixes))
                   (o (sparql-resolve-term (pop toks) prefixes)))
