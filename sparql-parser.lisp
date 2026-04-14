@@ -455,13 +455,39 @@
     (cons (nreverse vals) toks)))
 
 (defun parse-unary-expr (toks prefixes)
-  "Parse unary: !expr or primary"
-  (if (and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
-      (progn
-        (pop toks)
-        (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
-          (values (list 'not expr) rest)))
-      (parse-primary-expr toks prefixes)))
+  "Parse unary: !expr, NOT EXISTS { }, EXISTS { }, or primary"
+  (cond
+    ;; NOT EXISTS { ... }
+    ((and toks (stringp (car toks)) (string-equal (car toks) "NOT")
+          (cdr toks) (stringp (cadr toks)) (string-equal (cadr toks) "EXISTS"))
+     (pop toks) (pop toks)
+     (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+       (pop toks))
+     (multiple-value-bind (pats filts rest)
+         (sparql-parse-body toks prefixes)
+       (declare (ignore filts))
+       (setf toks rest)
+       (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+         (pop toks))
+       (values (cons 'not-exists pats) toks)))
+    ;; EXISTS { ... }
+    ((and toks (stringp (car toks)) (string-equal (car toks) "EXISTS"))
+     (pop toks)
+     (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+       (pop toks))
+     (multiple-value-bind (pats filts rest)
+         (sparql-parse-body toks prefixes)
+       (declare (ignore filts))
+       (setf toks rest)
+       (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+         (pop toks))
+       (values (cons 'exists pats) toks)))
+    ;; ! (NOT)
+    ((and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
+     (pop toks)
+     (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
+       (values (list 'not expr) rest)))
+    (t (parse-primary-expr toks prefixes))))
 
 (defun parse-primary-expr (toks prefixes)
   "Parse primary: (expr), function(args), variable, literal, URI, true, false"

@@ -391,7 +391,7 @@
                                   (subseq s start))
                               +xsd-string+)))
            ((sym-name-equal op "CONTAINS")
-            (search (princ-to-string (lit-val (second args))) (princ-to-string (lit-val (first args))) :test #'char=))
+            (not (null (search (princ-to-string (lit-val (second args))) (princ-to-string (lit-val (first args))) :test #'char=))))
            ((sym-name-equal op "STRSTARTS")
             (let ((s (princ-to-string (lit-val (first args)))) (p (princ-to-string (lit-val (second args)))))
               (and (>= (length s) (length p)) (string= s p :end1 (length p)))))
