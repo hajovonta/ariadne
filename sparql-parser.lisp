@@ -1164,8 +1164,9 @@
                      (push u patterns))))
                ;; Not UNION — just nested group
                (push (cons 'group first-branch) patterns))))
-        ;; Bare SubSelect: SELECT ... appearing directly in group
-        ((and (stringp (car toks)) (string-equal (car toks) "SELECT"))
+        ;; Bare SubSelect: SELECT ... appearing directly in group (must be first)
+        ((and (stringp (car toks)) (string-equal (car toks) "SELECT")
+              (null patterns) (null filters))
          (let ((sub-toks nil) (depth 0))
            ;; Collect all tokens for the subquery (until we hit } at depth 0)
            (loop while toks do
