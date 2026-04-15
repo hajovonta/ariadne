@@ -9,7 +9,7 @@ Ariadne provides four complementary query interfaces, each suited to different u
 | [Pattern Matching Primitives](#3-pattern-matching-primitives) | Programmatic | Raw binding environments, custom query logic |
 | [Gremlin-style Traversal](#4-gremlin-style-traversal) | Navigational | Path finding, graph walking, reachability |
 
-Additional sections cover the [Property Graph Layer](#5-property-graph-layer), [RDF Import/Export](#6-rdf-import--export), [Transactions](#7-transactions), and [Persistence](#8-persistence).
+Additional sections cover the [Property Graph Layer](#5-property-graph-layer), [RDF Import/Export](#6-rdf-import--export), [Transactions](#7-transactions), [Persistence](#8-persistence), and [SHACL Validation](#13-shacl-validation).
 
 ---
 
@@ -459,11 +459,9 @@ WHERE {                              (where (?person "name" ?name)
 Key differences from SPARQL:
 - S-expression syntax instead of string-based grammar — composable, macroexpandable
 - Filter expressions use a safe, whitelisted evaluator — no arbitrary code execution
-- SPARQL string parser also available via `(sparql g "SELECT ...")`
+- SPARQL string parser also available via `(sparql g "SELECT ...")` — full W3C conformance (328/328 tests)
 - No PREFIX declarations needed in DSL (use CL strings or keywords directly)
-- ~95% of SPARQL 1.1 features implemented
 - Named graphs supported via GRAPH clause and add-quad/get-quads
-- Federated queries (SERVICE) not yet implemented
 
 ---
 
@@ -928,7 +926,7 @@ Named graphs allow partitioning triples into separate contexts, useful for prove
 
 ## 12. SPARQL String Parser
 
-Execute standard SPARQL query strings directly, without converting to the DSL manually.
+Execute standard SPARQL 1.1 query strings directly. Full W3C conformance: 328/328 tests (100%).
 
 ```lisp
 ;; SELECT query
@@ -951,7 +949,38 @@ Execute standard SPARQL query strings directly, without converting to the DSL ma
 
 ---
 
-## 13. Reactive Triggers
+## 13. SHACL Validation
+
+W3C Shapes Constraint Language for validating RDF graphs against shape definitions. Full conformance: 98/98 core tests, 23/23 SPARQL tests.
+
+```lisp
+;; Validate a graph containing both data and shapes
+(shacl-validate g)
+;; => (:CONFORMS T :RESULTS NIL)
+
+;; Non-conforming graph returns violation details
+(shacl-validate g)
+;; => (:CONFORMS NIL :RESULTS ((:TYPE "http://www.w3.org/ns/shacl#Violation"
+;;                               :FOCUS-NODE "http://example.org/alice"
+;;                               :PATH "http://example.org/age"
+;;                               :SOURCE-SHAPE "http://example.org/PersonShape"
+;;                               :MESSAGE "...")))
+```
+
+Supported constraint types:
+- **Value type**: `sh:class`, `sh:datatype`, `sh:nodeKind`
+- **Cardinality**: `sh:minCount`, `sh:maxCount`
+- **Value range**: `sh:minExclusive`, `sh:maxExclusive`, `sh:minInclusive`, `sh:maxInclusive`
+- **String**: `sh:minLength`, `sh:maxLength`, `sh:pattern`, `sh:flags`
+- **Property pair**: `sh:equals`, `sh:disjoint`, `sh:lessThan`, `sh:lessThanOrEquals`
+- **Logical**: `sh:not`, `sh:and`, `sh:or`, `sh:xone`
+- **Shape-based**: `sh:node`, `sh:property`, `sh:qualifiedValueShape`
+- **Other**: `sh:in`, `sh:hasValue`, `sh:closed`, `sh:ignoredProperties`, `sh:languageIn`, `sh:uniqueLang`
+- **SPARQL-based**: `sh:sparql` with SELECT and ASK validators, custom `sh:ConstraintComponent` with parameter binding per spec B.3.4.2
+
+---
+
+## 14. Reactive Triggers
 
 Register callbacks that fire when triples matching a pattern are added.
 
@@ -972,7 +1001,7 @@ Register callbacks that fire when triples matching a pattern are added.
 
 ---
 
-## 14. Graph Analytics
+## 15. Graph Analytics
 
 Built-in graph algorithms operating on the triple store.
 
@@ -1010,7 +1039,7 @@ Built-in graph algorithms operating on the triple store.
 
 ---
 
-## 15. Streaming Import
+## 16. Streaming Import
 
 Line-by-line import for large files that don't fit in memory as strings.
 
@@ -1026,7 +1055,7 @@ Tested at 3.6M triples (drugbank, 34 seconds) and 1.7M triples (clinical trials,
 
 ---
 
-## 16. Visualization
+## 17. Visualization
 
 ### Graphviz Rendering
 
@@ -1082,7 +1111,7 @@ Available engines: `:dot` (hierarchical), `:neato` (force-directed), `:fdp` (spr
 
 ---
 
-## 17. Graph Operations
+## 18. Graph Operations
 
 ### Merge
 
@@ -1121,7 +1150,7 @@ Available engines: `:dot` (hierarchical), `:neato` (force-directed), `:fdp` (spr
 
 ---
 
-## 18. Thread Safety
+## 19. Thread Safety
 
 All graph mutations (`add-triple`, `remove-triple`) are protected by a lock. Multiple threads can safely read and write to the same graph concurrently.
 
