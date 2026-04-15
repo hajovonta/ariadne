@@ -36,38 +36,71 @@
   "Validate SELECT query per spec Section 18.2.4."
   (let* ((vars (second expr))
          (body (cddr expr))
-         (group-by nil)
+         (group-by-vars nil)  ; simple variable GROUP BY terms
+         (group-by-exprs nil) ; expression GROUP BY terms (without AS)
+         (has-group-by nil)
          (projections nil)
+         (project-exprs nil)  ; (alias . expr) pairs
          (has-aggregate nil))
     ;; Collect clauses
     (dolist (clause body)
       (when (and (consp clause) (symbolp (car clause)))
         (let ((tag (symbol-name (car clause))))
           (cond
-            ((or (string-equal tag "GROUP-BY") (string-equal tag "GROUP-BY-MULTI")
-                 (string-equal tag "GROUP-BY-EXPR"))
-             (setf group-by (second clause)))
+            ((string-equal tag "GROUP-BY")
+             (setf has-group-by t)
+             (let ((v (second clause)))
+               (if (symbolp v) (push v group-by-vars) (setf has-group-by t))))
+            ((string-equal tag "GROUP-BY-MULTI")
+             (setf has-group-by t)
+             (dolist (v (if (listp (second clause)) (second clause) (list (second clause))))
+               (when (symbolp v) (push v group-by-vars))))
+            ((string-equal tag "GROUP-BY-EXPR")
+             (setf has-group-by t)
+             (push (second clause) group-by-vars))  ; alias variable
+            ((string-equal tag "GROUP-BY-EXPR-ONLY")
+             (setf has-group-by t)
+             (push (second clause) group-by-exprs))
             ((string-equal tag "PROJECT")
              (push (second clause) projections)
+             (push (cons (second clause) (third clause)) project-exprs)
              (when (and (consp (third clause)) (symbolp (car (third clause)))
                         (member (symbol-name (car (third clause)))
                                 '("COUNT" "SUM" "AVG" "MIN" "MAX" "GROUP_CONCAT" "SAMPLE"
-                                  "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT" "GROUP-CONCAT"
-                                  "GROUP-CONCAT-DISTINCT")
+                                  "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT"
+                                  "MIN-DISTINCT" "MAX-DISTINCT" "SAMPLE-DISTINCT"
+                                  "GROUP-CONCAT" "GROUP-CONCAT-DISTINCT")
                                 :test #'string-equal))
                (setf has-aggregate t)))))))
     ;; Rule: SELECT * with GROUP BY is not allowed
-    (when (and group-by (or (eq vars '*) (equal vars '("*"))))
+    (when (and has-group-by (or (eq vars '*) (equal vars '("*"))))
       (error "SELECT * not allowed with GROUP BY"))
-    ;; Rule: with GROUP BY, non-aggregated SELECT variables must be in GROUP BY
-    (when group-by
-      (let ((group-vars (if (listp group-by) group-by (list group-by))))
-        (dolist (v (if (listp vars) vars nil))
-          (when (and (symbolp v) (not (member v group-vars))
-                     (not (member v projections)))
-            (error "Variable ~A in SELECT is not in GROUP BY and not aggregated" v)))))
+    ;; Rule: with GROUP BY, non-aggregated SELECT variables must be simple GROUP BY vars
+    (when has-group-by
+      (dolist (v (if (listp vars) vars nil))
+        (when (and (symbolp v) (not (member v group-by-vars))
+                   (not (member v projections)))
+          (error "Variable ~A in SELECT is not in GROUP BY and not aggregated" v))))
+    ;; Rule: PROJECT expressions must only use grouped variables or aggregates
+    (when has-group-by
+      (labels ((check-expr (e)
+                 (cond
+                   ((symbolp e)
+                    (when (and (variable-p e) (not (member e group-by-vars)))
+                      (error "Non-grouped variable ~A in SELECT expression" e)))
+                   ((consp e)
+                    (unless (and (symbolp (car e))
+                                 (member (symbol-name (car e))
+                                         '("COUNT" "SUM" "AVG" "MIN" "MAX" "GROUP_CONCAT" "SAMPLE"
+                                           "COUNT-DISTINCT" "SUM-DISTINCT" "AVG-DISTINCT"
+                                           "MIN-DISTINCT" "MAX-DISTINCT" "SAMPLE-DISTINCT"
+                                           "GROUP-CONCAT" "GROUP-CONCAT-DISTINCT")
+                                         :test #'string-equal))
+                      (dolist (sub (cdr e)) (check-expr sub)))))))
+        (dolist (pe project-exprs)
+          (check-expr (cdr pe)))))
     ;; Rule: mixing aggregates and bare variables without GROUP BY
-    (when (and has-aggregate (not group-by) (listp vars))
+    (when (and has-aggregate (not has-group-by) (listp vars))
       (dolist (v vars)
         (when (and (symbolp v) (not (member v projections)))
           (error "Variable ~A used with aggregate but no GROUP BY" v))))
@@ -623,7 +656,9 @@
                                (push alias group-vars)
                                (push (list 'group-by-expr alias
                                            (parse-projection-expr e-toks prefixes)) clauses))
-                             (push (first expr-toks) group-vars))))
+                             ;; Expression without AS — not a simple variable GROUP BY
+                             (push (list 'group-by-expr-only
+                                         (parse-projection-expr expr-toks prefixes)) clauses))))
                      ;; Simple variable
                      (push (pop toks) group-vars)))
                (if (= 1 (length group-vars))
