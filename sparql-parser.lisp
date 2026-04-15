@@ -1100,47 +1100,70 @@
              (when m-filts (nconc clause (list (cons 'filter m-filts))))
              (when m-opts (nconc clause m-opts))
              (push clause patterns))))
-        ;; UNION or nested block: { ... } UNION { ... } or { SELECT subquery }
+        ;; GroupOrUnionGraphPattern: { ... } ( UNION { ... } )*
         ((string= (car toks) "{")
          (pop toks)
-         ;; Check for subquery: { SELECT ... WHERE { ... } }
-         (if (and toks (stringp (car toks)) (string-equal (car toks) "SELECT"))
-             (progn
-               ;; Collect subquery tokens until matching }
-               (let ((sub-toks nil) (depth 1))
-                 (loop while (and toks (> depth 0)) do
-                   (let ((tok (pop toks)))
-                     (when (stringp tok)
-                       (cond ((string= tok "{") (incf depth))
-                             ((string= tok "}") (decf depth))))
-                     (when (> depth 0) (push tok sub-toks))))
-                 (let ((st (nreverse sub-toks)))
-                   ;; Skip leading SELECT keyword
-                   (when (and st (stringp (car st)) (string-equal (car st) "SELECT"))
-                     (pop st))
-                   (push (list 'subquery (sparql-parse-select st prefixes nil)) patterns))))
-             ;; Regular nested block or UNION
-             (multiple-value-bind (u-patterns u-filters u-rest)
-             (sparql-parse-body toks prefixes)
-           (setf toks u-rest)
-           (when (and toks (string= (car toks) "}"))
-             (pop toks))
+         ;; Parse first GroupGraphPattern content
+         (let ((first-branch
+                 (if (and toks (stringp (car toks)) (string-equal (car toks) "SELECT"))
+                     ;; Subquery
+                     (let ((sub-toks nil) (depth 1))
+                       (loop while (and toks (> depth 0)) do
+                         (let ((tok (pop toks)))
+                           (when (stringp tok)
+                             (cond ((string= tok "{") (incf depth))
+                                   ((string= tok "}") (decf depth))))
+                           (when (> depth 0) (push tok sub-toks))))
+                       (let ((st (nreverse sub-toks)))
+                         (when (and st (stringp (car st)) (string-equal (car st) "SELECT"))
+                           (pop st))
+                         (list (list 'subquery (sparql-parse-select st prefixes nil)))))
+                     ;; Regular group
+                     (multiple-value-bind (u-pats u-filts u-rest)
+                         (sparql-parse-body toks prefixes)
+                       (setf toks u-rest)
+                       (when (and toks (string= (car toks) "}"))
+                         (pop toks))
+                       (if u-filts
+                           (append u-pats (mapcar (lambda (f) (list 'filter f)) u-filts))
+                           u-pats)))))
+           ;; Check for UNION chain
            (if (and toks (string-equal (car toks) "UNION"))
-               (progn
-                 (pop toks)
-                 (when (and toks (string= (car toks) "{"))
-                   (pop toks))
-                 (multiple-value-bind (u2-patterns u2-filters u2-rest)
-                     (sparql-parse-body toks prefixes)
-                   (setf toks u2-rest)
-                   (when (and toks (string= (car toks) "}"))
+               (let ((branches (list (cons 'where first-branch))))
+                 (loop while (and toks (string-equal (car toks) "UNION")) do
+                   (pop toks)
+                   (when (and toks (string= (car toks) "{"))
                      (pop toks))
-                   (let ((b1 (if u-filters (append u-patterns (mapcar (lambda (f) (list 'filter f)) u-filters)) u-patterns))
-                         (b2 (if u2-filters (append u2-patterns (mapcar (lambda (f) (list 'filter f)) u2-filters)) u2-patterns)))
-                     (push (list 'union (cons 'where b1) (cons 'where b2)) patterns))))
-               ;; Not UNION, just nested block — preserve as group with filters
-               (let ((elts (if u-filters (append u-patterns (mapcar (lambda (f) (list 'filter f)) u-filters)) u-patterns)))
-                 (push (cons 'group elts) patterns))))))
+                   (let ((branch
+                           (if (and toks (stringp (car toks)) (string-equal (car toks) "SELECT"))
+                               (let ((sub-toks nil) (depth 1))
+                                 (loop while (and toks (> depth 0)) do
+                                   (let ((tok (pop toks)))
+                                     (when (stringp tok)
+                                       (cond ((string= tok "{") (incf depth))
+                                             ((string= tok "}") (decf depth))))
+                                     (when (> depth 0) (push tok sub-toks))))
+                                 (let ((st (nreverse sub-toks)))
+                                   (when (and st (stringp (car st)) (string-equal (car st) "SELECT"))
+                                     (pop st))
+                                   (list (list 'subquery (sparql-parse-select st prefixes nil)))))
+                               (multiple-value-bind (u-pats u-filts u-rest)
+                                   (sparql-parse-body toks prefixes)
+                                 (setf toks u-rest)
+                                 (when (and toks (string= (car toks) "}"))
+                                   (pop toks))
+                                 (if u-filts
+                                     (append u-pats (mapcar (lambda (f) (list 'filter f)) u-filts))
+                                     u-pats)))))
+                     (push (cons 'where branch) branches)))
+                 ;; Build nested UNION: (union b1 (union b2 b3))
+                 (let ((result (nreverse branches)))
+                   (let ((u (pop result)))
+                     (dolist (b result)
+                       (setf u (list 'union u b)))
+                     (push u patterns))))
+               ;; Not UNION — just nested group
+               (push (cons 'group first-branch) patterns))))
         ;; Bare SubSelect: SELECT ... appearing directly in group
         ((and (stringp (car toks)) (string-equal (car toks) "SELECT"))
          (let ((sub-toks nil) (depth 0))
@@ -1193,14 +1216,15 @@
                           (and (> (length n) 6) (string= "?_ANON" (subseq n 0 6))))
                         (or (null toks)
                             (and (stringp (car toks))
-                                 (member (car toks) '("." "}" ";") :test #'string=))))
+                                 (member (car toks) '("." "}" ";" ")") :test #'string=))))
            (let* ((s (sparql-resolve-term s-tok prefixes))
                 ;; Parse property path expression
                 (path-result (parse-sparql-path toks prefixes))
                 (p (car path-result))
                 (o-toks (cdr path-result))
                 (o (let ((o-tok (pop o-toks)))
-                     (if (and (stringp o-tok) (string= o-tok "["))
+                     (cond
+                       ((and (stringp o-tok) (string= o-tok "["))
                          ;; Blank node as object
                          (let ((bnode (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
                            (loop while (and o-toks (not (string= (car o-toks) "]"))) do
@@ -1215,10 +1239,56 @@
                                  (pop o-toks))))
                            (when (and o-toks (string= (car o-toks) "]"))
                              (pop o-toks))
-                           bnode)
-                         (let ((v (sparql-resolve-term o-tok prefixes)))
-                           (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))))
+                           bnode))
+                       ((and (stringp o-tok) (string= o-tok "("))
+                         ;; RDF collection as object
+                         (let ((items nil))
+                           (loop while (and o-toks (not (and (stringp (car o-toks)) (string= (car o-toks) ")")))) do
+                             (let ((item-tok (pop o-toks)))
+                               (if (and (stringp item-tok) (string= item-tok "["))
+                                   ;; Blank node in collection
+                                   (let ((bn (intern (format nil "?_ANON~A" (incf *sparql-anon-counter*)))))
+                                     (loop while (and o-toks (not (and (stringp (car o-toks)) (string= (car o-toks) "]")))) do
+                                       (let* ((bp-r (parse-sparql-path o-toks prefixes))
+                                              (bp (car bp-r))
+                                              (bo-toks (cdr bp-r))
+                                              (bo (let ((v (sparql-resolve-term (pop bo-toks) prefixes)))
+                                                    (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
+                                         (setf o-toks bo-toks)
+                                         (push (list bn bp bo) patterns)
+                                         (when (and o-toks (stringp (car o-toks)) (string= (car o-toks) ";"))
+                                           (pop o-toks))))
+                                     (when (and o-toks (string= (car o-toks) "]"))
+                                       (pop o-toks))
+                                     (push bn items))
+                                   (push (sparql-resolve-term item-tok prefixes) items))))
+                           (when (and o-toks (string= (car o-toks) ")"))
+                             (pop o-toks))
+                           ;; Build rdf:first/rdf:rest chain
+                           (setf items (nreverse items))
+                           (let ((rdf-first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+                                 (rdf-rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+                                 (rdf-nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil"))
+                           (if (null items)
+                               rdf-nil
+                               (let ((head (intern (format nil "?_COLL~A" (incf *sparql-anon-counter*))))
+                                     (cur nil))
+                                 (dolist (item items)
+                                   (let ((node (if cur (intern (format nil "?_COLL~A" (incf *sparql-anon-counter*))) head)))
+                                     (when cur
+                                       (push (list cur rdf-rest node) patterns))
+                                     (push (list node rdf-first item) patterns)
+                                     (setf cur node)))
+                                 (push (list cur rdf-rest rdf-nil) patterns)
+                                 head)))))
+                       (t (let ((v (sparql-resolve-term o-tok prefixes)))
+                            (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v)))))))
            (setf toks o-toks)
+           ;; Validate triple terms are not punctuation (catches malformed patterns)
+           (when (or (and (stringp s) (member s '("." "}" "{" ";" ",") :test #'string=))
+                     (and (stringp p) (member p '("." "}" "{" ";" ",") :test #'string=))
+                     (and (stringp o) (member o '("." "}" "{" ";" ",") :test #'string=)))
+             (error "Malformed triple pattern"))
            (push (list s p o) patterns)
            ;; Handle ; (same subject, new predicate-object pairs)
            (loop while (and toks (stringp (car toks)) (string= (car toks) ";")
