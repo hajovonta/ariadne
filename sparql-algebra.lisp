@@ -913,7 +913,8 @@
 (defun sparql-via-algebra (graph query-string &optional named-graphs)
   "Execute a SPARQL query using the algebra evaluator.
    NAMED-GRAPHS is an alist of (name . graph) pairs."
-  (let* ((parsed (parse-sparql query-string))
+  (let* ((*package* (find-package :ariadne))
+         (parsed (parse-sparql query-string))
          ;; Handle FROM clause: merge specified named graphs into default graph
          (from-clause (find-if (lambda (c) (and (consp c) (symbolp (car c))
                                                 (sym-name-equal (car c) "FROM")))

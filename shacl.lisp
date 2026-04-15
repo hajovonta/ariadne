@@ -885,15 +885,18 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
             (error "SHACL-SPARQL: BIND reassigns pre-bound variable in validator")))
         (let ((prefix-str (collect-shacl-prefixes g validator)))
           (flet ((substitute-params (q)
-                   (let* ((result (remove #\Return q))
-                          (wp (search "WHERE" (string-upcase result)))
-                          (sel-part (if wp (subseq result 0 wp) ""))
-                          (whr-part (if wp (subseq result wp) result)))
-                     ;; Replace $this: dummy var in SELECT, URI in WHERE
-                     (setf sel-part (cl-ppcre:regex-replace-all "\\$this" sel-part "?SHACLthis"))
-                     (setf whr-part (cl-ppcre:regex-replace-all
-                                     "\\$this" whr-part (format nil "<~A>" focus-node)))
-                     (setf result (concatenate 'string sel-part whr-part))
+                   (let ((result (remove #\Return q)))
+                     ;; Replace $this with value (SHACL B.3.4.2)
+                     (setf result (cl-ppcre:regex-replace-all
+                                   "\\$this" result (shacl-sparql-term focus-node)))
+                     ;; Fix SELECT clauses: literals/URIs can't be projected
+                     (let ((term-pat (concatenate 'string
+                                     "(?i)(SELECT\\s+(?:DISTINCT\\s+)?(?:(?:\\?\\w+|\\([^)]+\\))\\s+)*)"
+                                     "(" (cl-ppcre:quote-meta-chars
+                                          (shacl-sparql-term focus-node)) ")")))
+                       (loop for prev = nil then result
+                             do (setf result (cl-ppcre:regex-replace-all term-pat result "\\1?SHACLthis"))
+                             until (equal result prev)))
                      ;; Replace $PATH
                      (when path
                        (setf result (cl-ppcre:regex-replace-all
@@ -932,7 +935,7 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                 (dolist (val values-to-check)
                   (let* ((sv (lit-val val))
                          (q (cl-ppcre:regex-replace-all
-                             "\\?value" q-template
+                             "[?$]value\\b" q-template
                              (if (stringp sv)
                                  (format nil "\"~A\"" sv)
                                  (format nil "<~A>" sv))))
@@ -1000,6 +1003,12 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
         (collect-from (triple-object pf-triple))))
     (if prefix-strs (format nil "~{~A~%~}" (nreverse prefix-strs)) "")))
 
+(defun shacl-sparql-term (node)
+  "Format a SHACL node as a SPARQL term (URI or literal)."
+  (if (and (stringp node) (or (search "://" node) (and (> (length node) 0) (char= #\_ (char node 0)))))
+      (format nil "<~A>" node)
+      (format nil "\"~A\"" (if (stringp node) node (lit-val node)))))
+
 (defun check-sparql-constraint (g focus-node constraint shape &key path)
   "Execute a sh:sparql constraint against focus-node. Returns list of violations."
   (let* ((select-query (lit-val (prop-shape-value g constraint "select")))
@@ -1011,27 +1020,28 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
     (when select-query
       (let ((clean-query (remove #\Return select-query)))
         (check-shacl-sparql-allowed clean-query)
-      ;; Replace $this: in SELECT list use a dummy var, in WHERE use URI
-      (let* ((where-pos (search "WHERE" (string-upcase clean-query)))
-             (select-part (if where-pos (subseq clean-query 0 where-pos) ""))
-             (where-part (if where-pos (subseq clean-query where-pos) clean-query))
-             (fixed-select (cl-ppcre:regex-replace-all "\\$this" select-part "?SHACLthis"))
-             (fixed-where (let ((w (cl-ppcre:regex-replace-all
-                                   "\\$this"
-                                   where-part
-                                   (format nil "<~A>" focus-node))))
-                           (when path
-                             (setf w (cl-ppcre:regex-replace-all "\\$PATH" w (format nil "<~A>" path))))
-                           (setf w (cl-ppcre:regex-replace-all
-                                    "\\$shapesGraph" w
-                                    (format nil "<~A>" (or (graph-name g) "urn:ariadne:default"))))
-                           (setf w (cl-ppcre:regex-replace-all
-                                    "\\$currentShape" w (format nil "<~A>" shape)))
-                           w))
-             (fixed-query (concatenate 'string prefix-str fixed-select fixed-where))
-             (shapes-graph-uri (or (graph-name g) "urn:ariadne:default"))
-             (results (sparql-via-algebra g fixed-query
-                                          (list (cons shapes-graph-uri g)))))
+      ;; Pre-binding per SHACL B.3.4.2: substitute variables with values
+      (let ((fixed-query (cl-ppcre:regex-replace-all
+                           "\\$this" clean-query (shacl-sparql-term focus-node))))
+        (when path
+          (setf fixed-query (cl-ppcre:regex-replace-all
+                              "\\$PATH" fixed-query (format nil "<~A>" path))))
+        (setf fixed-query (cl-ppcre:regex-replace-all
+                            "\\$shapesGraph" fixed-query
+                            (format nil "<~A>" (or (graph-name g) "urn:ariadne:default"))))
+        (setf fixed-query (cl-ppcre:regex-replace-all
+                            "\\$currentShape" fixed-query (format nil "<~A>" shape)))
+        ;; Fix SELECT clauses: substituted terms can't be projected, use dummy variable
+        (let* ((focus-term (shacl-sparql-term focus-node))
+               (patched (cl-ppcre:regex-replace-all
+                          (concatenate 'string
+                            "(?i)(SELECT\\s+(?:DISTINCT\\s+)?(?:(?:\\?\\w+|\\([^)]+\\))\\s+)*)"
+                            "(" (cl-ppcre:quote-meta-chars focus-term) ")")
+                          fixed-query "\\1?SHACLthis"))
+               (full-query (concatenate 'string prefix-str patched))
+               (shapes-graph-uri (or (graph-name g) "urn:ariadne:default"))
+               (results (sparql-via-algebra g full-query
+                                            (list (cons shapes-graph-uri g)))))
         (when (and results (listp results))
           (dolist (row results)
             (let ((row-list (if (listp row) row (list row))))
@@ -1053,4 +1063,4 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
             (push (make-violation focus-node nil shape
                                   (if (stringp message) message (princ-to-string message)))
                   violations)))))
-    violations))
+    violations)))

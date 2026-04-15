@@ -228,6 +228,36 @@
         (t nil))
       (incf i))))
 
+(defun turtle-unescape (str)
+  "Process Turtle escape sequences in a string."
+  (if (not (position #\\ str))
+      str
+      (with-output-to-string (out)
+        (let ((i 0) (len (length str)))
+          (loop while (< i len) do
+            (let ((ch (char str i)))
+              (if (and (char= ch #\\) (< (1+ i) len))
+                  (let ((next (char str (1+ i))))
+                    (case next
+                      (#\t (write-char #\Tab out))
+                      (#\n (write-char #\Newline out))
+                      (#\r (write-char #\Return out))
+                      (#\b (write-char #\Backspace out))
+                      (#\f (write-char #\Page out))
+                      (#\\ (write-char #\\ out))
+                      (#\" (write-char #\" out))
+                      (#\' (write-char #\' out))
+                      (#\u (let ((cp (parse-integer str :start (+ i 2) :end (min (+ i 6) len) :radix 16)))
+                             (write-char (code-char cp) out))
+                           (incf i 4))
+                      (#\U (let ((cp (parse-integer str :start (+ i 2) :end (min (+ i 10) len) :radix 16)))
+                             (write-char (code-char cp) out))
+                           (incf i 8))
+                      (otherwise (write-char ch out) (write-char next out)))
+                    (incf i 2))
+                  (progn (write-char ch out) (incf i)))))))))
+
+
 (defun validate-number-token (tok)
   "Signal error if token looks like a number but is malformed."
   ;; Reject double signs like +-1
@@ -895,12 +925,29 @@ Returns (remaining-toks anon-counter list-head-node)."
                                 (char= q (char token 2))))))
             (delim-len (if long-p 3 1))
             (q (char token 0))
-            ;; Find closing delimiter
+            ;; Find closing delimiter, skipping escapes
             (end (if long-p
-                     (search (make-string 3 :initial-element q) token :start2 3)
-                     (position q token :start 1))))
+                     (let ((i 3) (tlen (length token)))
+                       (loop while (< i tlen) do
+                         (cond
+                           ((and (char= #\\ (char token i)) (< (1+ i) tlen))
+                            (incf i 2))  ; skip escape
+                           ((and (<= (+ i 2) tlen)
+                                 (char= q (char token i))
+                                 (char= q (char token (1+ i)))
+                                 (char= q (char token (+ i 2))))
+                            (return i))
+                           (t (incf i)))))
+                     (let ((i 1) (tlen (length token)))
+                       (loop while (< i tlen) do
+                         (cond
+                           ((and (char= #\\ (char token i)) (< (1+ i) tlen))
+                            (incf i 2))
+                           ((char= q (char token i))
+                            (return i))
+                           (t (incf i))))))))
        (if end
-           (let ((str (subseq token delim-len end))
+           (let ((str (turtle-unescape (subseq token delim-len end)))
                  (rest (subseq token (+ end delim-len))))
              (cond
                ((and (>= (length rest) 2)
