@@ -348,8 +348,9 @@
                                     (char= c #\%))))
                    do (when (char= #\\ (char str pos)) (incf pos))
                       (incf pos))
-             ;; Must not end with '.'
-             (loop while (and (> pos 0) (char= #\. (char str (1- pos))))
+             ;; Must not end with unescaped '.'
+             (loop while (and (> pos 0) (char= #\. (char str (1- pos)))
+                              (not (and (> pos 1) (char= #\\ (char str (- pos 2))))))
                    do (decf pos)))))
       (loop while (< pos len) do
         (skip-ws)
@@ -839,11 +840,24 @@
        (when (and toks (stringp (car toks)) (string= (car toks) "}"))
          (pop toks))
        (values (cons 'exists pats) toks)))
-    ;; ! (NOT)
+    ;; ! (NOT) — also handles ! EXISTS { ... }
     ((and toks (symbolp (car toks)) (string= (symbol-name (car toks)) "!"))
      (pop toks)
-     (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
-       (values (list 'not expr) rest)))
+     (if (and toks (stringp (car toks)) (string-equal (car toks) "EXISTS"))
+         ;; ! EXISTS { ... } → NOT EXISTS
+         (progn
+           (pop toks)
+           (when (and toks (stringp (car toks)) (string= (car toks) "{"))
+             (pop toks))
+           (multiple-value-bind (pats filts rest)
+               (sparql-parse-body toks prefixes)
+             (declare (ignore filts))
+             (setf toks rest)
+             (when (and toks (stringp (car toks)) (string= (car toks) "}"))
+               (pop toks))
+             (values (cons 'not-exists pats) toks)))
+         (multiple-value-bind (expr rest) (parse-primary-expr toks prefixes)
+           (values (list 'not expr) rest))))
     (t (parse-primary-expr toks prefixes))))
 
 (defun parse-primary-expr (toks prefixes)
@@ -1172,6 +1186,14 @@
                (when (and toks (string= (car toks) "]"))
                  (pop toks))
                (setf s-tok bnode)))
+           ;; After blank node subject: PropertyListPath is optional per grammar
+           ;; If next token is . } or end, skip predicate-object reading
+           (unless (and (symbolp s-tok)
+                        (let ((n (symbol-name s-tok)))
+                          (and (> (length n) 6) (string= "?_ANON" (subseq n 0 6))))
+                        (or (null toks)
+                            (and (stringp (car toks))
+                                 (member (car toks) '("." "}" ";") :test #'string=))))
            (let* ((s (sparql-resolve-term s-tok prefixes))
                 ;; Parse property path expression
                 (path-result (parse-sparql-path toks prefixes))
@@ -1236,7 +1258,7 @@
              (pop toks)
              (let ((o2 (let ((v (sparql-resolve-term (pop toks) prefixes)))
                          (if (numberp v) (intern-literal v (if (integerp v) +xsd-integer+ +xsd-decimal+)) v))))
-               (push (list s p o2) patterns)))))
+               (push (list s p o2) patterns))))))
          (when (and toks (stringp (car toks)) (string= (car toks) "."))
            (pop toks)))))
     (values (nreverse patterns) (nreverse filters) toks (nreverse optionals) (nreverse unions) (nreverse binds))))
