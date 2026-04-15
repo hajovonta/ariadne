@@ -1,5 +1,5 @@
 (require :asdf)
-(asdf:load-system :ariadne-tests :force t)
+(asdf:load-system :ariadne-tests)
 (in-package :ariadne/tests)
 (dolist (subdir '("component/" "node/" "property/" "pre-binding/"))
   (let ((dir (merge-pathnames (concatenate 'string "../sparql/" subdir)

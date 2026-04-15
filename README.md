@@ -1,6 +1,6 @@
 # Ariadne
 
-A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 796/796 tests passing.
+A **graph database** in Common Lisp with full W3C SPARQL 1.1 and SHACL conformance, Gremlin-style traversal, RDF import/export, property graph support, inference rules, graph analytics, and Graphviz visualization. Built with TDD — 798/798 tests passing.
 
 ## Key Features
 
@@ -12,7 +12,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Named Graphs** — Quad store with GRAPH clause for multi-graph queries
 
 ### Query & Pattern Matching
-- **SPARQL-like Query DSL** — `SELECT`, `ASK`, `CONSTRUCT`, `DESCRIBE`, `WHERE`, `FILTER`, `OPTIONAL`, `UNION`, `NOT EXISTS`, `MINUS`, `BIND`, `VALUES`, `GRAPH`, subqueries
+- **W3C SPARQL 1.1** — Full conformance: 328/328 tests (100%). SELECT, ASK, CONSTRUCT, DESCRIBE, WHERE, FILTER, OPTIONAL, UNION, NOT EXISTS, MINUS, BIND, VALUES, GRAPH, subqueries, FROM
 - **SPARQL String Parser** — Execute standard SPARQL query strings directly, including `DESCRIBE`
 - **SPARQL UPDATE** — `INSERT DATA`, `DELETE DATA`, `DELETE WHERE` via string parser and HTTP endpoint
 - **SPARQL SERVICE** — Federated queries to remote SPARQL endpoints via Drakma
@@ -28,7 +28,7 @@ A **graph database** in Common Lisp with a SPARQL-like query DSL, Gremlin-style 
 - **Inference Rules** — Forward-chaining rule engine with fixed-point evaluation
 - **OWL/RDFS Reasoning** — subClassOf, subPropertyOf, domain/range, inverseOf, transitiveProperty, symmetricProperty, sameAs
 - **Schema Validation** — Class/property type and cardinality constraints
-- **SHACL Validation** — W3C Shapes Constraint Language, 98/98 core + 23/23 SPARQL tests (100% conformance)
+- **SHACL Validation** — W3C Shapes Constraint Language: 98/98 core + 23/23 SPARQL tests (100% conformance)
 - **Duplicate Detection** — Jaccard bigram similarity for near-duplicate entities
 
 ### Import & Export
@@ -192,6 +192,7 @@ git clone <repository-url> ariadne
 
 | Standard | Tests | Result |
 |----------|-------|--------|
+| SPARQL 1.1 | 328/328 | 100% |
 | Turtle (syntax) | 209/209 positive, 82/82 negative | 100% |
 | SHACL Core | 98/98 | 100% |
 | SHACL-SPARQL | 23/23 | 100% |
