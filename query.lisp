@@ -476,19 +476,19 @@
                 0)))
            ((sym-name-equal op "MD5")
             (ironclad:byte-array-to-hex-string
-             (ironclad:digest-sequence :md5 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+             (ironclad:digest-sequence :md5 (babel:string-to-octets (princ-to-string (first args)) :encoding :utf-8))))
            ((sym-name-equal op "SHA1")
             (ironclad:byte-array-to-hex-string
-             (ironclad:digest-sequence :sha1 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+             (ironclad:digest-sequence :sha1 (babel:string-to-octets (princ-to-string (first args)) :encoding :utf-8))))
            ((sym-name-equal op "SHA256")
             (ironclad:byte-array-to-hex-string
-             (ironclad:digest-sequence :sha256 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+             (ironclad:digest-sequence :sha256 (babel:string-to-octets (princ-to-string (first args)) :encoding :utf-8))))
            ((sym-name-equal op "SHA384")
             (ironclad:byte-array-to-hex-string
-             (ironclad:digest-sequence :sha384 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+             (ironclad:digest-sequence :sha384 (babel:string-to-octets (princ-to-string (first args)) :encoding :utf-8))))
            ((sym-name-equal op "SHA512")
             (ironclad:byte-array-to-hex-string
-             (ironclad:digest-sequence :sha512 (sb-ext:string-to-octets (princ-to-string (first args)) :external-format :utf-8))))
+             (ironclad:digest-sequence :sha512 (babel:string-to-octets (princ-to-string (first args)) :encoding :utf-8))))
            ((sym-name-equal op "NOW")
             (intern-literal
              (multiple-value-bind (sec min hr day mon yr) (get-decoded-time)

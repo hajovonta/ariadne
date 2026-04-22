@@ -12,7 +12,8 @@
                #:com.inuoe.jzon
                #:local-time
                #:ironclad
-               #:cxml-stp)
+               #:cxml-stp
+               #:babel)
   :serial t
   :components ((:file "package")
                (:file "ariadne")

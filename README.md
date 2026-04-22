@@ -117,6 +117,9 @@ git clone <repository-url> ariadne
 - **drakma** — SPARQL SERVICE federation, graph event webhooks
 - **com.inuoe.jzon** — JSON-LD import/export, SPARQL JSON results
 - **local-time** — xsd:dateTime handling in SHACL and typed literals
+- **ironclad** — Cryptographic hash functions (MD5, SHA1, SHA256, SHA384, SHA512)
+- **babel** — Portable string-to-octets encoding for hash digest inputs
+- **cxml-stp** — RDF/XML parsing
 
 ## Running Tests
 
