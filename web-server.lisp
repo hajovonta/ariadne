@@ -292,19 +292,54 @@ function loadGraph(){
       let hood = n.neighborhood().add(n);
       hood.addClass('highlighted');
       cy.elements().not(hood).addClass('dimmed');
-      let info = '<b>' + n.data('id').split('#').pop().split('/').pop() + '</b><br>';
-      n.connectedEdges().forEach(e => {
-        let other = e.source().id() === n.id() ? e.target() : e.source();
-        info += '<i>' + e.data('label').split('#').pop().split('/').pop() + '</i> → '
-          + other.data('label') + '<br>';
+      // Fetch full node details
+      fetch('/api/node?id=' + encodeURIComponent(n.data('id'))).then(r=>r.json()).then(details=>{
+        let info = '<b>' + details.label + '</b><br>';
+        if(details.outgoing && details.outgoing.length > 0){
+          info += '<br><u>Properties</u><br>';
+          details.outgoing.forEach(t => {
+            let pred = t.predicate.split('#').pop().split('/').pop();
+            let obj = t.object.split('#').pop().split('/').pop();
+            info += '<i>' + pred + '</i>: ' + obj + '<br>';
+          });
+        }
+        if(details.incoming && details.incoming.length > 0){
+          info += '<br><u>Referenced by</u><br>';
+          details.incoming.forEach(t => {
+            let pred = t.predicate.split('#').pop().split('/').pop();
+            let subj = t.subject.split('#').pop().split('/').pop();
+            info += subj + ' <i>' + pred + '</i><br>';
+          });
+        }
+        let el = document.getElementById('info');
+        el.innerHTML = info; el.style.display = 'block';
       });
-      let el = document.getElementById('info');
-      el.innerHTML = info; el.style.display = 'block';
     });
     cy.on('tap', function(e){ if(e.target===cy){
       cy.elements().removeClass('highlighted dimmed');
       document.getElementById('info').style.display='none';
     }});
+    cy.on('dblclick', 'node', function(e){
+      let id = e.target.data('id');
+      let selected = getSelectedPredicates();
+      let total = document.querySelectorAll('#pred-panel input').length;
+      let url = '/api/graph?center=' + encodeURIComponent(id) + '&depth=2';
+      if(selected.length > 0 && selected.length < total)
+        url += '&predicates=' + encodeURIComponent(selected.join(','));
+      fetch(url).then(r=>r.json()).then(data=>{
+        cy.elements().remove();
+        cy.add(data);
+        cy.nodes().forEach(n => {
+          let t = n.data('type');
+          if(t && typeColors[t]) n.style('background-color', typeColors[t]);
+        });
+        let mode = document.getElementById('labelMode').value;
+        if(mode==='all') cy.nodes().forEach(n => n.style('label', n.data('label')));
+        cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
+        document.getElementById('stats').textContent =
+          cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+      });
+    });
   });
 }
 function searchNodes(){
