@@ -10,7 +10,7 @@
 ;;; JSON conversion
 ;;; ==========================================================================
 
-(defun graph-to-cytoscape-json (g &key predicates center depth (max-nodes 500))
+(defun graph-to-cytoscape-json (g &key predicates center depth (max-nodes 200))
   "Convert graph to Cytoscape.js elements JSON string."
   (let ((triples (if (or predicates center)
                      (let ((trs (get-triples g)))
@@ -23,7 +23,9 @@
                        (when (and center depth)
                          (let ((reachable (make-hash-table :test 'equal)))
                            (labels ((walk (node d)
-                                      (when (and (>= d 0) (not (gethash node reachable)))
+                                      (when (and (>= d 0)
+                                                 (not (gethash node reachable))
+                                                 (or (not max-nodes) (< (hash-table-count reachable) max-nodes)))
                                         (setf (gethash node reachable) t)
                                         (when (> d 0)
                                           (dolist (tr trs)
@@ -196,6 +198,11 @@
 <html><head>
 <title>Ariadne Graph Explorer</title>
 <script src='https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js'></script>
+<script src='https://unpkg.com/layout-base@2.0.1/layout-base.js'></script>
+<script src='https://unpkg.com/cose-base@2.2.0/cose-base.js'></script>
+<script src='https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js'></script>
+<script src='https://unpkg.com/dagre@0.8.5/dist/dagre.min.js'></script>
+<script src='https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js'></script>
 <style>
   body { margin: 0; font-family: sans-serif; background: #1a1a2e; color: #eee; }
   #cy { width: 100%%; height: calc(100vh - 50px); }
@@ -248,11 +255,13 @@
   <button onclick='loadGraph()'>Apply</button>
   <button onclick='resetGraph()'>Reset</button>
   <select id='layout' onchange='changeLayout()'>
-    <option value='cose'>Force-directed</option>
+    <option value='cose-bilkent'>Force (bilkent)</option>
+    <option value='dagre'>Dagre (DAG)</option>
+    <option value='cose'>Force (basic)</option>
     <option value='breadthfirst'>Hierarchical</option>
     <option value='circle'>Circular</option>
-    <option value='grid'>Grid</option>
     <option value='concentric'>Concentric</option>
+    <option value='grid'>Grid</option>
   </select>
   <select id='labelMode' onchange='updateLabelMode()'>
     <option value='hover'>Labels: hover</option>
@@ -260,6 +269,7 @@
     <option value='none'>Labels: none</option>
   </select>
   <label><input type='checkbox' id='edgeLabel' onchange='updateEdgeLabels()'> Edge labels</label>
+  <input type='range' id='spacing' min='1' max='10' value='5' title='Node spacing' onchange='changeLayout()'>
   <button onclick='cy.fit()'>Fit</button>
   <button onclick='selectAll()'>All predicates</button>
   <button onclick='toggleQueryPanel()'>SPARQL</button>
@@ -345,7 +355,7 @@ function loadGraph(){
         { selector: 'node', style: {
           'label': labelMode==='all' ? 'data(label)' : '',
           'background-color': '#e94560',
-          'color': '#eee', 'font-size': '11px',
+          'color': '#eee', 'font-size': '8px', 'min-zoomed-font-size': 8,
           'text-valign': 'bottom', 'text-margin-y': 4,
           'width': 14, 'height': 14 }},
         { selector: 'edge', style: {
@@ -365,7 +375,7 @@ function loadGraph(){
           'line-color': '#ffd700', 'target-arrow-color': '#ffd700', 'opacity': 1 }},
         { selector: '.dimmed', style: { opacity: 0.08 }}
       ],
-      layout: { name: document.getElementById('layout').value, animate: false },
+      layout: getLayoutOpts(false),
       wheelSensitivity: 0.15,
       minZoom: 0.1,
       maxZoom: 10
@@ -385,7 +395,7 @@ function loadGraph(){
     if(showEdgeLabels) updateEdgeLabels();
     document.getElementById('stats').textContent =
       cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges' +
-      (cy.nodes().length >= 500 ? ' (truncated)' : '');
+      (cy.nodes().length >= 200 ? ' (truncated)' : '');
     cy.on('mouseover', 'node', function(e){
       if(document.getElementById('labelMode').value === 'hover'){
         e.target.style('label', e.target.data('label'));
@@ -429,6 +439,9 @@ function loadGraph(){
       document.getElementById('info').style.display='none';
       hideCtxMenu();
     }});
+    cy.on('zoom', function(){
+      if(document.getElementById('labelMode').value === 'all') applyZoomLabels();
+    });
     cy.on('cxttap', 'node', function(e){
       e.originalEvent.preventDefault();
       showCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.target);
@@ -468,8 +481,18 @@ function searchNodes(){
     cy.fit(matches, 50);
   }
 }
+function getLayoutOpts(animate){
+  let name = document.getElementById('layout').value;
+  let s = parseInt(document.getElementById('spacing').value);
+  let opts = { name: name, animate: animate };
+  if(name === 'cose-bilkent') { opts.nodeRepulsion = s * 4000; opts.idealEdgeLength = s * 24; opts.animate = animate ? 'end' : false; opts.gravityRange = 1.5; }
+  if(name === 'cose') { opts.nodeRepulsion = function(){ return s * 8000; }; opts.idealEdgeLength = function(){ return s * 20; }; }
+  if(name === 'dagre') { opts.rankDir = 'TB'; opts.nodeSep = s * 12; opts.rankSep = s * 20; }
+  if(name === 'breadthfirst') { opts.spacingFactor = s * 0.3; }
+  return opts;
+}
 function changeLayout(){
-  cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
+  cy.layout(getLayoutOpts(true)).run();
 }
 function selectAll(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
@@ -517,8 +540,7 @@ function ctxExpand(){
       let t = n.data('type');
       if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
     });
-    if(document.getElementById('labelMode').value==='all')
-      cy.nodes().forEach(n => n.style('label', n.data('label')));
+    if(document.getElementById('labelMode').value==='all') applyZoomLabels();
     if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
     cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
     document.getElementById('stats').textContent =
@@ -554,7 +576,19 @@ function ctxPin(){
 }
 function updateLabelMode(){
   let mode = document.getElementById('labelMode').value;
-  if(mode==='all') cy.nodes().forEach(n => n.style('label', n.data('label')));
+  if(mode==='all') applyZoomLabels();
+  else cy.nodes().style('label', '');
+}
+function applyZoomLabels(){
+  let zoom = cy.zoom();
+  if(zoom > 0.8) cy.nodes().forEach(n => n.style('label', n.data('label')));
+  else if(zoom > 0.4) {
+    // Only show labels for nodes with few connections or highlighted
+    cy.nodes().forEach(n => {
+      if(n.degree() <= 3 || n.hasClass('highlighted')) n.style('label', n.data('label'));
+      else n.style('label', '');
+    });
+  }
   else cy.nodes().style('label', '');
 }
 function updateEdgeLabels(){
