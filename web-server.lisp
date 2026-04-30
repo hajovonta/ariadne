@@ -10,7 +10,7 @@
 ;;; JSON conversion
 ;;; ==========================================================================
 
-(defun graph-to-cytoscape-json (g &key predicates center depth)
+(defun graph-to-cytoscape-json (g &key predicates center depth (max-nodes 500))
   "Convert graph to Cytoscape.js elements JSON string."
   (let ((triples (if (or predicates center)
                      (let ((trs (get-triples g)))
@@ -51,6 +51,45 @@
         (when obj-is-resource
           (setf (gethash obj nodes) t)
           (push tr edges))))
+    ;; Truncate if too many nodes and no center specified
+    (let ((truncated nil)
+          (total-nodes (hash-table-count nodes)))
+      (when (and max-nodes (> total-nodes max-nodes) (not center))
+        (setf truncated total-nodes)
+        ;; Find highest-degree node
+        (let ((degree (make-hash-table :test 'equal)))
+          (dolist (tr edges)
+            (incf (gethash (princ-to-string (triple-subject tr)) degree 0))
+            (incf (gethash (princ-to-string (triple-object tr)) degree 0)))
+          (let ((best nil) (best-deg 0))
+            (maphash (lambda (k v) (when (> v best-deg) (setf best k best-deg v))) degree)
+            ;; BFS from best node up to max-nodes
+            (let ((keep (make-hash-table :test 'equal))
+                  (queue (list best)))
+              (setf (gethash best keep) t)
+              (loop while (and queue (< (hash-table-count keep) max-nodes))
+                    do (let ((cur (pop queue)))
+                         (dolist (tr edges)
+                           (let ((s (princ-to-string (triple-subject tr)))
+                                 (o (princ-to-string (triple-object tr))))
+                             (when (and (equal s cur) (not (gethash o keep))
+                                        (< (hash-table-count keep) max-nodes))
+                               (setf (gethash o keep) t)
+                               (push o queue))
+                             (when (and (equal o cur) (not (gethash s keep))
+                                        (< (hash-table-count keep) max-nodes))
+                               (setf (gethash s keep) t)
+                               (push s queue))))))
+              ;; Filter nodes and edges
+              (let ((new-nodes (make-hash-table :test 'equal))
+                    (new-edges nil))
+                (maphash (lambda (k v) (declare (ignore v))
+                           (when (gethash k keep) (setf (gethash k new-nodes) t))) nodes)
+                (dolist (tr edges)
+                  (when (and (gethash (princ-to-string (triple-subject tr)) keep)
+                             (gethash (princ-to-string (triple-object tr)) keep))
+                    (push tr new-edges)))
+                (setf nodes new-nodes edges new-edges))))))
     ;; Build JSON
     (let ((elements nil)
           (id-map (make-hash-table :test 'equal))
@@ -95,7 +134,7 @@
             (let ((el (make-hash-table :test 'equal)))
               (setf (gethash "data" el) data)
               (push el elements)))))
-      (jzon:stringify (coerce (nreverse elements) 'vector)))))
+      (jzon:stringify (coerce (nreverse elements) 'vector))))))
 
 (defun node-label (id)
   "Short label for a node: strip URI prefix."
@@ -345,7 +384,8 @@ function loadGraph(){
     if(typeStyles.length > 0) cy.style().append(typeStyles).update();
     if(showEdgeLabels) updateEdgeLabels();
     document.getElementById('stats').textContent =
-      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges' +
+      (cy.nodes().length >= 500 ? ' (truncated)' : '');
     cy.on('mouseover', 'node', function(e){
       if(document.getElementById('labelMode').value === 'hover'){
         e.target.style('label', e.target.data('label'));
