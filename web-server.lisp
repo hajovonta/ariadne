@@ -166,7 +166,8 @@
   #toolbar button { cursor: pointer; }
   #toolbar button:hover { background: #e94560; }
   #info { position: fixed; bottom: 16px; right: 16px; background: #16213e; padding: 12px;
-    border-radius: 8px; max-width: 350px; font-size: 13px; display: none; border: 1px solid #333; }
+    border-radius: 8px; max-width: 350px; max-height: 30vh; overflow-y: auto;
+    font-size: 13px; display: none; border: 1px solid #333; z-index: 60; }
   #predicates { max-width: 300px; }
   #pred-panel { position: fixed; top: 50px; left: 0; background: #16213e; padding: 12px;
     border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
@@ -183,6 +184,21 @@
     padding: 4px 0; display: none; z-index: 100; min-width: 140px; }
   #ctx-menu div { padding: 6px 14px; cursor: pointer; font-size: 13px; }
   #ctx-menu div:hover { background: #e94560; }
+  #query-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #16213e;
+    border-top: 1px solid #444; z-index: 50; max-height: 40vh; overflow: hidden;
+    display: none; flex-direction: column; }
+  #query-panel.open { display: flex; }
+  #query-input { width: 100%%; height: 60px; background: #0f3460; color: #eee; border: none;
+    padding: 8px; font-family: monospace; font-size: 13px; resize: none; }
+  #query-bar { display: flex; gap: 8px; padding: 6px 8px; align-items: center; }
+  #query-bar button { padding: 4px 12px; border-radius: 4px; border: 1px solid #444;
+    background: #0f3460; color: #eee; cursor: pointer; }
+  #query-bar button:hover { background: #e94560; }
+  #query-results { overflow: auto; flex: 1; padding: 0 8px 8px; }
+  #query-results table { width: 100%%; border-collapse: collapse; font-size: 12px; }
+  #query-results th { text-align: left; padding: 4px 8px; border-bottom: 1px solid #444; color: #aaa; }
+  #query-results td { padding: 4px 8px; border-bottom: 1px solid #333; cursor: pointer; }
+  #query-results td:hover { color: #ffd700; }
 </style>
 </head><body>
 <div id='toolbar'>
@@ -207,6 +223,7 @@
   <label><input type='checkbox' id='edgeLabel' onchange='updateEdgeLabels()'> Edge labels</label>
   <button onclick='cy.fit()'>Fit</button>
   <button onclick='selectAll()'>All predicates</button>
+  <button onclick='toggleQueryPanel()'>SPARQL</button>
   <span id='stats'></span>
 </div>
 <div id='cy'></div>
@@ -218,6 +235,15 @@
   <div onclick='ctxCollapse()'>Collapse</div>
   <div onclick='ctxHide()'>Hide</div>
   <div onclick='ctxPin()'>Pin/Unpin</div>
+</div>
+<div id='query-panel'>
+  <div id='query-bar'>
+    <button onclick='runQuery()'>Run</button>
+    <button onclick='toggleQueryPanel()'>Close</button>
+    <span id='query-status'></span>
+  </div>
+  <textarea id='query-input' placeholder='SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10'></textarea>
+  <div id='query-results'></div>
 </div>
 <script>
 let cy;
@@ -294,7 +320,7 @@ function loadGraph(){
         { selector: 'node:selected', style: { 'background-color': '#ffd700', 'border-width': 3, 'border-color': '#ffd700' }},
         { selector: 'edge:selected', style: { 'line-color': '#ffd700', 'target-arrow-color': '#ffd700' }},
         { selector: 'node.highlighted', style: {
-          'background-color': '#ffd700', 'label': 'data(label)',
+          'background-color': '#ffd700', 'label': 'data(label)', 'border-width': 3, 'border-color': '#fff',
           'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
         { selector: 'edge.highlighted', style: {
           'line-color': '#ffd700', 'target-arrow-color': '#ffd700', 'opacity': 1 }},
@@ -499,6 +525,97 @@ function updateEdgeLabels(){
   });
   else cy.edges().style('label', '');
 }
+function toggleQueryPanel(){
+  let p = document.getElementById('query-panel');
+  p.classList.toggle('open');
+  if(p.classList.contains('open')){
+    document.getElementById('cy').style.height = 'calc(100vh - 50px - 40vh)';
+    document.getElementById('query-input').focus();
+  } else {
+    document.getElementById('cy').style.height = 'calc(100vh - 50px)';
+  }
+  if(cy) cy.resize();
+}
+function runQuery(){
+  let q = document.getElementById('query-input').value.trim();
+  if(!q) return;
+  document.getElementById('query-status').textContent = 'Running...';
+  fetch('/sparql?query=' + encodeURIComponent(q)).then(r=>r.json()).then(data=>{
+    if(data.error){
+      document.getElementById('query-status').textContent = 'Error: ' + data.error;
+      document.getElementById('query-results').innerHTML = '';
+      return;
+    }
+    if(data.boolean !== undefined){
+      document.getElementById('query-status').textContent = 'Result: ' + data.boolean;
+      document.getElementById('query-results').innerHTML = '';
+      return;
+    }
+    let results = data.results || [];
+    document.getElementById('query-status').textContent = results.length + ' results';
+    if(results.length === 0){ document.getElementById('query-results').innerHTML = ''; return; }
+    let cols = results[0].length;
+    let html = '<table><tr>';
+    for(let i=0; i<cols; i++) html += '<th>?' + (i+1) + '</th>';
+    html += '</tr>';
+    results.forEach(row => {
+      html += '<tr>';
+      row.forEach(cell => {
+        let short = String(cell).split('#').pop().split('/').pop();
+        let safe = String(cell).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        html += '<td data-uri=\"' + safe + '\" onclick=\"highlightInGraph(this.dataset.uri)\">' + short + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</table>';
+    document.getElementById('query-results').innerHTML = html;
+    // Highlight matching nodes
+    highlightQueryResults(results);
+  }).catch(e => {
+    document.getElementById('query-status').textContent = 'Error: ' + e.message;
+  });
+}
+function highlightQueryResults(results){
+  cy.elements().removeClass('highlighted dimmed');
+  let uris = new Set();
+  results.forEach(row => row.forEach(cell => uris.add(String(cell))));
+  let matches = cy.nodes().filter(n => uris.has(n.data('uri')));
+  if(matches.length > 0){
+    matches.addClass('highlighted');
+    cy.elements().not(matches).not(matches.connectedEdges()).addClass('dimmed');
+  }
+}
+function highlightInGraph(uri){
+  cy.elements().removeClass('highlighted dimmed');
+  let matches = cy.nodes().filter(n => n.data('uri') === uri);
+  if(matches.length > 0){
+    matches.addClass('highlighted');
+    cy.elements().not(matches).not(matches.connectedEdges()).addClass('dimmed');
+    cy.fit(matches, 50);
+    // Show node details
+    fetch('/api/node?id=' + encodeURIComponent(uri)).then(r=>r.json()).then(details=>{
+      let info = '<b>' + details.label + '</b><br>';
+      if(details.outgoing && details.outgoing.length > 0){
+        info += '<br><u>Properties</u><br>';
+        details.outgoing.forEach(t => {
+          let pred = t.predicate.split('#').pop().split('/').pop();
+          let obj = t.object.split('#').pop().split('/').pop();
+          info += '<i>' + pred + '</i>: ' + obj + '<br>';
+        });
+      }
+      if(details.incoming && details.incoming.length > 0){
+        info += '<br><u>Referenced by</u><br>';
+        details.incoming.forEach(t => {
+          let pred = t.predicate.split('#').pop().split('/').pop();
+          let subj = t.subject.split('#').pop().split('/').pop();
+          info += subj + ' <i>' + pred + '</i><br>';
+        });
+      }
+      let el = document.getElementById('info');
+      el.innerHTML = info; el.style.display = 'block';
+    });
+  }
+}
 </script>
 </body></html>"))
 
@@ -519,7 +636,8 @@ function updateEdgeLabels(){
            (let ((ht (make-hash-table :test 'equal)))
              (setf (gethash "results" ht)
                    (coerce (mapcar (lambda (row)
-                                     (coerce (if (listp row) row (list row)) 'vector))
+                                     (coerce (mapcar #'princ-to-string
+                                                     (if (listp row) row (list row))) 'vector))
                                    results) 'vector))
              (jzon:stringify ht)))
           (t (jzon:stringify results))))
