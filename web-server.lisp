@@ -41,25 +41,42 @@
                      (get-triples g)))
         (nodes (make-hash-table :test 'equal))
         (edges nil))
-    ;; Collect nodes and edges
+    ;; Collect nodes and edges (skip literal objects)
     (dolist (tr triples)
-      (setf (gethash (princ-to-string (triple-subject tr)) nodes) t)
-      (setf (gethash (princ-to-string (triple-object tr)) nodes) t)
-      (push tr edges))
+      (let* ((subj (princ-to-string (triple-subject tr)))
+             (obj-raw (triple-object tr))
+             (obj (princ-to-string obj-raw))
+             (obj-is-resource (not (typep obj-raw 'rdf-literal))))
+        (setf (gethash subj nodes) t)
+        (when obj-is-resource
+          (setf (gethash obj nodes) t)
+          (push tr edges))))
     ;; Build JSON
-    (let ((elements nil))
-      ;; Build node type lookup
-      (let ((node-types (make-hash-table :test 'equal)))
+    (let ((elements nil)
+          (id-map (make-hash-table :test 'equal))
+          (id-counter 0))
+      ;; Assign safe IDs
+      (maphash (lambda (uri v)
+                 (declare (ignore v))
+                 (setf (gethash uri id-map) (format nil "n~A" (incf id-counter))))
+               nodes)
+      ;; Build node type and label lookups
+      (let ((node-types (make-hash-table :test 'equal))
+            (node-labels (make-hash-table :test 'equal)))
         (dolist (tr (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
           (setf (gethash (princ-to-string (triple-subject tr)) node-types)
                 (princ-to-string (triple-object tr))))
+        (dolist (tr (get-triples g :predicate "http://www.w3.org/2000/01/rdf-schema#label"))
+          (setf (gethash (princ-to-string (triple-subject tr)) node-labels)
+                (princ-to-string (triple-object tr))))
         ;; Nodes
-        (maphash (lambda (id v)
+        (maphash (lambda (uri v)
                    (declare (ignore v))
                    (let ((data (make-hash-table :test 'equal)))
-                     (setf (gethash "id" data) id)
-                     (setf (gethash "label" data) (node-label id))
-                     (let ((typ (gethash id node-types)))
+                     (setf (gethash "id" data) (gethash uri id-map))
+                     (setf (gethash "uri" data) uri)
+                     (setf (gethash "label" data) (or (gethash uri node-labels) (node-label uri)))
+                     (let ((typ (gethash uri node-types)))
                        (when typ (setf (gethash "type" data) typ)))
                      (let ((el (make-hash-table :test 'equal)))
                        (setf (gethash "data" el) data)
@@ -68,10 +85,12 @@
       ;; Edges
       (let ((eid 0))
         (dolist (tr edges)
-          (let ((data (make-hash-table :test 'equal)))
+          (let* ((src (princ-to-string (triple-subject tr)))
+                 (tgt (princ-to-string (triple-object tr)))
+                 (data (make-hash-table :test 'equal)))
             (setf (gethash "id" data) (format nil "e~A" (incf eid)))
-            (setf (gethash "source" data) (princ-to-string (triple-subject tr)))
-            (setf (gethash "target" data) (princ-to-string (triple-object tr)))
+            (setf (gethash "source" data) (gethash src id-map))
+            (setf (gethash "target" data) (gethash tgt id-map))
             (setf (gethash "label" data) (triple-predicate tr))
             (let ((el (make-hash-table :test 'equal)))
               (setf (gethash "data" el) data)
@@ -160,6 +179,10 @@
     font-size: 12px; display: none; z-index: 10; }
   .legend-item { padding: 2px 0; display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 50%%; display: inline-block; }
+  #ctx-menu { position: fixed; background: #16213e; border: 1px solid #444; border-radius: 6px;
+    padding: 4px 0; display: none; z-index: 100; min-width: 140px; }
+  #ctx-menu div { padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  #ctx-menu div:hover { background: #e94560; }
 </style>
 </head><body>
 <div id='toolbar'>
@@ -190,6 +213,12 @@
 <div id='pred-panel'></div>
 <div id='legend'></div>
 <div id='info'></div>
+<div id='ctx-menu'>
+  <div onclick='ctxExpand()'>Expand</div>
+  <div onclick='ctxCollapse()'>Collapse</div>
+  <div onclick='ctxHide()'>Hide</div>
+  <div onclick='ctxPin()'>Pin/Unpin</div>
+</div>
 <script>
 let cy;
 let typeColors = {};
@@ -200,6 +229,8 @@ Promise.all([
 ]).then(([preds, types]) => {
   typeColors = types;
   buildLegend(types);
+  document.getElementById('cy').addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('click', hideCtxMenu);
   let panel = document.getElementById('pred-panel');
   preds.forEach((p,i) => {
     let label = document.createElement('label');
@@ -260,7 +291,8 @@ function loadGraph(){
           'text-background-opacity': 0.8, 'text-background-padding': '2px',
           'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
           'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
-        { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
+        { selector: 'node:selected', style: { 'background-color': '#ffd700', 'border-width': 3, 'border-color': '#ffd700' }},
+        { selector: 'edge:selected', style: { 'line-color': '#ffd700', 'target-arrow-color': '#ffd700' }},
         { selector: 'node.highlighted', style: {
           'background-color': '#ffd700', 'label': 'data(label)',
           'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
@@ -273,11 +305,18 @@ function loadGraph(){
       minZoom: 0.1,
       maxZoom: 10
     });
-    // Apply type colors
+    // Apply type colors via classes
     cy.nodes().forEach(n => {
       let t = n.data('type');
-      if(t && typeColors[t]) n.style('background-color', typeColors[t]);
+      if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
     });
+    // Add type color styles
+    let typeStyles = [];
+    for(let [typ, color] of Object.entries(typeColors)){
+      let cls = 'type-' + typ.replace(/[^a-zA-Z0-9]/g, '_');
+      typeStyles.push({selector: 'node.' + cls, style: {'background-color': color}});
+    }
+    if(typeStyles.length > 0) cy.style().append(typeStyles).update();
     if(showEdgeLabels) updateEdgeLabels();
     document.getElementById('stats').textContent =
       cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
@@ -297,7 +336,7 @@ function loadGraph(){
       hood.addClass('highlighted');
       cy.elements().not(hood).addClass('dimmed');
       // Fetch full node details
-      fetch('/api/node?id=' + encodeURIComponent(n.data('id'))).then(r=>r.json()).then(details=>{
+      fetch('/api/node?id=' + encodeURIComponent(n.data('uri'))).then(r=>r.json()).then(details=>{
         let info = '<b>' + details.label + '</b><br>';
         if(details.outgoing && details.outgoing.length > 0){
           info += '<br><u>Properties</u><br>';
@@ -322,9 +361,14 @@ function loadGraph(){
     cy.on('tap', function(e){ if(e.target===cy){
       cy.elements().removeClass('highlighted dimmed');
       document.getElementById('info').style.display='none';
+      hideCtxMenu();
     }});
+    cy.on('cxttap', 'node', function(e){
+      e.originalEvent.preventDefault();
+      showCtxMenu(e.originalEvent.clientX, e.originalEvent.clientY, e.target);
+    });
     cy.on('dblclick', 'node', function(e){
-      let id = e.target.data('id');
+      let id = e.target.data('uri');
       let selected = getSelectedPredicates();
       let total = document.querySelectorAll('#pred-panel input').length;
       let url = '/api/graph?center=' + encodeURIComponent(id) + '&depth=2';
@@ -368,6 +412,79 @@ function selectAll(){
 function resetGraph(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   loadGraph();
+}
+let ctxNode = null;
+function showCtxMenu(x, y, node){
+  ctxNode = node;
+  let menu = document.getElementById('ctx-menu');
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+  menu.style.display = 'block';
+}
+function hideCtxMenu(){ document.getElementById('ctx-menu').style.display = 'none'; }
+function ctxExpand(){
+  hideCtxMenu();
+  if(!ctxNode) return;
+  let id = ctxNode.data('uri');
+  let cyId = ctxNode.id();
+  fetch('/api/node?id=' + encodeURIComponent(id)).then(r=>r.json()).then(details=>{
+    let existingUris = new Set(cy.nodes().map(n => n.data('uri')));
+    let toAdd = [];
+    let counter = cy.nodes().length;
+    details.outgoing.forEach(t => {
+      let tgtId;
+      let existing = cy.nodes().filter(n => n.data('uri') === t.object);
+      if(existing.length > 0){ tgtId = existing[0].id(); }
+      else { tgtId = 'n' + (++counter); toAdd.push({group:'nodes', data:{id:tgtId, uri:t.object, label:t.object.split('#').pop().split('/').pop()}}); }
+      toAdd.push({group:'edges', data:{id:'e'+Math.random(), source:cyId, target:tgtId, label:t.predicate}});
+    });
+    details.incoming.forEach(t => {
+      let srcId;
+      let existing = cy.nodes().filter(n => n.data('uri') === t.subject);
+      if(existing.length > 0){ srcId = existing[0].id(); }
+      else { srcId = 'n' + (++counter); toAdd.push({group:'nodes', data:{id:srcId, uri:t.subject, label:t.subject.split('#').pop().split('/').pop()}}); }
+      toAdd.push({group:'edges', data:{id:'e'+Math.random(), source:srcId, target:cyId, label:t.predicate}});
+    });
+    cy.add(toAdd);
+    // Apply colors to new nodes
+    cy.nodes().forEach(n => {
+      let t = n.data('type');
+      if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
+    });
+    if(document.getElementById('labelMode').value==='all')
+      cy.nodes().forEach(n => n.style('label', n.data('label')));
+    if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
+    cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
+    document.getElementById('stats').textContent =
+      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+  });
+}
+function ctxCollapse(){
+  hideCtxMenu();
+  let targets = cy.nodes(':selected');
+  if(targets.length === 0 && ctxNode) targets = ctxNode.collection();
+  targets.forEach(n => {
+    let hood = n.neighborhood().nodes().filter(nn => nn.degree() <= 1 && !nn.selected());
+    hood.connectedEdges().remove();
+    hood.remove();
+  });
+  document.getElementById('stats').textContent =
+    cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+}
+function ctxHide(){
+  hideCtxMenu();
+  let targets = cy.nodes(':selected');
+  if(targets.length === 0 && ctxNode) targets = ctxNode.collection();
+  targets.connectedEdges().remove();
+  targets.remove();
+  document.getElementById('stats').textContent =
+    cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+}
+function ctxPin(){
+  hideCtxMenu();
+  let targets = cy.nodes(':selected');
+  if(targets.length === 0 && ctxNode) targets = ctxNode.collection();
+  targets.forEach(n => { if(n.locked()) n.unlock(); else n.lock(); });
 }
 function updateLabelMode(){
   let mode = document.getElementById('labelMode').value;
