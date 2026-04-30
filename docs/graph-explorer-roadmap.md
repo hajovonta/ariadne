@@ -2,33 +2,43 @@
 
 ## Current Status
 
-Single-page Cytoscape.js graph viewer served by Hunchentoot. Dark theme, basic interactivity. All HTML/CSS/JS in one inline Lisp string.
+Single-page Cytoscape.js graph viewer served by Hunchentoot. Dark theme, interactive exploration.
 
 ### What works
 - Force-directed, hierarchical, circular, grid, concentric layouts
 - Predicate filtering (checkbox panel)
 - Node search with highlight/dim
-- Click node: highlight neighborhood, show connections in info panel
-- Hover: show node label
+- Click node: fetch full details (properties, incoming/outgoing) from API
+- Hover: show node label (configurable: all / hover / none)
+- Edge labels toggle (short local names, offset above arrows)
+- Color coding: nodes by rdf:type with auto-assigned palette
+- Legend panel showing type→color mapping
+- Double-click node: recenter graph around it (2 hops)
+- Right-click context menu: Expand, Collapse, Hide, Pin/Unpin
+- Shift+box select: apply context menu operations to multiple nodes
+- Reset button to restore full graph view
+- Literal filtering: RDF literals shown in details panel, not as graph nodes
+- rdfs:label used as display label when available
 - Fit/zoom, node+edge count stats
 - SPARQL query endpoint (`/sparql`, `/update`)
+- API endpoints: `/api/graph`, `/api/predicates`, `/api/types`, `/api/node`
 
-## Phase 1 — Visibility & Navigation
+## Phase 1 — Visibility & Navigation ✓
 
-- [ ] Always-visible labels for nodes (configurable: all / on-hover / none)
-- [ ] Edge labels visible (toggle on/off)
-- [ ] Color coding: nodes by rdf:type, edges by predicate
-- [ ] Legend panel showing type→color mapping
-- [ ] Navigate to node by URI (URL parameter or search-and-center)
-- [ ] Breadcrumb / back navigation (history of focused nodes)
+- [x] Always-visible labels for nodes (configurable: all / on-hover / none)
+- [x] Edge labels visible (toggle on/off)
+- [x] Color coding: nodes by rdf:type, edges by predicate
+- [x] Legend panel showing type→color mapping
+- [x] Navigate to node by URI (double-click to recenter)
+- [x] Reset view (Reset button)
 
-## Phase 2 — Node Details & Exploration
+## Phase 2 — Node Details & Exploration ✓
 
-- [ ] Node details panel: all properties, types, incoming/outgoing edges
-- [ ] Click-to-expand: load neighborhood of a node on demand (not all at once)
-- [ ] Collapse: hide expanded neighborhood
-- [ ] Double-click to recenter on a node
-- [ ] Right-click context menu (expand, collapse, hide, pin)
+- [x] Node details panel: all properties, types, incoming/outgoing edges
+- [x] Click-to-expand: load neighborhood of a node on demand
+- [x] Collapse: hide expanded neighborhood (leaf nodes)
+- [x] Double-click to recenter on a node
+- [x] Right-click context menu (expand, collapse, hide, pin)
 
 ## Phase 3 — Query Integration
 
