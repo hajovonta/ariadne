@@ -254,7 +254,9 @@ function loadGraph(){
         { selector: 'edge', style: {
           'curve-style': 'bezier',
           'label': showEdgeLabels ? 'data(label)' : '',
-          'font-size': '9px', 'color': '#888', 'text-rotation': 'autorotate',
+          'font-size': '9px', 'color': '#aaa', 'text-rotation': 'autorotate',
+          'text-margin-y': -10, 'text-background-color': '#1a1a2e',
+          'text-background-opacity': 0.8, 'text-background-padding': '2px',
           'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
           'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
         { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
@@ -325,16 +327,13 @@ function selectAll(){
 }
 function updateLabelMode(){
   let mode = document.getElementById('labelMode').value;
-  if(mode==='all') cy.nodes().style('label','data(label)');
-  else if(mode==='none') cy.nodes().style('label','');
-  else cy.nodes().style('label','');
+  if(mode==='all') cy.nodes().forEach(n => n.style('label', n.data('label')));
+  else cy.nodes().style('label', '');
 }
 function updateEdgeLabels(){
   let show = document.getElementById('edgeLabel').checked;
-  cy.edges().style('label', show ? 'data(label)' : '');
-  cy.edges().style('font-size', '9px');
-  cy.edges().style('color', '#888');
-  cy.edges().style('text-rotation', 'autorotate');
+  if(show) cy.edges().forEach(e => e.style('label', e.data('label')));
+  else cy.edges().style('label', '');
 }
 </script>
 </body></html>"))
