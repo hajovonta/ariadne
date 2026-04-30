@@ -168,6 +168,7 @@
   <select id='predicates' multiple title='Filter predicates (ctrl+click)' style='display:none'></select>
   <button onclick='togglePredPanel()'>Predicates ▼</button>
   <button onclick='loadGraph()'>Apply</button>
+  <button onclick='resetGraph()'>Reset</button>
   <select id='layout' onchange='changeLayout()'>
     <option value='cose'>Force-directed</option>
     <option value='breadthfirst'>Hierarchical</option>
@@ -253,16 +254,18 @@ function loadGraph(){
           'width': 14, 'height': 14 }},
         { selector: 'edge', style: {
           'curve-style': 'bezier',
-          'label': showEdgeLabels ? 'data(label)' : '',
-          'font-size': '9px', 'color': '#aaa', 'text-rotation': 'autorotate',
+          'label': '',
+          'font-size': '7px', 'color': '#aaa', 'text-rotation': 'autorotate',
           'text-margin-y': -10, 'text-background-color': '#1a1a2e',
           'text-background-opacity': 0.8, 'text-background-padding': '2px',
           'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
           'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
         { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
-        { selector: '.highlighted', style: {
+        { selector: 'node.highlighted', style: {
           'background-color': '#ffd700', 'label': 'data(label)',
           'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
+        { selector: 'edge.highlighted', style: {
+          'line-color': '#ffd700', 'target-arrow-color': '#ffd700', 'opacity': 1 }},
         { selector: '.dimmed', style: { opacity: 0.08 }}
       ],
       layout: { name: document.getElementById('layout').value, animate: false },
@@ -275,6 +278,7 @@ function loadGraph(){
       let t = n.data('type');
       if(t && typeColors[t]) n.style('background-color', typeColors[t]);
     });
+    if(showEdgeLabels) updateEdgeLabels();
     document.getElementById('stats').textContent =
       cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
     cy.on('mouseover', 'node', function(e){
@@ -335,6 +339,7 @@ function loadGraph(){
         });
         let mode = document.getElementById('labelMode').value;
         if(mode==='all') cy.nodes().forEach(n => n.style('label', n.data('label')));
+        if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
         cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
         document.getElementById('stats').textContent =
           cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
@@ -360,6 +365,10 @@ function selectAll(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   loadGraph();
 }
+function resetGraph(){
+  document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
+  loadGraph();
+}
 function updateLabelMode(){
   let mode = document.getElementById('labelMode').value;
   if(mode==='all') cy.nodes().forEach(n => n.style('label', n.data('label')));
@@ -367,7 +376,10 @@ function updateLabelMode(){
 }
 function updateEdgeLabels(){
   let show = document.getElementById('edgeLabel').checked;
-  if(show) cy.edges().forEach(e => e.style('label', e.data('label')));
+  if(show) cy.edges().forEach(e => {
+    let lbl = e.data('label');
+    e.style('label', lbl.split('#').pop().split('/').pop());
+  });
   else cy.edges().style('label', '');
 }
 </script>
