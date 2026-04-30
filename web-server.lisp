@@ -23,14 +23,14 @@
                        (when (and center depth)
                          (let ((reachable (make-hash-table :test 'equal)))
                            (labels ((walk (node d)
-                                      (when (and (> d 0) (not (gethash node reachable)))
+                                      (when (and (>= d 0) (not (gethash node reachable)))
                                         (setf (gethash node reachable) t)
-                                        (dolist (tr trs)
-                                          (when (equal (triple-subject tr) node)
-                                            (walk (triple-object tr) (1- d)))
-                                          (when (equal (triple-object tr) node)
-                                            (walk (triple-subject tr) (1- d)))))))
-                             (setf (gethash center reachable) t)
+                                        (when (> d 0)
+                                          (dolist (tr trs)
+                                            (when (equal (triple-subject tr) node)
+                                              (walk (triple-object tr) (1- d)))
+                                            (when (equal (triple-object tr) node)
+                                              (walk (triple-subject tr) (1- d))))))))
                              (walk center depth))
                            (setf trs (remove-if-not
                                       (lambda (tr)
@@ -48,16 +48,23 @@
       (push tr edges))
     ;; Build JSON
     (let ((elements nil))
-      ;; Nodes
-      (maphash (lambda (id v)
-                 (declare (ignore v))
-                 (let ((data (make-hash-table :test 'equal)))
-                   (setf (gethash "id" data) id)
-                   (setf (gethash "label" data) (node-label id))
-                   (let ((el (make-hash-table :test 'equal)))
-                     (setf (gethash "data" el) data)
-                     (push el elements))))
-               nodes)
+      ;; Build node type lookup
+      (let ((node-types (make-hash-table :test 'equal)))
+        (dolist (tr (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+          (setf (gethash (princ-to-string (triple-subject tr)) node-types)
+                (princ-to-string (triple-object tr))))
+        ;; Nodes
+        (maphash (lambda (id v)
+                   (declare (ignore v))
+                   (let ((data (make-hash-table :test 'equal)))
+                     (setf (gethash "id" data) id)
+                     (setf (gethash "label" data) (node-label id))
+                     (let ((typ (gethash id node-types)))
+                       (when typ (setf (gethash "type" data) typ)))
+                     (let ((el (make-hash-table :test 'equal)))
+                       (setf (gethash "data" el) data)
+                       (push el elements))))
+                 nodes))
       ;; Edges
       (let ((eid 0))
         (dolist (tr edges)
@@ -79,6 +86,47 @@
         (let ((slash (position #\/ s :from-end t)))
           (when (and slash (> slash 8)) (subseq s (1+ slash))))
         s)))
+
+(defvar *type-palette*
+  '("#e94560" "#0f3460" "#ffd700" "#00d2d3" "#ff9f43"
+    "#ee5a24" "#6ab04c" "#be2edd" "#22a6b3" "#f368e0"
+    "#c44569" "#574b90" "#f78fb3" "#3dc1d3" "#e77f67"))
+
+(defun graph-types-json (g)
+  "Return JSON mapping rdf:type values to colors."
+  (let ((types (mapcar #'triple-object
+                       (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")))
+        (type-map (make-hash-table :test 'equal)))
+    (let ((unique (remove-duplicates types :test #'equal))
+          (i 0))
+      (dolist (typ unique)
+        (setf (gethash (princ-to-string typ) type-map)
+              (nth (mod i (length *type-palette*)) *type-palette*))
+        (incf i)))
+    (jzon:stringify type-map)))
+
+(defun node-info-json (g node-id)
+  "Return JSON with outgoing and incoming triples for NODE-ID."
+  (let ((outgoing (get-triples g :subject node-id))
+        (incoming (get-triples g :object node-id))
+        (result (make-hash-table :test 'equal)))
+    (setf (gethash "id" result) node-id)
+    (setf (gethash "label" result) (node-label node-id))
+    (setf (gethash "outgoing" result)
+          (coerce (mapcar (lambda (tr)
+                            (let ((ht (make-hash-table :test 'equal)))
+                              (setf (gethash "predicate" ht) (princ-to-string (triple-predicate tr)))
+                              (setf (gethash "object" ht) (princ-to-string (triple-object tr)))
+                              ht))
+                          outgoing) 'vector))
+    (setf (gethash "incoming" result)
+          (coerce (mapcar (lambda (tr)
+                            (let ((ht (make-hash-table :test 'equal)))
+                              (setf (gethash "predicate" ht) (princ-to-string (triple-predicate tr)))
+                              (setf (gethash "subject" ht) (princ-to-string (triple-subject tr)))
+                              ht))
+                          incoming) 'vector))
+    (jzon:stringify result)))
 
 ;;; ==========================================================================
 ;;; HTML page
@@ -122,6 +170,12 @@
     <option value='grid'>Grid</option>
     <option value='concentric'>Concentric</option>
   </select>
+  <select id='labelMode' onchange='updateLabelMode()'>
+    <option value='hover'>Labels: hover</option>
+    <option value='all'>Labels: all</option>
+    <option value='none'>Labels: none</option>
+  </select>
+  <label><input type='checkbox' id='edgeLabel' onchange='updateEdgeLabels()'> Edge labels</label>
   <button onclick='cy.fit()'>Fit</button>
   <button onclick='selectAll()'>All predicates</button>
   <span id='stats'></span>
@@ -238,6 +292,19 @@ function selectAll(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   loadGraph();
 }
+function updateLabelMode(){
+  let mode = document.getElementById('labelMode').value;
+  if(mode==='all') cy.nodes().style('label','data(label)');
+  else if(mode==='none') cy.nodes().style('label','');
+  else cy.nodes().style('label','');
+}
+function updateEdgeLabels(){
+  let show = document.getElementById('edgeLabel').checked;
+  cy.edges().style('label', show ? 'data(label)' : '');
+  cy.edges().style('font-size', '9px');
+  cy.edges().style('color', '#888');
+  cy.edges().style('text-rotation', 'autorotate');
+}
 </script>
 </body></html>"))
 
@@ -322,6 +389,13 @@ function selectAll(){
       ((update :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
     (sparql-update-json *web-graph* update))
+  (ht:define-easy-handler (handle-types-api :uri "/api/types") ()
+    (setf (ht:content-type*) "application/json")
+    (graph-types-json *web-graph*))
+  (ht:define-easy-handler (handle-node-api :uri "/api/node")
+      ((id :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (node-info-json *web-graph* id))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)

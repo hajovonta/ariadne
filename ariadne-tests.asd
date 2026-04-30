@@ -44,6 +44,7 @@
                              (:file "suite-visualization")
                              (:file "suite-graph-operations")
                              (:file "suite-web-server")
+                             (:file "suite-graph-explorer")
                              (:file "suite-owl-reasoning")
                              (:file "suite-sparql-endpoint")
                              (:file "suite-schema-validation")
