@@ -10,7 +10,7 @@
 ;;; JSON conversion
 ;;; ==========================================================================
 
-(defun graph-to-cytoscape-json (g &key predicates center depth (max-nodes 200))
+(defun graph-to-cytoscape-json (g &key predicates center depth (max-nodes 200) node-types)
   "Convert graph to Cytoscape.js elements JSON string."
   (let ((triples (if (or predicates center)
                      (let ((trs (get-triples g)))
@@ -43,6 +43,18 @@
                      (get-triples g)))
         (nodes (make-hash-table :test 'equal))
         (edges nil))
+    ;; Filter by node types if specified
+    (when node-types
+      (let ((typed-nodes (make-hash-table :test 'equal)))
+        (dolist (tr (append (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                            (get-triples g :predicate "rdf:type")))
+          (when (member (princ-to-string (triple-object tr)) node-types :test #'equal)
+            (setf (gethash (princ-to-string (triple-subject tr)) typed-nodes) t)))
+        (setf triples (remove-if-not
+                        (lambda (tr)
+                          (or (gethash (princ-to-string (triple-subject tr)) typed-nodes)
+                              (gethash (princ-to-string (triple-object tr)) typed-nodes)))
+                        triples))))
     ;; Collect nodes and edges (skip literal objects)
     (dolist (tr triples)
       (let* ((subj (princ-to-string (triple-subject tr)))
@@ -104,10 +116,12 @@
       ;; Build node type and label lookups
       (let ((node-types (make-hash-table :test 'equal))
             (node-labels (make-hash-table :test 'equal)))
-        (dolist (tr (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"))
+        (dolist (tr (append (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                            (get-triples g :predicate "rdf:type")))
           (setf (gethash (princ-to-string (triple-subject tr)) node-types)
                 (princ-to-string (triple-object tr))))
-        (dolist (tr (get-triples g :predicate "http://www.w3.org/2000/01/rdf-schema#label"))
+        (dolist (tr (append (get-triples g :predicate "http://www.w3.org/2000/01/rdf-schema#label")
+                            (get-triples g :predicate "rdfs:label")))
           (setf (gethash (princ-to-string (triple-subject tr)) node-labels)
                 (princ-to-string (triple-object tr))))
         ;; Nodes
@@ -136,7 +150,10 @@
             (let ((el (make-hash-table :test 'equal)))
               (setf (gethash "data" el) data)
               (push el elements)))))
-      (jzon:stringify (coerce (nreverse elements) 'vector))))))
+      (let ((result (make-hash-table :test 'equal)))
+        (setf (gethash "elements" result) (coerce (nreverse elements) 'vector))
+        (setf (gethash "totalNodes" result) total-nodes)
+        (jzon:stringify result))))))
 
 (defun node-label (id)
   "Short label for a node: strip URI prefix."
@@ -155,7 +172,8 @@
 (defun graph-types-json (g)
   "Return JSON mapping rdf:type values to colors."
   (let ((types (mapcar #'triple-object
-                       (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")))
+                       (append (get-triples g :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                               (get-triples g :predicate "rdf:type"))))
         (type-map (make-hash-table :test 'equal)))
     (let ((unique (remove-duplicates types :test #'equal))
           (i 0))
@@ -203,9 +221,10 @@
 <script src='https://unpkg.com/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.js'></script>
 <script src='https://unpkg.com/dagre@0.8.5/dist/dagre.min.js'></script>
 <script src='https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js'></script>
+<script src='https://unpkg.com/cytoscape-svg@0.4.0/cytoscape-svg.js'></script>
 <style>
   body { margin: 0; font-family: sans-serif; background: #1a1a2e; color: #eee; }
-  #cy { width: 100%%; height: calc(100vh - 50px); }
+  #cy { width: 100%%; height: calc(100vh - 50px - 36px); }
   #toolbar { height: 50px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: #16213e; flex-wrap: wrap; }
   #toolbar input, #toolbar select, #toolbar button {
     padding: 6px 10px; border-radius: 4px; border: 1px solid #444; background: #0f3460; color: #eee; }
@@ -221,6 +240,12 @@
   #pred-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
   #pred-panel label:hover { color: #e94560; }
   #pred-panel input { margin-right: 6px; }
+  #type-panel { position: fixed; top: 50px; left: 220px; background: #16213e; padding: 12px;
+    border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
+    max-height: 80vh; overflow-y: auto; display: none; min-width: 180px; z-index: 10; }
+  #type-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
+  #type-panel label:hover { color: #e94560; }
+  #type-panel input { margin-right: 6px; }
   #legend { position: fixed; top: 50px; right: 0; background: #16213e; padding: 12px;
     border-left: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 0 8px;
     font-size: 12px; display: none; z-index: 10; }
@@ -245,6 +270,14 @@
   #query-results th { text-align: left; padding: 4px 8px; border-bottom: 1px solid #444; color: #aaa; }
   #query-results td { padding: 4px 8px; border-bottom: 1px solid #333; cursor: pointer; }
   #query-results td:hover { color: #ffd700; }
+  #construct-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #0f3460;
+    border-top: 1px solid #444; font-family: monospace; font-size: 11px; color: #aaa;
+    padding: 6px 12px; white-space: pre-wrap; max-height: 80px; overflow-y: auto;
+    display: flex; align-items: flex-start; gap: 8px; z-index: 40; }
+  #construct-panel code { flex: 1; overflow-x: auto; }
+  #construct-panel button { padding: 2px 8px; border-radius: 4px; border: 1px solid #444;
+    background: #16213e; color: #eee; cursor: pointer; font-size: 11px; white-space: nowrap; }
+  #construct-panel button:hover { background: #e94560; }
 </style>
 </head><body>
 <div id='toolbar'>
@@ -252,6 +285,7 @@
   <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
   <select id='predicates' multiple title='Filter predicates (ctrl+click)' style='display:none'></select>
   <button onclick='togglePredPanel()'>Predicates ▼</button>
+  <button onclick='toggleTypePanel()'>Types ▼</button>
   <button onclick='loadGraph()'>Apply</button>
   <button onclick='resetGraph()'>Reset</button>
   <select id='layout' onchange='changeLayout()'>
@@ -277,6 +311,7 @@
 </div>
 <div id='cy'></div>
 <div id='pred-panel'></div>
+<div id='type-panel'></div>
 <div id='legend'></div>
 <div id='info'></div>
 <div id='ctx-menu'>
@@ -294,6 +329,13 @@
   <textarea id='query-input' placeholder='SELECT ?s ?p ?o WHERE { ?s ?p ?o } LIMIT 10'></textarea>
   <div id='query-results'></div>
 </div>
+<div id='construct-panel'>
+  <code id='construct-query'></code>
+  <button onclick='copyConstruct()'>Copy</button>
+  <button onclick='runConstruct()'>Run</button>
+  <button onclick='exportPNG()'>PNG</button>
+  <button onclick='exportSVG()'>SVG</button>
+</div>
 <script>
 let cy;
 let typeColors = {};
@@ -304,6 +346,27 @@ Promise.all([
 ]).then(([preds, types]) => {
   typeColors = types;
   buildLegend(types);
+  // Build type filter panel
+  let typePanel = document.getElementById('type-panel');
+  // Get counts
+  fetch('/api/type-counts').then(r=>r.json()).then(counts=>{
+    for(let [typ, color] of Object.entries(types)){
+      let label = document.createElement('label');
+      let cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = typ;
+      cb.checked = true;
+      cb.onchange = applyTypeFilter;
+      label.appendChild(cb);
+      let swatch = document.createElement('span');
+      swatch.className = 'legend-swatch';
+      swatch.style.background = color;
+      label.appendChild(swatch);
+      let short = typ.split('#').pop().split('/').pop();
+      let count = counts[typ] || 0;
+      label.appendChild(document.createTextNode(' ' + short + ' (' + count + ')'));
+      typePanel.appendChild(label);
+    }
+  });
   document.getElementById('cy').addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('click', hideCtxMenu);
   let panel = document.getElementById('pred-panel');
@@ -337,14 +400,31 @@ function getSelectedPredicates(){
 function togglePredPanel(){
   let p = document.getElementById('pred-panel');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('type-panel').style.display = 'none';
+}
+function toggleTypePanel(){
+  let p = document.getElementById('type-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('pred-panel').style.display = 'none';
+}
+function applyTypeFilter(){
+  loadGraph();
 }
 function loadGraph(){
   let selected = getSelectedPredicates();
   let total = document.querySelectorAll('#pred-panel input').length;
   let url = '/api/graph';
+  let params = [];
   if(selected.length > 0 && selected.length < total)
-    url += '?predicates=' + encodeURIComponent(selected.join(','));
-  fetch(url).then(r=>r.json()).then(data=>{
+    params.push('predicates=' + encodeURIComponent(selected.join(',')));
+  let typeChecks = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
+  let typeTotal = document.querySelectorAll('#type-panel input').length;
+  if(typeChecks.length > 0 && typeChecks.length < typeTotal)
+    params.push('types=' + encodeURIComponent(typeChecks.join(',')));
+  if(params.length > 0) url += '?' + params.join('&');
+  fetch(url).then(r=>r.json()).then(resp=>{
+    let data = resp.elements;
+    let totalNodes = resp.totalNodes;
     if(cy) cy.destroy();
     let labelMode = document.getElementById('labelMode').value;
     let showEdgeLabels = document.getElementById('edgeLabel').checked;
@@ -394,8 +474,9 @@ function loadGraph(){
     if(typeStyles.length > 0) cy.style().append(typeStyles).update();
     if(showEdgeLabels) updateEdgeLabels();
     document.getElementById('stats').textContent =
-      cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges' +
-      (cy.nodes().length >= 200 ? ' (truncated)' : '');
+      cy.nodes().length + (totalNodes > cy.nodes().length ? ' of ' + totalNodes : '') +
+      ' nodes, ' + cy.edges().length + ' edges';
+    updateConstruct();
     cy.on('mouseover', 'node', function(e){
       if(document.getElementById('labelMode').value === 'hover'){
         e.target.style('label', e.target.data('label'));
@@ -453,7 +534,8 @@ function loadGraph(){
       let url = '/api/graph?center=' + encodeURIComponent(id) + '&depth=2';
       if(selected.length > 0 && selected.length < total)
         url += '&predicates=' + encodeURIComponent(selected.join(','));
-      fetch(url).then(r=>r.json()).then(data=>{
+      fetch(url).then(r=>r.json()).then(resp=>{
+        let data = resp.elements || resp;
         cy.elements().remove();
         cy.add(data);
         cy.nodes().forEach(n => {
@@ -603,10 +685,10 @@ function toggleQueryPanel(){
   let p = document.getElementById('query-panel');
   p.classList.toggle('open');
   if(p.classList.contains('open')){
-    document.getElementById('cy').style.height = 'calc(100vh - 50px - 40vh)';
+    document.getElementById('cy').style.height = 'calc(100vh - 50px - 36px - 40vh)';
     document.getElementById('query-input').focus();
   } else {
-    document.getElementById('cy').style.height = 'calc(100vh - 50px)';
+    document.getElementById('cy').style.height = 'calc(100vh - 50px - 36px)';
   }
   if(cy) cy.resize();
 }
@@ -662,33 +744,94 @@ function highlightQueryResults(results){
 function highlightInGraph(uri){
   cy.elements().removeClass('highlighted dimmed');
   let matches = cy.nodes().filter(n => n.data('uri') === uri);
-  if(matches.length > 0){
-    matches.addClass('highlighted');
-    cy.elements().not(matches).not(matches.connectedEdges()).addClass('dimmed');
-    cy.fit(matches, 50);
-    // Show node details
-    fetch('/api/node?id=' + encodeURIComponent(uri)).then(r=>r.json()).then(details=>{
-      let info = '<b>' + details.label + '</b><br>';
-      if(details.outgoing && details.outgoing.length > 0){
-        info += '<br><u>Properties</u><br>';
-        details.outgoing.forEach(t => {
-          let pred = t.predicate.split('#').pop().split('/').pop();
-          let obj = t.object.split('#').pop().split('/').pop();
-          info += '<i>' + pred + '</i>: ' + obj + '<br>';
-        });
+  if(matches.length === 0){
+    // Node not in view — load it with its neighborhood
+    let url = '/api/graph?center=' + encodeURIComponent(uri) + '&depth=1';
+    fetch(url).then(r=>r.json()).then(resp=>{
+      let data = resp.elements || resp;
+      cy.elements().remove();
+      cy.add(data);
+      cy.nodes().forEach(n => {
+        let t = n.data('type');
+        if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
+      });
+      if(document.getElementById('labelMode').value==='all') applyZoomLabels();
+      if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
+      cy.layout(getLayoutOpts(false)).run();
+      let m = cy.nodes().filter(n => n.data('uri') === uri);
+      if(m.length > 0){
+        m.addClass('highlighted');
+        cy.elements().not(m).not(m.connectedEdges()).addClass('dimmed');
+        cy.fit(m, 50);
       }
-      if(details.incoming && details.incoming.length > 0){
-        info += '<br><u>Referenced by</u><br>';
-        details.incoming.forEach(t => {
-          let pred = t.predicate.split('#').pop().split('/').pop();
-          let subj = t.subject.split('#').pop().split('/').pop();
-          info += subj + ' <i>' + pred + '</i><br>';
-        });
-      }
-      let el = document.getElementById('info');
-      el.innerHTML = info; el.style.display = 'block';
+      document.getElementById('stats').textContent =
+        cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+      showNodeDetails(uri);
     });
+    return;
   }
+  matches.addClass('highlighted');
+  cy.elements().not(matches).not(matches.connectedEdges()).addClass('dimmed');
+  cy.fit(matches, 50);
+  showNodeDetails(uri);
+}
+function showNodeDetails(uri){
+  fetch('/api/node?id=' + encodeURIComponent(uri)).then(r=>r.json()).then(details=>{
+    let info = '<b>' + details.label + '</b><br>';
+    if(details.outgoing && details.outgoing.length > 0){
+      info += '<br><u>Properties</u><br>';
+      details.outgoing.forEach(t => {
+        let pred = t.predicate.split('#').pop().split('/').pop();
+        let obj = t.object.split('#').pop().split('/').pop();
+        info += '<i>' + pred + '</i>: ' + obj + '<br>';
+      });
+    }
+    if(details.incoming && details.incoming.length > 0){
+      info += '<br><u>Referenced by</u><br>';
+      details.incoming.forEach(t => {
+        let pred = t.predicate.split('#').pop().split('/').pop();
+        let subj = t.subject.split('#').pop().split('/').pop();
+        info += subj + ' <i>' + pred + '</i><br>';
+      });
+    }
+    let el = document.getElementById('info');
+    el.innerHTML = info; el.style.display = 'block';
+  });
+}
+function updateConstruct(){
+  let preds = getSelectedPredicates();
+  let total = document.querySelectorAll('#pred-panel input').length;
+  let where = '';
+  if(preds.length > 0 && preds.length < total){
+    let alts = preds.map(p => '<' + p + '>').join('|');
+    where = '?s ?p ?o . FILTER(?p IN(' + preds.map(p => '<' + p + '>').join(', ') + '))';
+  } else {
+    where = '?s ?p ?o';
+  }
+  let q = 'CONSTRUCT { ?s ?p ?o } WHERE { ' + where + ' }';
+  document.getElementById('construct-query').textContent = q;
+}
+function copyConstruct(){
+  let q = document.getElementById('construct-query').textContent;
+  navigator.clipboard.writeText(q);
+}
+function runConstruct(){
+  let q = document.getElementById('construct-query').textContent;
+  let p = document.getElementById('query-panel');
+  if(!p.classList.contains('open')) toggleQueryPanel();
+  document.getElementById('query-input').value = q;
+  runQuery();
+}
+function exportPNG(){
+  let url = cy.png({full:true, scale:2, bg:'#1a1a2e'});
+  let a = document.createElement('a');
+  a.href = url; a.download = 'graph.png'; a.click();
+}
+function exportSVG(){
+  let url = cy.svg({full:true, scale:1, bg:'#1a1a2e'});
+  let blob = new Blob([url], {type:'image/svg+xml'});
+  let a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'graph.svg'; a.click();
 }
 </script>
 </body></html>"))
@@ -744,13 +887,16 @@ function highlightInGraph(uri){
   (ht:define-easy-handler (handle-graph-api :uri "/api/graph")
       ((predicates :parameter-type 'string)
        (center :parameter-type 'string)
-       (depth :parameter-type 'string))
+       (depth :parameter-type 'string)
+       (types :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
     (graph-to-cytoscape-json *web-graph*
                              :predicates (when predicates
                                            (cl-ppcre:split "," predicates))
                              :center center
-                             :depth (when depth (parse-integer depth :junk-allowed t))))
+                             :depth (when depth (parse-integer depth :junk-allowed t))
+                             :node-types (when types
+                                           (cl-ppcre:split "," types))))
   (ht:define-easy-handler (handle-graph-info :uri "/api/info") ()
     (setf (ht:content-type*) "application/json")
     (let ((ht (make-hash-table :test 'equal)))
@@ -778,6 +924,13 @@ function highlightInGraph(uri){
   (ht:define-easy-handler (handle-types-api :uri "/api/types") ()
     (setf (ht:content-type*) "application/json")
     (graph-types-json *web-graph*))
+  (ht:define-easy-handler (handle-type-counts-api :uri "/api/type-counts") ()
+    (setf (ht:content-type*) "application/json")
+    (let ((counts (make-hash-table :test 'equal)))
+      (dolist (tr (append (get-triples *web-graph* :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                          (get-triples *web-graph* :predicate "rdf:type")))
+        (incf (gethash (princ-to-string (triple-object tr)) counts 0)))
+      (jzon:stringify counts)))
   (ht:define-easy-handler (handle-node-api :uri "/api/node")
       ((id :parameter-type 'string))
     (setf (ht:content-type*) "application/json")

@@ -40,24 +40,28 @@ Single-page Cytoscape.js graph viewer served by Hunchentoot. Dark theme, interac
 - [x] Double-click to recenter on a node
 - [x] Right-click context menu (expand, collapse, hide, pin)
 
-## Phase 3 — Query Integration
+## Phase 3 — Query Integration ✓
 
-- [ ] SPARQL query box in the UI with results table
-- [ ] Query results highlight matching nodes in the graph
-- [ ] "Show in graph" button for query result rows
-- [ ] Query history / saved queries
+- [x] SPARQL query box in the UI with results table
+- [x] Query results highlight matching nodes in the graph
+- [x] "Show in graph" button for query result rows (loads node if not in view)
+- [x] Live CONSTRUCT query display (auto-updates with filters)
+- [x] Run CONSTRUCT directly from the bar
 
-## Phase 4 — Large Graph Support
+## Phase 4 — Large Graph Support ✓
 
-- [ ] Pagination: load subgraph around focus node, expand on demand
-- [ ] Node count limit with "load more" affordance
-- [ ] Server-side filtering (don't send full graph to browser)
-- [ ] Performance: virtual rendering for 1000+ nodes
+- [x] Auto-truncate to 200 nodes max on initial load (BFS from highest-degree node)
+- [x] Node count shows "X of Y nodes" when truncated
+- [x] Server-side type filtering (Types panel triggers re-query)
+- [x] Server-side predicate filtering
+- [x] Double-click to explore beyond boundary
+- [x] Click SPARQL result loads node into view if not present
 
-## Phase 5 — Export & Sharing
+## Phase 5 — Export & Sharing ✓
 
-- [ ] Export visible graph as PNG/SVG
-- [ ] Export current view as SPARQL CONSTRUCT
+- [x] Export visible graph as PNG
+- [x] Export visible graph as SVG
+- [x] Live CONSTRUCT query (copy or run)
 - [ ] Shareable URL (encodes focus node, predicates, layout)
 - [ ] Embed mode (iframe-friendly, no toolbar)
 
