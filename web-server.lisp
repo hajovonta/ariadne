@@ -155,6 +155,11 @@
   #pred-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
   #pred-panel label:hover { color: #e94560; }
   #pred-panel input { margin-right: 6px; }
+  #legend { position: fixed; top: 50px; right: 0; background: #16213e; padding: 12px;
+    border-left: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 0 8px;
+    font-size: 12px; display: none; z-index: 10; }
+  .legend-item { padding: 2px 0; display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 50%%; display: inline-block; }
 </style>
 </head><body>
 <div id='toolbar'>
@@ -182,11 +187,18 @@
 </div>
 <div id='cy'></div>
 <div id='pred-panel'></div>
+<div id='legend'></div>
 <div id='info'></div>
 <script>
 let cy;
-// Load predicate list
-fetch('/api/predicates').then(r=>r.json()).then(preds=>{
+let typeColors = {};
+// Load predicate list and type colors
+Promise.all([
+  fetch('/api/predicates').then(r=>r.json()),
+  fetch('/api/types').then(r=>r.json())
+]).then(([preds, types]) => {
+  typeColors = types;
+  buildLegend(types);
   let panel = document.getElementById('pred-panel');
   preds.forEach((p,i) => {
     let label = document.createElement('label');
@@ -200,6 +212,18 @@ fetch('/api/predicates').then(r=>r.json()).then(preds=>{
   });
   loadGraph();
 });
+function buildLegend(types){
+  let legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  for(let [typ, color] of Object.entries(types)){
+    let item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = '<span class=\"legend-swatch\" style=\"background:'+color+'\"></span>'
+      + typ.split('#').pop().split('/').pop();
+    legend.appendChild(item);
+  }
+  if(Object.keys(types).length > 0) legend.style.display = 'block';
+}
 function getSelectedPredicates(){
   return Array.from(document.querySelectorAll('#pred-panel input:checked')).map(cb => cb.value);
 }
@@ -215,18 +239,22 @@ function loadGraph(){
     url += '?predicates=' + encodeURIComponent(selected.join(','));
   fetch(url).then(r=>r.json()).then(data=>{
     if(cy) cy.destroy();
+    let labelMode = document.getElementById('labelMode').value;
+    let showEdgeLabels = document.getElementById('edgeLabel').checked;
     cy = cytoscape({
       container: document.getElementById('cy'),
       elements: data,
       style: [
         { selector: 'node', style: {
-          'label': '', 'background-color': '#e94560',
+          'label': labelMode==='all' ? 'data(label)' : '',
+          'background-color': '#e94560',
+          'color': '#eee', 'font-size': '11px',
+          'text-valign': 'bottom', 'text-margin-y': 4,
           'width': 14, 'height': 14 }},
-        { selector: 'node:active, node:selected', style: {
-          'label': 'data(label)', 'color': '#eee', 'font-size': '11px',
-          'text-valign': 'bottom', 'text-margin-y': 4 }},
         { selector: 'edge', style: {
           'curve-style': 'bezier',
+          'label': showEdgeLabels ? 'data(label)' : '',
+          'font-size': '9px', 'color': '#888', 'text-rotation': 'autorotate',
           'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
           'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
         { selector: ':selected', style: { 'background-color': '#ffd700', 'line-color': '#ffd700' }},
@@ -240,17 +268,20 @@ function loadGraph(){
       minZoom: 0.1,
       maxZoom: 10
     });
+    // Apply type colors
+    cy.nodes().forEach(n => {
+      let t = n.data('type');
+      if(t && typeColors[t]) n.style('background-color', typeColors[t]);
+    });
     document.getElementById('stats').textContent =
       cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
     cy.on('mouseover', 'node', function(e){
-      e.target.style('label', e.target.data('label'));
-      e.target.style('color', '#eee');
-      e.target.style('font-size', '11px');
-      e.target.style('text-valign', 'bottom');
-      e.target.style('text-margin-y', 4);
+      if(document.getElementById('labelMode').value === 'hover'){
+        e.target.style('label', e.target.data('label'));
+      }
     });
     cy.on('mouseout', 'node', function(e){
-      if(!e.target.hasClass('highlighted'))
+      if(document.getElementById('labelMode').value === 'hover' && !e.target.hasClass('highlighted'))
         e.target.style('label', '');
     });
     cy.on('tap', 'node', function(e){
