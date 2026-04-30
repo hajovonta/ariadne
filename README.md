@@ -109,6 +109,8 @@ git clone <repository-url> ariadne
 (ql:quickload :ariadne)
 ```
 
+Tested on SBCL and ECL.
+
 ## Dependencies
 
 - **cl-ppcre** — Regular expressions (SPARQL REGEX, Turtle parsing, SHACL pattern matching)

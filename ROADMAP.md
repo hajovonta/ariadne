@@ -41,7 +41,7 @@
 - [ ] Import progress reporting for large files
 
 ### Ecosystem
-- [ ] Portability testing — verify on CCL, ECL, ABCL
+- [ ] Portability testing — verify on CCL, ABCL (SBCL and ECL confirmed working)
 - [ ] Benchmark suite — reproducible comparisons with other triplestores
 - [ ] Example applications — knowledge graph construction, data validation pipelines
 
