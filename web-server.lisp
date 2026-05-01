@@ -335,6 +335,7 @@
   <button onclick='runConstruct()'>Run</button>
   <button onclick='exportPNG()'>PNG</button>
   <button onclick='exportSVG()'>SVG</button>
+  <button onclick='shareURL()'>Share</button>
 </div>
 <script>
 let cy;
@@ -366,6 +367,7 @@ Promise.all([
       label.appendChild(document.createTextNode(' ' + short + ' (' + count + ')'));
       typePanel.appendChild(label);
     }
+    applyURLTypeParams();
   });
   document.getElementById('cy').addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('click', hideCtxMenu);
@@ -380,6 +382,7 @@ Promise.all([
     label.appendChild(document.createTextNode(p.split('#').pop().split('/').pop()));
     panel.appendChild(label);
   });
+  applyURLParams();
   loadGraph();
 });
 function buildLegend(types){
@@ -548,6 +551,9 @@ function loadGraph(){
         cy.layout({ name: document.getElementById('layout').value, animate: true }).run();
         document.getElementById('stats').textContent =
           cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+        // Highlight the centered node
+        let center = cy.nodes().filter(n => n.data('uri') === id);
+        if(center.length > 0) center.addClass('highlighted');
       });
     });
   });
@@ -810,6 +816,48 @@ function updateConstruct(){
   }
   let q = 'CONSTRUCT { ?s ?p ?o } WHERE { ' + where + ' }';
   document.getElementById('construct-query').textContent = q;
+}
+function shareURL(){
+  let params = new URLSearchParams();
+  let preds = getSelectedPredicates();
+  let totalPreds = document.querySelectorAll('#pred-panel input').length;
+  if(preds.length > 0 && preds.length < totalPreds)
+    params.set('predicates', preds.join(','));
+  let types = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
+  let totalTypes = document.querySelectorAll('#type-panel input').length;
+  if(types.length > 0 && types.length < totalTypes)
+    params.set('types', types.join(','));
+  params.set('layout', document.getElementById('layout').value);
+  params.set('spacing', document.getElementById('spacing').value);
+  params.set('labels', document.getElementById('labelMode').value);
+  if(document.getElementById('edgeLabel').checked) params.set('edgeLabels', '1');
+  let url = window.location.origin + window.location.pathname + '?' + params.toString();
+  navigator.clipboard.writeText(url);
+  document.getElementById('stats').textContent = 'URL copied!';
+  setTimeout(function(){ loadGraph(); }, 1500);
+}
+function applyURLParams(){
+  let params = new URLSearchParams(window.location.search);
+  if(params.has('layout')) document.getElementById('layout').value = params.get('layout');
+  if(params.has('spacing')) document.getElementById('spacing').value = params.get('spacing');
+  if(params.has('labels')) document.getElementById('labelMode').value = params.get('labels');
+  if(params.has('edgeLabels')) document.getElementById('edgeLabel').checked = true;
+  if(params.has('predicates')){
+    let wanted = params.get('predicates').split(',');
+    document.querySelectorAll('#pred-panel input').forEach(cb => {
+      cb.checked = wanted.includes(cb.value);
+    });
+  }
+}
+function applyURLTypeParams(){
+  let params = new URLSearchParams(window.location.search);
+  if(params.has('types')){
+    let wanted = params.get('types').split(',');
+    document.querySelectorAll('#type-panel input').forEach(cb => {
+      cb.checked = wanted.includes(cb.value);
+    });
+    loadGraph();
+  }
 }
 function copyConstruct(){
   let q = document.getElementById('construct-query').textContent;
