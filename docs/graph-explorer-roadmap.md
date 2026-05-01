@@ -62,14 +62,15 @@ Single-page Cytoscape.js graph viewer served by Hunchentoot. Dark theme, interac
 - [x] Export visible graph as PNG
 - [x] Export visible graph as SVG
 - [x] Live CONSTRUCT query (copy or run)
-- [ ] Shareable URL (encodes focus node, predicates, layout)
+- [x] Shareable URL (encodes focus node, predicates, layout)
 - [ ] Embed mode (iframe-friendly, no toolbar)
 
-## Phase 6 — Polish & Maintainability
+## Phase 6 — Polish & Maintainability ✓
 
-- [ ] Extract HTML/CSS/JS to static files (not inline string)
-- [ ] Responsive layout for smaller screens
-- [ ] Keyboard shortcuts (search, fit, undo)
-- [ ] Accessibility: ARIA labels, keyboard navigation
-- [ ] Graph statistics panel (triple count, top predicates, type distribution)
-- [ ] Dark/light theme toggle
+- [x] Extract HTML/CSS/JS to static file (static/index.html)
+- [x] Responsive toolbar (wraps on narrow windows)
+- [x] Keyboard shortcuts (/ search, f fit, r reset, Escape clear)
+- [x] Graph statistics panel (click node count for details)
+- [x] Dark/light theme toggle with adaptive colors
+- [x] All/None buttons in filter panels
+- [ ] Accessibility: ARIA labels, keyboard navigation (low priority)

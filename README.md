@@ -39,7 +39,7 @@ A **graph database** in Common Lisp with full W3C SPARQL 1.1 and SHACL conforman
 
 ### Visualization & Web
 - **Graphviz Rendering** — dot/neato/fdp/circo/twopi/sfdp engines with predicate filtering
-- **Web Explorer** — Interactive Cytoscape.js graph viewer with type-colored nodes, predicate filtering, node details panel, right-click context menu (expand/collapse/hide/pin), search, multiple layouts
+- **Web Explorer** — Interactive Cytoscape.js graph viewer with type-colored nodes, predicate/type filtering, node details panel, right-click context menu (expand/collapse/hide/pin), SPARQL query panel, live CONSTRUCT display, PNG/SVG export, shareable URLs, dark/light theme, keyboard shortcuts, multiple layouts with spacing control
 - **SPARQL Endpoint** — HTTP server at `/sparql` and `/update` (Hunchentoot)
 
 ### Operations & Durability
