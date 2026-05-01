@@ -9,65 +9,75 @@
 <script src='https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js'></script>
 <script src='https://unpkg.com/cytoscape-svg@0.4.0/cytoscape-svg.js'></script>
 <style>
-  body { margin: 0; font-family: sans-serif; background: #1a1a2e; color: #eee; }
-  #cy { width: 100%%; height: calc(100vh - 50px - 36px); }
-  #toolbar { height: 50px; display: flex; align-items: center; padding: 0 16px; gap: 12px; background: #16213e; flex-wrap: wrap; }
+  :root {
+    --bg: #1a1a2e; --panel: #16213e; --input: #0f3460; --text: #eee;
+    --border: #444; --accent: #e94560; --node: #e94560; --edge: #0f3460;
+    --dim: #333; --highlight: #ffd700;
+  }
+  .light {
+    --bg: #f5f5f5; --panel: #ffffff; --input: #e8e8e8; --text: #222;
+    --border: #ccc; --accent: #d63031; --node: #d63031; --edge: #b2bec3;
+    --dim: #ddd; --highlight: #f39c12;
+  }
+  body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); }
+  #cy { width: 100%; height: calc(100vh - 50px - 36px); background: var(--bg); }
+  #toolbar { height: auto; min-height: 40px; display: flex; align-items: center; padding: 6px 16px; gap: 8px; background: var(--panel); flex-wrap: wrap; }
   #toolbar input, #toolbar select, #toolbar button {
-    padding: 6px 10px; border-radius: 4px; border: 1px solid #444; background: #0f3460; color: #eee; }
+    padding: 6px 10px; border-radius: 4px; border: 1px solid var(--border); background: var(--input); color: var(--text); }
   #toolbar button { cursor: pointer; }
-  #toolbar button:hover { background: #e94560; }
-  #info { position: fixed; bottom: 16px; right: 16px; background: #16213e; padding: 12px;
+  #toolbar button:hover { background: var(--accent); }
+  #info { position: fixed; bottom: 16px; right: 16px; background: var(--panel); padding: 12px;
     border-radius: 8px; max-width: 350px; max-height: 30vh; overflow-y: auto;
-    font-size: 13px; display: none; border: 1px solid #333; z-index: 60; }
+    font-size: 13px; display: none; border: 1px solid var(--border); z-index: 60; }
   #predicates { max-width: 300px; }
-  #pred-panel { position: fixed; top: 50px; left: 0; background: #16213e; padding: 12px;
-    border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
+  #pred-panel { position: fixed; top: 50px; left: 0; background: var(--panel); padding: 12px;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0 0 8px 0;
     max-height: 80vh; overflow-y: auto; display: none; min-width: 200px; z-index: 10; }
   #pred-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
-  #pred-panel label:hover { color: #e94560; }
+  #pred-panel label:hover { color: var(--accent); }
   #pred-panel input { margin-right: 6px; }
   .panel-btns { margin-bottom: 6px; display: flex; gap: 4px; }
-  .panel-btns button { padding: 2px 8px; border-radius: 3px; border: 1px solid #444;
-    background: #0f3460; color: #eee; cursor: pointer; font-size: 11px; }
-  .panel-btns button:hover { background: #e94560; }
-  #type-panel { position: fixed; top: 50px; left: 220px; background: #16213e; padding: 12px;
-    border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
+  .panel-btns button { padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border);
+    background: var(--input); color: var(--text); cursor: pointer; font-size: 11px; }
+  .panel-btns button:hover { background: var(--accent); }
+  #type-panel { position: fixed; top: 50px; left: 220px; background: var(--panel); padding: 12px;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0 0 8px 0;
     max-height: 80vh; overflow-y: auto; display: none; min-width: 180px; z-index: 10; }
   #type-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
-  #type-panel label:hover { color: #e94560; }
+  #type-panel label:hover { color: var(--accent); }
   #type-panel input { margin-right: 6px; }
-  #legend { position: fixed; top: 50px; right: 0; background: #16213e; padding: 12px;
-    border-left: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 0 8px;
+  #legend { position: fixed; top: 50px; right: 0; background: var(--panel); padding: 12px;
+    border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0 0 0 8px;
     font-size: 12px; display: none; z-index: 10; }
   .legend-item { padding: 2px 0; display: flex; align-items: center; gap: 6px; }
   .legend-swatch { width: 12px; height: 12px; border-radius: 50%%; display: inline-block; }
-  #ctx-menu { position: fixed; background: #16213e; border: 1px solid #444; border-radius: 6px;
+  #ctx-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 0; display: none; z-index: 100; min-width: 140px; }
   #ctx-menu div { padding: 6px 14px; cursor: pointer; font-size: 13px; }
-  #ctx-menu div:hover { background: #e94560; }
-  #query-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #16213e;
-    border-top: 1px solid #444; z-index: 50; max-height: 40vh; overflow: hidden;
+  #ctx-menu div:hover { background: var(--accent); }
+  #query-panel { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel);
+    border-top: 1px solid var(--border); z-index: 50; max-height: 40vh; overflow: hidden;
     display: none; flex-direction: column; }
   #query-panel.open { display: flex; }
-  #query-input { width: 100%%; height: 60px; background: #0f3460; color: #eee; border: none;
+  #query-input { width: 100%; height: 60px; background: var(--input); color: var(--text); border: none;
     padding: 8px; font-family: monospace; font-size: 13px; resize: none; }
   #query-bar { display: flex; gap: 8px; padding: 6px 8px; align-items: center; }
-  #query-bar button { padding: 4px 12px; border-radius: 4px; border: 1px solid #444;
-    background: #0f3460; color: #eee; cursor: pointer; }
-  #query-bar button:hover { background: #e94560; }
+  #query-bar button { padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--input); color: var(--text); cursor: pointer; }
+  #query-bar button:hover { background: var(--accent); }
   #query-results { overflow: auto; flex: 1; padding: 0 8px 8px; }
-  #query-results table { width: 100%%; border-collapse: collapse; font-size: 12px; }
-  #query-results th { text-align: left; padding: 4px 8px; border-bottom: 1px solid #444; color: #aaa; }
-  #query-results td { padding: 4px 8px; border-bottom: 1px solid #333; cursor: pointer; }
-  #query-results td:hover { color: #ffd700; }
-  #construct-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #0f3460;
-    border-top: 1px solid #444; font-family: monospace; font-size: 11px; color: #aaa;
+  #query-results table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #query-results th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); color: var(--text); opacity: 0.7; }
+  #query-results td { padding: 4px 8px; border-bottom: 1px solid var(--dim); cursor: pointer; }
+  #query-results td:hover { color: var(--highlight); }
+  #construct-panel { position: fixed; bottom: 0; left: 0; right: 0; background: var(--input);
+    border-top: 1px solid var(--border); font-family: monospace; font-size: 11px; color: var(--text); opacity: 0.8;
     padding: 6px 12px; white-space: pre-wrap; max-height: 80px; overflow-y: auto;
     display: flex; align-items: flex-start; gap: 8px; z-index: 40; }
   #construct-panel code { flex: 1; overflow-x: auto; }
-  #construct-panel button { padding: 2px 8px; border-radius: 4px; border: 1px solid #444;
-    background: #16213e; color: #eee; cursor: pointer; font-size: 11px; white-space: nowrap; }
-  #construct-panel button:hover { background: #e94560; }
+  #construct-panel button { padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer; font-size: 11px; white-space: nowrap; }
+  #construct-panel button:hover { background: var(--accent); }
 </style>
 </head><body>
 <div id='toolbar'>
@@ -98,6 +108,7 @@
   <button onclick='selectAll()'>All predicates</button>
   <button onclick='toggleQueryPanel()'>SPARQL</button>
   <span id='stats' onclick='showStats()' style='cursor:pointer' title='Click for details'></span>
+  <button onclick='toggleTheme()' title='Toggle theme'>☀</button>
 </div>
 <div id='cy'></div>
 <div id='pred-panel'><div class='panel-btns'><button onclick='panelAll(this.parentNode.parentNode.id);loadGraph()'>All</button><button onclick='panelNone(this.parentNode.parentNode.id);loadGraph()'>None</button></div></div>
@@ -218,6 +229,12 @@ function toggleTypePanel(){
 function applyTypeFilter(){
   loadGraph();
 }
+function getLabelColor(){
+  return document.documentElement.classList.contains('light') ? '#222' : '#eee';
+}
+function getHighlightColor(){
+  return document.documentElement.classList.contains('light') ? '#e17055' : '#ffd700';
+}
 function loadGraph(){
   let selected = getSelectedPredicates();
   let total = document.querySelectorAll('#pred-panel input').length;
@@ -243,7 +260,7 @@ function loadGraph(){
         { selector: 'node', style: {
           'label': labelMode==='all' ? 'data(label)' : '',
           'background-color': '#e94560',
-          'color': '#eee', 'font-size': '8px', 'min-zoomed-font-size': 8,
+          'color': getLabelColor(), 'font-size': '8px', 'min-zoomed-font-size': 8,
           'text-valign': 'bottom', 'text-margin-y': 4,
           'width': 14, 'height': 14 }},
         { selector: 'edge', style: {
@@ -254,13 +271,13 @@ function loadGraph(){
           'text-background-opacity': 0.8, 'text-background-padding': '2px',
           'target-arrow-shape': 'triangle', 'line-color': '#0f3460',
           'target-arrow-color': '#0f3460', 'width': 1.5, 'opacity': 0.6 }},
-        { selector: 'node:selected', style: { 'background-color': '#ffd700', 'border-width': 3, 'border-color': '#ffd700' }},
-        { selector: 'edge:selected', style: { 'line-color': '#ffd700', 'target-arrow-color': '#ffd700' }},
+        { selector: 'node:selected', style: { 'background-color': getHighlightColor(), 'border-width': 3, 'border-color': getHighlightColor() }},
+        { selector: 'edge:selected', style: { 'line-color': getHighlightColor(), 'target-arrow-color': getHighlightColor() }},
         { selector: 'node.highlighted', style: {
-          'background-color': '#ffd700', 'label': 'data(label)', 'border-width': 3, 'border-color': '#fff',
-          'color': '#eee', 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
+          'background-color': getHighlightColor(), 'label': 'data(label)', 'border-width': 3, 'border-color': '#fff',
+          'color': getLabelColor(), 'font-size': '11px', 'text-valign': 'bottom', 'text-margin-y': 4 }},
         { selector: 'edge.highlighted', style: {
-          'line-color': '#ffd700', 'target-arrow-color': '#ffd700', 'opacity': 1 }},
+          'line-color': getHighlightColor(), 'target-arrow-color': getHighlightColor(), 'opacity': 1 }},
         { selector: '.dimmed', style: { opacity: 0.08 }}
       ],
       layout: getLayoutOpts(false),
@@ -708,6 +725,10 @@ function exportSVG(){
   let blob = new Blob([url], {type:'image/svg+xml'});
   let a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'graph.svg'; a.click();
+}
+function toggleTheme(){
+  document.documentElement.classList.toggle('light');
+  loadGraph();
 }
 </script>
 </body></html>
