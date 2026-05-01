@@ -240,6 +240,10 @@
   #pred-panel label { display: block; padding: 3px 0; cursor: pointer; font-size: 13px; }
   #pred-panel label:hover { color: #e94560; }
   #pred-panel input { margin-right: 6px; }
+  .panel-btns { margin-bottom: 6px; display: flex; gap: 4px; }
+  .panel-btns button { padding: 2px 8px; border-radius: 3px; border: 1px solid #444;
+    background: #0f3460; color: #eee; cursor: pointer; font-size: 11px; }
+  .panel-btns button:hover { background: #e94560; }
   #type-panel { position: fixed; top: 50px; left: 220px; background: #16213e; padding: 12px;
     border-right: 1px solid #333; border-bottom: 1px solid #333; border-radius: 0 0 8px 0;
     max-height: 80vh; overflow-y: auto; display: none; min-width: 180px; z-index: 10; }
@@ -307,11 +311,11 @@
   <button onclick='cy.fit()'>Fit</button>
   <button onclick='selectAll()'>All predicates</button>
   <button onclick='toggleQueryPanel()'>SPARQL</button>
-  <span id='stats'></span>
+  <span id='stats' onclick='showStats()' style='cursor:pointer' title='Click for details'></span>
 </div>
 <div id='cy'></div>
-<div id='pred-panel'></div>
-<div id='type-panel'></div>
+<div id='pred-panel'><div class='panel-btns'><button onclick='panelAll(this.parentNode.parentNode.id);loadGraph()'>All</button><button onclick='panelNone(this.parentNode.parentNode.id);loadGraph()'>None</button></div></div>
+<div id='type-panel'><div class='panel-btns'><button onclick='panelAll(this.parentNode.parentNode.id);loadGraph()'>All</button><button onclick='panelNone(this.parentNode.parentNode.id);loadGraph()'>None</button></div></div>
 <div id='legend'></div>
 <div id='info'></div>
 <div id='ctx-menu'>
@@ -371,6 +375,21 @@ Promise.all([
   });
   document.getElementById('cy').addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('click', hideCtxMenu);
+  document.addEventListener('keydown', function(e){
+    if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if(e.key === '/' || (e.ctrlKey && e.key === 'f')){
+      e.preventDefault(); document.getElementById('search').focus();
+    }
+    if(e.key === 'f' && !e.ctrlKey) cy.fit();
+    if(e.key === 'r') resetGraph();
+    if(e.key === 'Escape'){
+      cy.elements().removeClass('highlighted dimmed');
+      document.getElementById('info').style.display='none';
+      hideCtxMenu();
+      let qp = document.getElementById('query-panel');
+      if(qp.classList.contains('open')) toggleQueryPanel();
+    }
+  });
   let panel = document.getElementById('pred-panel');
   preds.forEach((p,i) => {
     let label = document.createElement('label');
@@ -586,9 +605,32 @@ function selectAll(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   loadGraph();
 }
+function panelAll(id){
+  document.querySelectorAll('#'+id+' input[type=checkbox]').forEach(cb => cb.checked = true);
+}
+function panelNone(id){
+  document.querySelectorAll('#'+id+' input[type=checkbox]').forEach(cb => cb.checked = false);
+}
 function resetGraph(){
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
+  document.querySelectorAll('#type-panel input').forEach(cb => cb.checked = true);
   loadGraph();
+}
+function showStats(){
+  fetch('/api/info').then(r=>r.json()).then(info=>{
+    let html = '<b>Graph: ' + info.name + '</b><br><br>';
+    html += 'Total triples: ' + info.triples + '<br>';
+    html += 'Total subjects: ' + info.subjects + '<br>';
+    html += 'Total predicates: ' + info.predicates + '<br><br>';
+    html += '<u>Visible</u><br>';
+    html += 'Nodes: ' + cy.nodes().length + '<br>';
+    html += 'Edges: ' + cy.edges().length + '<br><br>';
+    html += '<u>Shortcuts</u><br>';
+    html += '<i>/</i> Search &nbsp; <i>f</i> Fit &nbsp; <i>r</i> Reset<br>';
+    html += '<i>Esc</i> Clear selection';
+    let el = document.getElementById('info');
+    el.innerHTML = html; el.style.display = 'block';
+  });
 }
 let ctxNode = null;
 function showCtxMenu(x, y, node){
