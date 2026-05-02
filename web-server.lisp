@@ -5,6 +5,7 @@
 
 (defvar *web-server* nil)
 (defvar *web-graph* nil)
+(defvar *explorer-pushed* nil "Pushed query/results for the explorer to pick up.")
 
 ;;; ==========================================================================
 ;;; JSON conversion
@@ -314,6 +315,12 @@
       ((id :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
     (node-info-json *web-graph* id))
+  (ht:define-easy-handler (handle-pushed-api :uri "/api/pushed") ()
+    (setf (ht:content-type*) "application/json")
+    (if *explorer-pushed*
+        (prog1 (jzon:stringify *explorer-pushed*)
+          (setf *explorer-pushed* nil))
+        "null"))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)
@@ -325,3 +332,36 @@
   (when *web-server*
     (ht:stop *web-server*)
     (setf *web-server* nil *web-graph* nil)))
+
+(defun explorer-query (query)
+  "Push a query to the Graph Explorer. QUERY can be:
+   - A string: executed as SPARQL
+   - A list: executed as CL DSL query
+   Results are displayed in the explorer on next poll."
+  (let* ((results (if (stringp query)
+                      (sparql-via-algebra *web-graph* query)
+                      (query *web-graph* query)))
+         (ht (make-hash-table :test 'equal)))
+    (setf (gethash "query" ht) (if (stringp query) query (princ-to-string query)))
+    (setf (gethash "results" ht)
+          (cond
+            ((eq results t) "true")
+            ((null results) "false")
+            ((listp results)
+             (coerce (mapcar (lambda (row)
+                               (coerce (mapcar #'princ-to-string
+                                               (if (listp row) row (list row))) 'vector))
+                             results) 'vector))
+            (t results)))
+    (setf *explorer-pushed* ht)
+    (length (if (vectorp (gethash "results" ht))
+                (gethash "results" ht)
+                #()))))
+
+(defun explorer-focus (node-uri &key (depth 2))
+  "Push a focus command to the Graph Explorer — recenters on NODE-URI with DEPTH hops."
+  (let ((ht (make-hash-table :test 'equal)))
+    (setf (gethash "focus" ht) node-uri)
+    (setf (gethash "depth" ht) depth)
+    (setf *explorer-pushed* ht)
+    node-uri))

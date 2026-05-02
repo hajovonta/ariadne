@@ -74,3 +74,10 @@ Single-page Cytoscape.js graph viewer served by Hunchentoot. Dark theme, interac
 - [x] Dark/light theme toggle with adaptive colors
 - [x] All/None buttons in filter panels
 - [ ] Accessibility: ARIA labels, keyboard navigation (low priority)
+
+## Phase 7 — CL API ✓
+
+- [x] `explorer-query` — push SPARQL string or CL DSL query, results displayed in browser
+- [x] `explorer-focus` — recenter graph on a node URI with configurable depth
+- [x] Frontend polls `/api/pushed` every 2s for pushed commands
+- [x] Enables external CL projects (e.g. cl-codegraph) to drive the explorer

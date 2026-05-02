@@ -730,5 +730,60 @@ function toggleTheme(){
   document.documentElement.classList.toggle('light');
   loadGraph();
 }
+// Poll for pushed queries from CL side
+setInterval(function(){
+  fetch('/api/pushed').then(r=>r.json()).then(data=>{
+    if(!data) return;
+    // Handle focus command — recenter graph on a node
+    if(data.focus){
+      let url = '/api/graph?center=' + encodeURIComponent(data.focus) + '&depth=' + (data.depth || 2);
+      fetch(url).then(r=>r.json()).then(resp=>{
+        let elems = resp.elements || resp;
+        cy.elements().remove();
+        cy.add(elems);
+        cy.nodes().forEach(n => {
+          let t = n.data('type');
+          if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
+        });
+        if(document.getElementById('labelMode').value==='all') applyZoomLabels();
+        if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
+        cy.layout(getLayoutOpts(false)).run();
+        let center = cy.nodes().filter(n => n.data('uri') === data.focus);
+        if(center.length > 0) center.addClass('highlighted');
+        document.getElementById('stats').textContent =
+          cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+      });
+      return;
+    }
+    // Open SPARQL panel and show results
+    let p = document.getElementById('query-panel');
+    if(!p.classList.contains('open')) toggleQueryPanel();
+    document.getElementById('query-input').value = data.query || '';
+    if(data.results === 'true' || data.results === 'false'){
+      document.getElementById('query-status').textContent = 'Result: ' + data.results;
+      document.getElementById('query-results').innerHTML = '';
+      return;
+    }
+    let results = data.results || [];
+    document.getElementById('query-status').textContent = results.length + ' results (pushed)';
+    if(results.length === 0){ document.getElementById('query-results').innerHTML = ''; return; }
+    let cols = results[0].length;
+    let html = '<table><tr>';
+    for(let i=0; i<cols; i++) html += '<th>?' + (i+1) + '</th>';
+    html += '</tr>';
+    results.forEach(row => {
+      html += '<tr>';
+      row.forEach(cell => {
+        let short = String(cell).split('#').pop().split('/').pop();
+        let safe = String(cell).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        html += '<td data-uri="' + safe + '" onclick="highlightInGraph(this.dataset.uri)">' + short + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</table>';
+    document.getElementById('query-results').innerHTML = html;
+    highlightQueryResults(results);
+  }).catch(function(){});
+}, 2000);
 </script>
 </body></html>

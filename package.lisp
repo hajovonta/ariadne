@@ -120,6 +120,8 @@
    ;; Web visualization
    #:start-web-server
    #:stop-web-server
+   #:explorer-query
+   #:explorer-focus
    ;; OWL/RDFS reasoning
    #:apply-owl-rules
    ;; Schema validation

@@ -1111,6 +1111,30 @@ Available engines: `:dot` (hierarchical), `:neato` (force-directed), `:fdp` (spr
 
 ---
 
+### Web Explorer
+
+Interactive browser-based graph viewer at `http://localhost:8080/`.
+
+```lisp
+;; Start the explorer
+(start-web-server g :port 8080)
+
+;; Push a SPARQL query — results appear in the browser
+(explorer-query "SELECT ?fn ?callee WHERE { ?fn <cg:calls> ?callee } LIMIT 20")
+
+;; Push a CL DSL query
+(explorer-query '(select (?s ?p ?o) (where (?s "rdf:type" "function")) (limit 10)))
+
+;; Focus on a node — shows it with 2 hops of neighbors
+(explorer-focus "ariadne:shacl-validate")
+(explorer-focus "ariadne::sparql-via-algebra" :depth 3)
+
+;; Stop
+(stop-web-server)
+```
+
+---
+
 ## 18. Graph Operations
 
 ### Merge
