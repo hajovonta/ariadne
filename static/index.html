@@ -243,7 +243,7 @@ function loadGraph(){
     let selected = getSelectedPredicates();
     let total = document.querySelectorAll('#pred-panel input').length;
     cy.edges().forEach(e => {
-      if(selected.length === 0 || selected.length === total || selected.includes(e.data('label')))
+      if(selected.length === total || selected.includes(e.data('label')))
         e.show();
       else
         e.hide();
@@ -257,13 +257,14 @@ function loadGraph(){
       else
         n.hide();
     });
+    updateConstruct();
     return;
   }
   let selected = getSelectedPredicates();
   let total = document.querySelectorAll('#pred-panel input').length;
   let url = '/api/graph';
   let params = [];
-  if(selected.length > 0 && selected.length < total)
+  if(selected.length < total)
     params.push('predicates=' + encodeURIComponent(selected.join(',')));
   let typeChecks = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
   let typeTotal = document.querySelectorAll('#type-panel input').length;
