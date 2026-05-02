@@ -181,6 +181,8 @@ Promise.all([
     }
     if(e.key === 'f' && !e.ctrlKey) cy.fit();
     if(e.key === 'r') resetGraph();
+    if(e.key === '+' || e.key === '=') { e.preventDefault(); radiateDepth(1); }
+    if(e.key === '-') { e.preventDefault(); radiateDepth(-1); }
     if(e.key === 'Escape'){
       cy.elements().removeClass('highlighted dimmed');
       document.getElementById('info').style.display='none';
@@ -607,6 +609,58 @@ function runQuery(){
   }).catch(e => {
     document.getElementById('query-status').textContent = 'Error: ' + e.message;
   });
+}
+let radiateLevel = 1;
+function radiateDepth(delta){
+  let selected = cy.nodes('.highlighted');
+  if(selected.length === 0) selected = cy.nodes(':selected');
+  if(selected.length === 0) return;
+  radiateLevel = Math.max(1, radiateLevel + delta);
+  let uri = selected[0].data('uri');
+  // Generate UNION of forward and reverse patterns for each depth
+  let patterns = [];
+  for(let d = 1; d <= radiateLevel; d++){
+    let fwdParts = [];
+    let revParts = [];
+    for(let i = 0; i < d; i++){
+      let s = i === 0 ? '<' + uri + '>' : '?f' + (i-1);
+      fwdParts.push(s + ' ?fp' + i + ' ?f' + i);
+      let rs = i === 0 ? '<' + uri + '>' : '?r' + (i-1);
+      revParts.push('?r' + i + ' ?rp' + i + ' ' + rs);
+    }
+    patterns.push('{ ' + fwdParts.join(' . ') + ' . BIND(?f' + (d-1) + ' AS ?n) }');
+    patterns.push('{ ' + revParts.join(' . ') + ' . BIND(?r' + (d-1) + ' AS ?n) }');
+  }
+  let q = 'SELECT DISTINCT ?n WHERE { ' + patterns.join(' UNION ') + ' }';
+  document.getElementById('stats').textContent = 'Loading depth ' + radiateLevel + '...';
+  // Build URL with current filters
+  let url = '/api/graph?center=' + encodeURIComponent(uri) + '&depth=' + radiateLevel;
+  let selPreds = getSelectedPredicates();
+  let totalPreds = document.querySelectorAll('#pred-panel input').length;
+  if(selPreds.length < totalPreds)
+    url += '&predicates=' + encodeURIComponent(selPreds.join(','));
+  let typeChecks = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
+  let typeTotal = document.querySelectorAll('#type-panel input').length;
+  if(typeChecks.length > 0 && typeChecks.length < typeTotal)
+    url += '&types=' + encodeURIComponent(typeChecks.join(','));
+  fetch(url)
+    .then(r=>r.json()).then(resp=>{
+      let data = resp.elements || resp;
+      cy.elements().remove();
+      cy.add(data);
+      cy.nodes().forEach(n => {
+        let t = n.data('type');
+        if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
+      });
+      if(document.getElementById('labelMode').value==='all') applyZoomLabels();
+      if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
+      cy.layout(getLayoutOpts(false)).run();
+      let center = cy.nodes().filter(n => n.data('uri') === uri);
+      if(center.length > 0) center.addClass('highlighted');
+      filtered = true;
+      document.getElementById('stats').textContent =
+        cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges (depth ' + radiateLevel + ')';
+    });
 }
 function filterToResults(){
   let highlighted = cy.nodes('.highlighted');
