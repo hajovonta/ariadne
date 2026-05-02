@@ -124,6 +124,7 @@
 <div id='query-panel'>
   <div id='query-bar'>
     <button onclick='runQuery()'>Run</button>
+    <button onclick='filterToResults()'>Filter</button>
     <button onclick='toggleQueryPanel()'>Close</button>
     <span id='query-status'></span>
   </div>
@@ -140,6 +141,7 @@
 </div>
 <script>
 let cy;
+let filtered = false;
 let typeColors = {};
 // Load predicate list and type colors
 Promise.all([
@@ -236,6 +238,27 @@ function getHighlightColor(){
   return document.documentElement.classList.contains('light') ? '#e17055' : '#ffd700';
 }
 function loadGraph(){
+  if(filtered) {
+    // In filtered mode, show/hide edges by predicate and nodes by type
+    let selected = getSelectedPredicates();
+    let total = document.querySelectorAll('#pred-panel input').length;
+    cy.edges().forEach(e => {
+      if(selected.length === 0 || selected.length === total || selected.includes(e.data('label')))
+        e.show();
+      else
+        e.hide();
+    });
+    let typeChecks = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
+    let typeTotal = document.querySelectorAll('#type-panel input').length;
+    cy.nodes().forEach(n => {
+      let t = n.data('type');
+      if(!t || typeTotal === 0 || typeChecks.length === typeTotal || typeChecks.includes(t))
+        n.show();
+      else
+        n.hide();
+    });
+    return;
+  }
   let selected = getSelectedPredicates();
   let total = document.querySelectorAll('#pred-panel input').length;
   let url = '/api/graph';
@@ -376,6 +399,7 @@ function loadGraph(){
         // Highlight the centered node
         let center = cy.nodes().filter(n => n.data('uri') === id);
         if(center.length > 0) center.addClass('highlighted');
+        filtered = true;
       });
     });
   });
@@ -415,6 +439,7 @@ function panelNone(id){
   document.querySelectorAll('#'+id+' input[type=checkbox]').forEach(cb => cb.checked = false);
 }
 function resetGraph(){
+  filtered = false;
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   document.querySelectorAll('#type-panel input').forEach(cb => cb.checked = true);
   loadGraph();
@@ -581,6 +606,17 @@ function runQuery(){
   }).catch(e => {
     document.getElementById('query-status').textContent = 'Error: ' + e.message;
   });
+}
+function filterToResults(){
+  let highlighted = cy.nodes('.highlighted');
+  if(highlighted.length === 0) return;
+  cy.nodes().not(highlighted).connectedEdges().remove();
+  cy.nodes().not(highlighted).remove();
+  cy.elements().removeClass('highlighted dimmed');
+  cy.layout(getLayoutOpts(true)).run();
+  document.getElementById('stats').textContent =
+    cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+  filtered = true;
 }
 function highlightQueryResults(results){
   cy.elements().removeClass('highlighted dimmed');
@@ -752,6 +788,7 @@ setInterval(function(){
         if(center.length > 0) center.addClass('highlighted');
         document.getElementById('stats').textContent =
           cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges';
+        filtered = true;
       });
       return;
     }

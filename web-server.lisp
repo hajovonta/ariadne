@@ -56,14 +56,13 @@
                           (or (gethash (princ-to-string (triple-subject tr)) typed-nodes)
                               (gethash (princ-to-string (triple-object tr)) typed-nodes)))
                         triples))))
-    ;; Collect nodes and edges (skip literal objects)
+    ;; Collect nodes and edges (skip RDF literals)
     (dolist (tr triples)
       (let* ((subj (princ-to-string (triple-subject tr)))
              (obj-raw (triple-object tr))
-             (obj (princ-to-string obj-raw))
-             (obj-is-resource (not (typep obj-raw 'rdf-literal))))
+             (obj (princ-to-string obj-raw)))
         (setf (gethash subj nodes) t)
-        (when obj-is-resource
+        (unless (typep obj-raw 'rdf-literal)
           (setf (gethash obj nodes) t)
           (push tr edges))))
     ;; Truncate if too many nodes and no center specified
