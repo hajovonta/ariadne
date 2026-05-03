@@ -240,28 +240,38 @@ function getHighlightColor(){
   return document.documentElement.classList.contains('light') ? '#e17055' : '#ffd700';
 }
 function loadGraph(){
-  if(filtered) {
-    // In filtered mode, show/hide edges by predicate and nodes by type
-    let selected = getSelectedPredicates();
-    let total = document.querySelectorAll('#pred-panel input').length;
-    cy.edges().forEach(e => {
-      if(selected.length === total || selected.includes(e.data('label')))
-        e.show();
-      else
-        e.hide();
-    });
+  if(filtered && radiateUri) {
+    // Re-fetch from server with current filters but same center
+    let url = '/api/graph?center=' + encodeURIComponent(radiateUri) + '&depth=' + radiateLevel;
+    let selPreds = getSelectedPredicates();
+    let totalPreds = document.querySelectorAll('#pred-panel input').length;
+    if(selPreds.length < totalPreds)
+      url += '&predicates=' + encodeURIComponent(selPreds.join(','));
     let typeChecks = Array.from(document.querySelectorAll('#type-panel input:checked')).map(cb => cb.value);
     let typeTotal = document.querySelectorAll('#type-panel input').length;
-    cy.nodes().forEach(n => {
-      let t = n.data('type');
-      if(!t || typeTotal === 0 || typeChecks.length === typeTotal || typeChecks.includes(t))
-        n.show();
-      else
-        n.hide();
+    if(typeChecks.length > 0 && typeChecks.length < typeTotal)
+      url += '&types=' + encodeURIComponent(typeChecks.join(','));
+    document.getElementById('stats').textContent = 'Loading...';
+    fetch(url).then(r=>r.json()).then(resp=>{
+      let data = resp.elements || resp;
+      cy.elements().remove();
+      cy.add(data);
+      cy.nodes().forEach(n => {
+        let t = n.data('type');
+        if(t && typeColors[t]) n.addClass('type-' + t.replace(/[^a-zA-Z0-9]/g, '_'));
+      });
+      if(document.getElementById('labelMode').value==='all') applyZoomLabels();
+      if(document.getElementById('edgeLabel').checked) updateEdgeLabels();
+      cy.layout(getLayoutOpts(false)).run();
+      let center = cy.nodes().filter(n => n.data('uri') === radiateUri);
+      if(center.length > 0) center.addClass('highlighted');
+      document.getElementById('stats').textContent =
+        cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges (depth ' + radiateLevel + ')';
+      updateConstruct();
     });
-    updateConstruct();
     return;
   }
+  if(filtered) return;
   let selected = getSelectedPredicates();
   let total = document.querySelectorAll('#pred-panel input').length;
   let url = '/api/graph';
