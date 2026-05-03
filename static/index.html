@@ -443,6 +443,8 @@ function panelNone(id){
 }
 function resetGraph(){
   filtered = false;
+  radiateUri = null;
+  radiateLevel = 1;
   document.querySelectorAll('#pred-panel input').forEach(cb => cb.checked = true);
   document.querySelectorAll('#type-panel input').forEach(cb => cb.checked = true);
   loadGraph();
@@ -611,12 +613,28 @@ function runQuery(){
   });
 }
 let radiateLevel = 1;
+let radiateUri = null;
 function radiateDepth(delta){
   let selected = cy.nodes('.highlighted');
   if(selected.length === 0) selected = cy.nodes(':selected');
-  if(selected.length === 0) return;
-  radiateLevel = Math.max(1, radiateLevel + delta);
-  let uri = selected[0].data('uri');
+  if(selected.length === 0 && !radiateUri) return;
+  if(selected.length > 0) radiateUri = selected[0].data('uri');
+  if(!radiateUri) return;
+  radiateLevel = Math.max(0, radiateLevel + delta);
+  let uri = radiateUri;
+  // Depth 0: reload full graph with node highlighted
+  if(radiateLevel === 0){
+    filtered = false;
+    loadGraph();
+    // After load, highlight the node (need slight delay for async)
+    setTimeout(function(){
+      let m = cy.nodes().filter(n => n.data('uri') === uri);
+      if(m.length > 0) m.addClass('highlighted');
+      document.getElementById('stats').textContent =
+        cy.nodes().length + ' nodes, ' + cy.edges().length + ' edges (depth 0)';
+    }, 500);
+    return;
+  }
   // Generate UNION of forward and reverse patterns for each depth
   let patterns = [];
   for(let d = 1; d <= radiateLevel; d++){
@@ -819,7 +837,10 @@ function exportSVG(){
 }
 function toggleTheme(){
   document.documentElement.classList.toggle('light');
-  loadGraph();
+  // Update Cytoscape label colors in place
+  let color = getLabelColor();
+  cy.style().selector('node').style('color', color).update();
+  cy.style().selector('node.highlighted').style('color', color).update();
 }
 // Poll for pushed queries from CL side
 setInterval(function(){
