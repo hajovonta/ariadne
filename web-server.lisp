@@ -267,7 +267,8 @@
       ((predicates :parameter-type 'string)
        (center :parameter-type 'string)
        (depth :parameter-type 'string)
-       (types :parameter-type 'string))
+       (types :parameter-type 'string)
+       (limit :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
     (graph-to-cytoscape-json *web-graph*
                              :predicates (when predicates
@@ -275,7 +276,10 @@
                              :center center
                              :depth (when depth (parse-integer depth :junk-allowed t))
                              :node-types (when types
-                                           (cl-ppcre:split "," types))))
+                                           (cl-ppcre:split "," types))
+                             :max-nodes (if limit
+                                            (parse-integer limit :junk-allowed t)
+                                            200)))
   (ht:define-easy-handler (handle-graph-info :uri "/api/info") ()
     (setf (ht:content-type*) "application/json")
     (let ((ht (make-hash-table :test 'equal)))

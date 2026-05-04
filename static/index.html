@@ -104,6 +104,7 @@
   </select>
   <label><input type='checkbox' id='edgeLabel' onchange='updateEdgeLabels()'> Edge labels</label>
   <input type='range' id='spacing' min='1' max='10' value='5' title='Node spacing' onchange='changeLayout()'>
+  <input type='number' id='nodeLimit' value='200' min='10' max='5000' step='50' title='Max nodes' style='width:60px' onchange='loadGraph()'>
   <button onclick='cy.fit()'>Fit</button>
   <button onclick='selectAll()'>All predicates</button>
   <button onclick='toggleQueryPanel()'>SPARQL</button>
@@ -236,6 +237,13 @@ function applyTypeFilter(){
 function getLabelColor(){
   return document.documentElement.classList.contains('light') ? '#222' : '#eee';
 }
+function getNodeLimit(){
+  return document.getElementById('nodeLimit').value || '200';
+}
+function appendLimit(url){
+  let lim = getNodeLimit();
+  return url + (url.includes('?') ? '&' : '?') + 'limit=' + lim;
+}
 function getHighlightColor(){
   return document.documentElement.classList.contains('light') ? '#e17055' : '#ffd700';
 }
@@ -252,7 +260,7 @@ function loadGraph(){
     if(typeChecks.length > 0 && typeChecks.length < typeTotal)
       url += '&types=' + encodeURIComponent(typeChecks.join(','));
     document.getElementById('stats').textContent = 'Loading...';
-    fetch(url).then(r=>r.json()).then(resp=>{
+    fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
       let data = resp.elements || resp;
       cy.elements().remove();
       cy.add(data);
@@ -283,7 +291,7 @@ function loadGraph(){
   if(typeChecks.length > 0 && typeChecks.length < typeTotal)
     params.push('types=' + encodeURIComponent(typeChecks.join(',')));
   if(params.length > 0) url += '?' + params.join('&');
-  fetch(url).then(r=>r.json()).then(resp=>{
+  fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
     let data = resp.elements;
     let totalNodes = resp.totalNodes;
     if(cy) cy.destroy();
@@ -390,12 +398,14 @@ function loadGraph(){
     });
     cy.on('dblclick', 'node', function(e){
       let id = e.target.data('uri');
+      radiateUri = id;
+      radiateLevel = 2;
       let selected = getSelectedPredicates();
       let total = document.querySelectorAll('#pred-panel input').length;
       let url = '/api/graph?center=' + encodeURIComponent(id) + '&depth=2';
       if(selected.length > 0 && selected.length < total)
         url += '&predicates=' + encodeURIComponent(selected.join(','));
-      fetch(url).then(r=>r.json()).then(resp=>{
+      fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
         let data = resp.elements || resp;
         cy.elements().remove();
         cy.add(data);
@@ -717,7 +727,7 @@ function highlightInGraph(uri){
   if(matches.length === 0){
     // Node not in view — load it with its neighborhood
     let url = '/api/graph?center=' + encodeURIComponent(uri) + '&depth=1';
-    fetch(url).then(r=>r.json()).then(resp=>{
+    fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
       let data = resp.elements || resp;
       cy.elements().remove();
       cy.add(data);
@@ -806,6 +816,7 @@ function applyURLParams(){
   if(params.has('spacing')) document.getElementById('spacing').value = params.get('spacing');
   if(params.has('labels')) document.getElementById('labelMode').value = params.get('labels');
   if(params.has('edgeLabels')) document.getElementById('edgeLabel').checked = true;
+  if(params.has('limit')) document.getElementById('nodeLimit').value = params.get('limit');
   if(params.has('predicates')){
     let wanted = params.get('predicates').split(',');
     document.querySelectorAll('#pred-panel input').forEach(cb => {
@@ -859,7 +870,7 @@ setInterval(function(){
     // Handle focus command — recenter graph on a node
     if(data.focus){
       let url = '/api/graph?center=' + encodeURIComponent(data.focus) + '&depth=' + (data.depth || 2);
-      fetch(url).then(r=>r.json()).then(resp=>{
+      fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
         let elems = resp.elements || resp;
         cy.elements().remove();
         cy.add(elems);
