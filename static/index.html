@@ -942,6 +942,12 @@ setInterval(function(){
     // Handle focus command — recenter graph on a node
     if(data.focus){
       let url = '/api/graph?center=' + encodeURIComponent(data.focus) + '&depth=' + (data.depth || 2);
+      let selPreds = getSelectedPredicates();
+      let totalPreds = document.querySelectorAll('#pred-panel input').length;
+      if(selPreds.length > 0 && selPreds.length < totalPreds)
+        url += '&predicates=' + encodeURIComponent(selPreds.join(','));
+      radiateUri = data.focus;
+      radiateLevel = data.depth || 2;
       fetch(appendLimit(url)).then(r=>r.json()).then(resp=>{
         let elems = resp.elements || resp;
         cy.elements().remove();
