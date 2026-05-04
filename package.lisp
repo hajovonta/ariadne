@@ -122,6 +122,7 @@
    #:stop-web-server
    #:explorer-query
    #:explorer-focus
+   #:explorer-add-graph
    ;; OWL/RDFS reasoning
    #:apply-owl-rules
    ;; Schema validation

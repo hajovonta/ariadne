@@ -5,6 +5,7 @@
 
 (defvar *web-server* nil)
 (defvar *web-graph* nil)
+(defvar *web-graphs* (make-hash-table :test 'equal) "Registry of named graphs available in the explorer.")
 (defvar *explorer-pushed* nil "Pushed query/results for the explorer to pick up.")
 
 ;;; ==========================================================================
@@ -255,10 +256,12 @@
         (setf (gethash "error" ht) (princ-to-string e))
         (jzon:stringify ht)))))
 
-(defun start-web-server (graph &key (port 8080))
-  "Start the web visualization server for GRAPH on PORT."
+(defun start-web-server (&optional graph &key (port 8080))
+  "Start the web visualization server. GRAPH is optional; use explorer-add-graph to register graphs."
   (when *web-server* (stop-web-server))
-  (setf *web-graph* graph)
+  (when graph
+    (explorer-add-graph graph)
+    (setf *web-graph* graph))
   ;; Define handlers
   (ht:define-easy-handler (handle-index :uri "/") ()
     (setf (ht:content-type*) "text/html")
@@ -270,16 +273,18 @@
        (types :parameter-type 'string)
        (limit :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
-    (graph-to-cytoscape-json *web-graph*
-                             :predicates (when predicates
-                                           (cl-ppcre:split "," predicates))
-                             :center center
-                             :depth (when depth (parse-integer depth :junk-allowed t))
-                             :node-types (when types
-                                           (cl-ppcre:split "," types))
-                             :max-nodes (if limit
-                                            (parse-integer limit :junk-allowed t)
-                                            200)))
+    (if (null *web-graph*)
+        "{\"elements\":[],\"totalNodes\":0}"
+        (graph-to-cytoscape-json *web-graph*
+                                 :predicates (when predicates
+                                               (cl-ppcre:split "," predicates))
+                                 :center center
+                                 :depth (when depth (parse-integer depth :junk-allowed t))
+                                 :node-types (when types
+                                               (cl-ppcre:split "," types))
+                                 :max-nodes (if limit
+                                                (parse-integer limit :junk-allowed t)
+                                                200))))
   (ht:define-easy-handler (handle-graph-info :uri "/api/info") ()
     (setf (ht:content-type*) "application/json")
     (let ((ht (make-hash-table :test 'equal)))
@@ -290,12 +295,13 @@
       (jzon:stringify ht)))
   (ht:define-easy-handler (handle-predicates-api :uri "/api/predicates") ()
     (setf (ht:content-type*) "application/json")
-    (let* ((preds (all-predicates *web-graph*))
-           (sorted (sort (mapcar (lambda (p)
-                                   (cons p (length (get-triples *web-graph* :predicate p))))
-                                 preds)
-                         #'> :key #'cdr)))
-      (jzon:stringify (coerce (mapcar #'car sorted) 'vector))))
+    (if (null *web-graph*) "[]"
+        (let* ((preds (all-predicates *web-graph*))
+               (sorted (sort (mapcar (lambda (p)
+                                       (cons p (length (get-triples *web-graph* :predicate p))))
+                                     preds)
+                             #'> :key #'cdr)))
+          (jzon:stringify (coerce (mapcar #'car sorted) 'vector)))))
   (ht:define-easy-handler (handle-sparql :uri "/sparql")
       ((query :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
@@ -306,24 +312,59 @@
     (sparql-update-json *web-graph* update))
   (ht:define-easy-handler (handle-types-api :uri "/api/types") ()
     (setf (ht:content-type*) "application/json")
-    (graph-types-json *web-graph*))
+    (if (null *web-graph*) "{}" (graph-types-json *web-graph*)))
   (ht:define-easy-handler (handle-type-counts-api :uri "/api/type-counts") ()
     (setf (ht:content-type*) "application/json")
-    (let ((counts (make-hash-table :test 'equal)))
-      (dolist (tr (append (get-triples *web-graph* :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
-                          (get-triples *web-graph* :predicate "rdf:type")))
-        (incf (gethash (princ-to-string (triple-object tr)) counts 0)))
-      (jzon:stringify counts)))
+    (if (null *web-graph*) "{}"
+        (let ((counts (make-hash-table :test 'equal)))
+          (dolist (tr (append (get-triples *web-graph* :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#type")
+                              (get-triples *web-graph* :predicate "rdf:type")))
+            (incf (gethash (princ-to-string (triple-object tr)) counts 0)))
+          (jzon:stringify counts))))
   (ht:define-easy-handler (handle-node-api :uri "/api/node")
       ((id :parameter-type 'string))
     (setf (ht:content-type*) "application/json")
-    (node-info-json *web-graph* id))
+    (if (null *web-graph*) "{}" (node-info-json *web-graph* id)))
   (ht:define-easy-handler (handle-pushed-api :uri "/api/pushed") ()
     (setf (ht:content-type*) "application/json")
     (if *explorer-pushed*
         (prog1 (jzon:stringify *explorer-pushed*)
           (setf *explorer-pushed* nil))
         "null"))
+  (ht:define-easy-handler (handle-graphs-api :uri "/api/graphs") ()
+    (setf (ht:content-type*) "application/json")
+    (let ((names nil))
+      (maphash (lambda (k v) (declare (ignore v)) (push k names)) *web-graphs*)
+      (jzon:stringify (coerce (sort names #'string<) 'vector))))
+  (ht:define-easy-handler (handle-select-graph-api :uri "/api/select-graph")
+      ((name :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (let ((g (gethash name *web-graphs*)))
+      (if g
+          (progn (setf *web-graph* g)
+                 (let ((ht (make-hash-table :test 'equal)))
+                   (setf (gethash "selected" ht) name)
+                   (jzon:stringify ht)))
+          (let ((ht (make-hash-table :test 'equal)))
+            (setf (gethash "error" ht) (format nil "Graph '~A' not found" name))
+            (jzon:stringify ht)))))
+  (ht:define-easy-handler (handle-graphs-api :uri "/api/graphs") ()
+    (setf (ht:content-type*) "application/json")
+    (let ((names nil))
+      (maphash (lambda (k v) (declare (ignore v)) (push k names)) *web-graphs*)
+      (jzon:stringify (coerce (sort names #'string<) 'vector))))
+  (ht:define-easy-handler (handle-select-graph-api :uri "/api/select-graph")
+      ((name :parameter-type 'string))
+    (setf (ht:content-type*) "application/json")
+    (let ((g (gethash name *web-graphs*)))
+      (if g
+          (progn (setf *web-graph* g)
+                 (let ((ht (make-hash-table :test 'equal)))
+                   (setf (gethash "selected" ht) name)
+                   (jzon:stringify ht)))
+          (let ((ht (make-hash-table :test 'equal)))
+            (setf (gethash "error" ht) (format nil "Graph '~A' not found" name))
+            (jzon:stringify ht)))))
   (setf *web-server*
         (make-instance 'ht:easy-acceptor :port port))
   (ht:start *web-server*)
@@ -335,6 +376,12 @@
   (when *web-server*
     (ht:stop *web-server*)
     (setf *web-server* nil *web-graph* nil)))
+
+(defun explorer-add-graph (graph &optional name)
+  "Register a graph in the explorer. NAME defaults to the graph's name."
+  (let ((n (or name (graph-name graph) (format nil "graph-~A" (hash-table-count *web-graphs*)))))
+    (setf (gethash n *web-graphs*) graph)
+    n))
 
 (defun explorer-query (query)
   "Push a query to the Graph Explorer. QUERY can be:

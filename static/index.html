@@ -82,6 +82,9 @@
 </head><body>
 <div id='toolbar'>
   <strong>Ariadne</strong>
+  <select id='graphSelect' onchange='selectGraph()' onfocus='refreshGraphList()' title='Select graph'>
+    <option value=''>— select graph —</option>
+  </select>
   <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
   <select id='predicates' multiple title='Filter predicates (ctrl+click)' style='display:none'></select>
   <button onclick='togglePredPanel()'>Predicates ▼</button>
@@ -234,6 +237,31 @@ function toggleTypePanel(){
 function applyTypeFilter(){
   loadGraph();
 }
+function refreshGraphList(){
+  fetch('/api/graphs').then(r=>r.json()).then(names=>{
+    let sel = document.getElementById('graphSelect');
+    let current = sel.value;
+    sel.innerHTML = '<option value="">— select graph —</option>';
+    names.forEach(n => {
+      let opt = document.createElement('option');
+      opt.value = n; opt.textContent = n;
+      if(n === current) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  });
+}
+function selectGraph(){
+  let name = document.getElementById('graphSelect').value;
+  if(!name) return;
+  fetch('/api/select-graph?name=' + encodeURIComponent(name)).then(r=>r.json()).then(resp=>{
+    if(resp.error){ alert(resp.error); return; }
+    filtered = false;
+    radiateUri = null;
+    radiateLevel = 1;
+    loadGraph();
+  });
+}
+refreshGraphList();
 function getLabelColor(){
   return document.documentElement.classList.contains('light') ? '#222' : '#eee';
 }
