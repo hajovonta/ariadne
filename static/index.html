@@ -258,7 +258,51 @@ function selectGraph(){
     filtered = false;
     radiateUri = null;
     radiateLevel = 1;
-    loadGraph();
+    refreshPanels();
+  });
+}
+function refreshPanels(){
+  Promise.all([
+    fetch('/api/predicates').then(r=>r.json()),
+    fetch('/api/types').then(r=>r.json())
+  ]).then(([preds, types]) => {
+    typeColors = types;
+    buildLegend(types);
+    // Rebuild predicate panel
+    let panel = document.getElementById('pred-panel');
+    panel.querySelectorAll('label').forEach(l => l.remove());
+    preds.forEach((p,i) => {
+      let label = document.createElement('label');
+      let cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.value = p;
+      cb.checked = true;
+      cb.onchange = loadGraph;
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(p.split('#').pop().split('/').pop()));
+      panel.appendChild(label);
+    });
+    // Rebuild type panel
+    fetch('/api/type-counts').then(r=>r.json()).then(counts=>{
+      let typePanel = document.getElementById('type-panel');
+      typePanel.querySelectorAll('label').forEach(l => l.remove());
+      for(let [typ, color] of Object.entries(types)){
+        let label = document.createElement('label');
+        let cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.value = typ;
+        cb.checked = true;
+        cb.onchange = applyTypeFilter;
+        label.appendChild(cb);
+        let swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        swatch.style.background = color;
+        label.appendChild(swatch);
+        let short = typ.split('#').pop().split('/').pop();
+        let count = counts[typ] || 0;
+        label.appendChild(document.createTextNode(' ' + short + ' (' + count + ')'));
+        typePanel.appendChild(label);
+      }
+      loadGraph();
+    });
   });
 }
 refreshGraphList();
