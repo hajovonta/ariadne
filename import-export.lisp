@@ -130,9 +130,18 @@
   (with-output-to-string (s)
     (dolist (tr (get-triples g))
       (format s "~A ~A ~A .~%"
-              (format-nt-term (triple-subject tr))
-              (format-nt-term (triple-predicate tr))
+              (format-nt-resource (triple-subject tr))
+              (format-nt-resource (triple-predicate tr))
               (format-nt-term (triple-object tr))))))
+
+(defun format-nt-resource (term)
+  "Format a subject or predicate for N-Triples (always a URI or blank node)."
+  (cond
+    ((and (stringp term) (>= (length term) 2)
+          (char= #\_ (char term 0)) (char= #\: (char term 1)))
+     term) ; blank node as-is
+    ((stringp term) (format nil "<~A>" term))
+    (t (format nil "<~A>" term))))
 
 (defun format-nt-term (term)
   "Format a term for N-Triples output."
@@ -153,7 +162,8 @@
                        (char= #\_ (char term 0))
                        (char= #\: (char term 1)))))
          (format nil "<~A>" term)
-         (format nil "\"~A\"" term)))
+         ;; Plain strings without URI markers — treat as URI (literals are rdf-literal objects)
+         (format nil "<~A>" term)))
     ((numberp term)
      (format nil "\"~A\"^^<http://www.w3.org/2001/XMLSchema#~A>"
              term (if (integerp term) "integer" "decimal")))
