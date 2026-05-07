@@ -374,7 +374,8 @@
 (defun stop-web-server ()
   "Stop the web visualization server."
   (when *web-server*
-    (ht:stop *web-server*)
+    (handler-case (ht:stop *web-server*)
+      (unbound-slot () nil))
     (setf *web-server* nil *web-graph* nil)))
 
 (defun explorer-add-graph (graph &optional name)
