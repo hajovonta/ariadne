@@ -85,6 +85,9 @@
   <select id='graphSelect' onchange='selectGraph()' onfocus='refreshGraphList()' title='Select graph'>
     <option value=''>— select graph —</option>
   </select>
+  <label class='btn' title='Load RDF file' style='cursor:pointer;padding:2px 8px;background:#444;border-radius:3px'>📂
+    <input type='file' accept='.ttl,.nt,.nq,.rdf,.jsonld' style='display:none' onchange='uploadGraph(this)'>
+  </label>
   <input id='search' placeholder='Search nodes...' oninput='searchNodes()'>
   <select id='predicates' multiple title='Filter predicates (ctrl+click)' style='display:none'></select>
   <button onclick='togglePredPanel()'>Predicates ▼</button>
@@ -249,6 +252,20 @@ function refreshGraphList(){
       sel.appendChild(opt);
     });
   });
+}
+function uploadGraph(input){
+  let file = input.files[0];
+  if(!file) return;
+  let formData = new FormData();
+  formData.append('file', file);
+  document.getElementById('stats').textContent = 'Loading ' + file.name + '...';
+  fetch('/api/load-graph', {method:'POST', body:formData}).then(r=>r.json()).then(resp=>{
+    if(resp.error){ alert(resp.error); return; }
+    document.getElementById('graphSelect').value = resp.name;
+    refreshGraphList();
+    refreshPanels();
+  });
+  input.value = '';
 }
 function selectGraph(){
   let name = document.getElementById('graphSelect').value;
