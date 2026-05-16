@@ -377,7 +377,9 @@
           (setf (gethash "error" ht) (princ-to-string e))
           (jzon:stringify ht)))))
   (setf *web-server*
-        (make-instance 'ht:easy-acceptor :port port))
+        (make-instance 'ht:easy-acceptor :port port
+                       :access-log-destination nil
+                       :message-log-destination nil))
   (ht:start *web-server*)
   (format t "Ariadne web explorer at http://localhost:~A/~%" port)
   *web-server*)
