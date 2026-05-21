@@ -80,7 +80,13 @@
     (loop while (and (< pos len) (char/= #\" (char line pos))) do
       (if (char= #\\ (char line pos))
           (progn (incf pos)
-                 (when (< pos len) (push (char line pos) chars) (incf pos)))
+                 (when (< pos len)
+                   (push (case (char line pos)
+                           (#\n #\Newline) (#\r #\Return) (#\t #\Tab)
+                           (#\\ #\\) (#\" #\")
+                           (t (char line pos)))
+                         chars)
+                   (incf pos)))
           (progn (push (char line pos) chars) (incf pos))))
     (when (< pos len) (incf pos)) ; skip closing quote
     ;; Check for type annotation ^^<...> or language tag @...
@@ -143,17 +149,31 @@
     ((stringp term) (format nil "<~A>" term))
     (t (format nil "<~A>" term))))
 
+(defun escape-nt-string (s)
+  "Escape a string for N-Triples output."
+  (with-output-to-string (out)
+    (loop for c across s do
+      (case c
+        (#\\ (write-string "\\\\" out))
+        (#\" (write-string "\\\"" out))
+        (#\Newline (write-string "\\n" out))
+        (#\Return (write-string "\\r" out))
+        (#\Tab (write-string "\\t" out))
+        (t (write-char c out))))))
+
 (defun format-nt-term (term)
   "Format a term for N-Triples output."
   (cond
     ((rdf-literal-p term)
-     (let ((val (rdf-literal-value term))
+     (let ((val (if (stringp (rdf-literal-value term))
+                    (escape-nt-string (rdf-literal-value term))
+                    (princ-to-string (rdf-literal-value term))))
            (dt (rdf-literal-datatype term))
            (lang (rdf-literal-language term)))
        (cond
          (lang (format nil "\"~A\"@~A" val lang))
          ((equal dt +xsd-string+) (format nil "\"~A\"" val))
-         ((equal dt +xsd-boolean+) (format nil "\"~A\"^^<~A>" (if val "true" "false") dt))
+         ((equal dt +xsd-boolean+) (format nil "\"~A\"^^<~A>" (if (rdf-literal-value term) "true" "false") dt))
          (t (format nil "\"~A\"^^<~A>" val dt)))))
     ((stringp term)
      (if (and (> (length term) 0)
