@@ -10,19 +10,30 @@
 (defun import-ntriples (g data)
   "Import N-Triples format string into graph G."
   (with-input-from-string (s data)
-    (loop for line = (read-line s nil nil)
-          while line do
-          (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
-            (when (and (> (length trimmed) 0)
-                       (char/= #\# (char trimmed 0)))
-              (multiple-value-bind (subj pred obj)
-                  (parse-ntriple-line trimmed)
-                (when (and subj pred obj)
-                  (add-triple g subj pred obj))))))))
+    (import-ntriples-stream g s)))
+
+(defun import-ntriples-stream (g stream)
+  "Import N-Triples from a character stream, line by line."
+  (loop for line = (read-line stream nil nil)
+        with count fixnum = 0
+        while line do
+        (let ((trimmed (string-trim '(#\Space #\Tab #\Return) line)))
+          (when (and (> (length trimmed) 0)
+                     (char/= #\# (char trimmed 0)))
+            (multiple-value-bind (subj pred obj)
+                (parse-ntriple-line trimmed)
+              (when (and subj pred obj)
+                (add-triple-fast g
+                  (intern-string subj)
+                  (intern-string pred)
+                  (if (rdf-literal-p obj) obj (intern-string obj)))
+                (incf count)))))
+        finally (return count)))
 
 (defun import-ntriples-file (g path)
-  "Import N-Triples from a file."
-  (import-ntriples g (uiop:read-file-string path)))
+  "Import N-Triples from a file (streaming, constant memory)."
+  (with-open-file (s path :direction :input :external-format :utf-8)
+    (import-ntriples-stream g s)))
 
 (defun parse-ntriple-line (line)
   "Parse a single N-Triples line into subject, predicate, object."

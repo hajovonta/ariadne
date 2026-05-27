@@ -106,6 +106,22 @@
 (defun index-push (ht key triple)
   (push triple (gethash key ht)))
 
+(defun add-triple-fast (g subject predicate object)
+  "Fast bulk-insert: no lock, no prefix expansion, no events. Strings must be pre-interned."
+  (let ((key (list subject predicate object)))
+    (unless (gethash key (graph-spo g))
+      (let ((tr (%make-triple subject predicate object nil)))
+        (setf (gethash key (graph-spo g)) tr)
+        (push tr (gethash (list subject predicate) (graph-sp g)))
+        (push tr (gethash subject (graph-s g)))
+        (push tr (gethash predicate (graph-p g)))
+        (push tr (gethash (list predicate object) (graph-po g)))
+        (push tr (gethash object (graph-o g)))
+        (push tr (gethash (list object subject) (graph-os g)))
+        (push tr (graph-all g))
+        (incf (graph-count g))
+        tr))))
+
 (defun index-delete (ht key triple)
   (setf (gethash key ht) (delete triple (gethash key ht) :test #'eq))
   (when (null (gethash key ht))
