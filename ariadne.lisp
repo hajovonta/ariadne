@@ -118,7 +118,6 @@
         (push tr (gethash (list predicate object) (graph-po g)))
         (push tr (gethash object (graph-o g)))
         (push tr (gethash (list object subject) (graph-os g)))
-        (push tr (graph-all g))
         (incf (graph-count g))
         tr))))
 
@@ -157,7 +156,6 @@
         (index-push (graph-po g) (list predicate object) tr)
         (index-push (graph-o g) object tr)
         (index-push (graph-os g) (list object subject) tr)
-        (push tr (graph-all g))
         (incf (graph-count g))
         (when graph-name
           (push tr (gethash graph-name (graph-graph-index g))))
@@ -179,7 +177,6 @@
         (index-delete (graph-po g) (list predicate object) tr)
         (index-delete (graph-o g) object tr)
         (index-delete (graph-os g) (list object subject) tr)
-        (setf (graph-all g) (delete tr (graph-all g) :test #'eq))
         (decf (graph-count g))
         (txlog-write g :remove subject predicate object)
         (fire-graph-events g :remove subject predicate object)
@@ -208,7 +205,7 @@
     (subject (copy-list (gethash subject (graph-s g))))
     (predicate (copy-list (gethash predicate (graph-p g))))
     (object (copy-list (gethash object (graph-o g))))
-    (t (copy-list (graph-all g)))))
+    (t (loop for tr being the hash-values of (graph-spo g) collect tr))))
 
 (defmethod has-triple-p ((g graph) subject predicate object)
   (when (stringp subject) (setf subject (expand-if-prefixed g subject)))
