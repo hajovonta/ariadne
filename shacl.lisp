@@ -254,11 +254,14 @@ PATH can be a simple URI or a blank node with path operators."
   (let ((tr (first (get-triples g :subject ps :predicate (sh-uri pred)))))
     (when tr
       (let ((obj (triple-object tr)))
-        ;; Check if it's an RDF list head (has rdf:first)
-        (if (get-triples g :subject obj :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
-            (rdf-list-to-list g obj)
-            ;; Multiple direct values
-            (mapcar #'triple-object (get-triples g :subject ps :predicate (sh-uri pred))))))))
+        (cond
+          ;; rdf:nil = empty list
+          ((equal obj "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil") nil)
+          ;; RDF list head (has rdf:first)
+          ((get-triples g :subject obj :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+           (rdf-list-to-list g obj))
+          ;; Multiple direct values
+          (t (mapcar #'triple-object (get-triples g :subject ps :predicate (sh-uri pred)))))))))
 
 ;;; ==========================================================================
 ;;; Constraint checking
@@ -427,7 +430,7 @@ PATH can be a simple URI or a blank node with path operators."
     ;; sh:disjoint
     (let ((disj-path (prop-shape-value g prop-shape "disjoint")))
       (when disj-path
-        (let ((other-vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate disj-path))))
+        (let ((other-vals (resolve-path-values g focus-node disj-path)))
           (dolist (val values)
             (when (member val other-vals :test #'equal)
               (push (make-violation focus-node path shape
@@ -437,7 +440,7 @@ PATH can be a simple URI or a blank node with path operators."
     ;; sh:lessThan
     (let ((lt-path (prop-shape-value g prop-shape "lessThan")))
       (when lt-path
-        (let ((other-vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate lt-path))))
+        (let ((other-vals (resolve-path-values g focus-node lt-path)))
           (dolist (val values)
             (dolist (ov other-vals)
               (unless (shacl-value< val ov)
@@ -447,7 +450,7 @@ PATH can be a simple URI or a blank node with path operators."
     ;; sh:lessThanOrEquals
     (let ((lte-path (prop-shape-value g prop-shape "lessThanOrEquals")))
       (when lte-path
-        (let ((other-vals (mapcar #'triple-object (get-triples g :subject focus-node :predicate lte-path))))
+        (let ((other-vals (resolve-path-values g focus-node lte-path)))
           (dolist (val values)
             (dolist (ov other-vals)
               (unless (shacl-value<= val ov)
@@ -744,17 +747,23 @@ PATH can be a simple URI or a blank node with path operators."
         (push (make-violation focus-node nil shape
                               (format nil "expected datatype ~A" dt))
               violations)))
-    ;; sh:nodeKind
+    ;; sh:nodeKind (supports list of kinds in SHACL 1.2)
     (let ((nk (prop-shape-value g shape "nodeKind")))
-      (when (and nk (not (value-matches-node-kind-p val nk)))
-        (push (make-violation focus-node nil shape
-                              (format nil "expected nodeKind ~A" nk))
-              violations)))
+      (when nk
+        (let ((kinds (if (get-triples g :subject nk :predicate "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+                         (rdf-list-to-list g nk)
+                         (list nk))))
+          (unless (some (lambda (k) (value-matches-node-kind-p val k)) kinds)
+            (push (make-violation focus-node nil shape
+                                  (format nil "expected nodeKind ~A" nk))
+                  violations)))))
     ;; sh:in
-    (let ((allowed (prop-shape-list-value g shape "in")))
-      (when (and allowed (not (member val allowed :test #'equal)))
-        (push (make-violation focus-node nil shape "value not in allowed set")
-              violations)))
+    (let ((in-tr (first (get-triples g :subject shape :predicate (sh-uri "in")))))
+      (when in-tr
+        (let ((allowed (prop-shape-list-value g shape "in")))
+          (unless (member val allowed :test #'equal)
+            (push (make-violation focus-node nil shape "value not in allowed set")
+                  violations)))))
     ;; sh:hasValue — the focus node's values must include this
     (let ((required (prop-shape-value g shape "hasValue")))
       (when (and required (not (equal val required)))
