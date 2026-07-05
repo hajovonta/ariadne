@@ -79,7 +79,8 @@
             (pushnew (triple-subject inst) nodes :test #'equal)))))
     ;; Implicit target class: shape is also an rdfs:Class or owl:Class
     (when (or (has-triple-p g shape *rdf-type* "http://www.w3.org/2000/01/rdf-schema#Class")
-              (has-triple-p g shape *rdf-type* "http://www.w3.org/2002/07/owl#Class"))
+              (has-triple-p g shape *rdf-type* "http://www.w3.org/2002/07/owl#Class")
+              (has-triple-p g shape *rdf-type* (sh-uri "ShapeClass")))
       ;; Direct instances
       (dolist (inst (get-triples g :predicate *rdf-type* :object shape))
         (pushnew (triple-subject inst) nodes :test #'equal))
@@ -539,6 +540,27 @@ PATH can be a simple URI or a blank node with path operators."
           (push (make-violation focus-node path shape
                                 "no value conforms to sh:someValue shape")
                 violations))))
+    ;; sh:rootClass (SHACL 1.2) — value must be the class or a subclass of it
+    (let ((root (prop-shape-value g prop-shape "rootClass")))
+      (when root
+        (let ((valid-classes (cons root (all-subclasses g root))))
+          (dolist (val values)
+            (unless (member val valid-classes :test #'equal)
+              (push (make-violation focus-node path shape
+                                    (format nil "~A is not ~A or a subclass of it" val root)
+                                    :value val)
+                    violations))))))
+    ;; sh:subsetOf (SHACL 1.2) — all values must also appear in the other property
+    (let ((subset-path (prop-shape-value g prop-shape "subsetOf")))
+      (when subset-path
+        (let ((other-vals (mapcar #'triple-object
+                                  (get-triples g :subject focus-node :predicate subset-path))))
+          (dolist (val values)
+            (unless (member val other-vals :test #'equal)
+              (push (make-violation focus-node path shape
+                                    (format nil "value ~A not in ~A" val subset-path)
+                                    :value val)
+                    violations))))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
