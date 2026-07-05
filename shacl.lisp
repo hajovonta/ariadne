@@ -99,12 +99,39 @@
     (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetObjectsOf")))
       (dolist (data-tr (get-triples g :predicate (triple-object tr)))
         (pushnew (triple-object data-tr) nodes :test #'equal)))
+    ;; sh:targetWhere (SHACL 1.2) — nodes that conform to the given shape
+    (dolist (tr (get-triples g :subject shape :predicate (sh-uri "targetWhere")))
+      (let ((where-shape (triple-object tr)))
+        ;; Test all subjects in the graph against the where-shape
+        (dolist (subj (all-subjects g))
+          (when (node-conforms-to-shape-p g subj where-shape)
+            (pushnew subj nodes :test #'equal)))))
     nodes))
 
 (defun shape-property-shapes (g shape)
   "Return list of property shape URIs for SHAPE."
   (mapcar #'triple-object
           (get-triples g :subject shape :predicate (sh-uri "property"))))
+
+(defun node-conforms-to-shape-p (g node shape)
+  "Return T if NODE conforms to SHAPE (no violations). Used for sh:targetWhere."
+  ;; Check sh:class constraint on the where-shape
+  (dolist (tr (get-triples g :subject shape :predicate (sh-uri "class")))
+    (let ((cls (triple-object tr)))
+      (unless (or (has-triple-p g node *rdf-type* cls)
+                  (some (lambda (sc) (has-triple-p g node *rdf-type* sc))
+                        (all-subclasses g cls)))
+        (return-from node-conforms-to-shape-p nil))))
+  ;; Check property shapes
+  (dolist (ps (shape-property-shapes g shape))
+    (let ((violations (check-property-shape g node ps shape)))
+      (when violations
+        (return-from node-conforms-to-shape-p nil))))
+  ;; Check node-level constraints
+  (let ((node-violations (check-node-constraints g node shape)))
+    (when node-violations
+      (return-from node-conforms-to-shape-p nil)))
+  t)
 
 (defun prop-shape-path (g ps)
   (let ((tr (first (get-triples g :subject ps :predicate (sh-uri "path")))))
@@ -494,6 +521,24 @@ PATH can be a simple URI or a blank node with path operators."
           (dolist (nps nested-props)
             (let ((nested-violations (check-property-shape g val nps shape)))
               (setf violations (nconc violations nested-violations)))))))
+    ;; sh:singleLine (SHACL 1.2)
+    (let ((sl (lit-val (prop-shape-value g prop-shape "singleLine"))))
+      (when (or (eq sl t) (equal sl "true"))
+        (dolist (val values)
+          (let ((sval (lit-val val)))
+            (when (and (stringp sval)
+                       (cl-ppcre:scan "[\\f\\r\\n\\x0B]" sval))
+              (push (make-violation focus-node path shape
+                                    "value contains line breaks"
+                                    :value val)
+                    violations))))))
+    ;; sh:someValue (SHACL 1.2)
+    (let ((some-shapes (prop-shape-values g prop-shape "someValue")))
+      (dolist (sv-shape some-shapes)
+        (unless (some (lambda (val) (check-value-against-subshape g val sv-shape)) values)
+          (push (make-violation focus-node path shape
+                                "no value conforms to sh:someValue shape")
+                violations))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
