@@ -874,11 +874,30 @@ If the shape has no explicit severity, violations keep their default (sh:Violati
                 (push (make-violation focus-node nil shape "no language tag")
                       violations))))))
     ;; sh:closed
-    (let ((closed (lit-val (prop-shape-value g shape "closed"))))
-      (when (or (eq closed t) (equal closed "true"))
-        (let ((allowed-preds (mapcar (lambda (ps) (prop-shape-path g ps))
-                                     (shape-property-shapes g shape)))
+    (let ((closed (prop-shape-value g shape "closed")))
+      (when closed
+        (let ((allowed-preds nil)
               (ignored (prop-shape-list-value g shape "ignoredProperties")))
+          (cond
+            ;; sh:closed sh:ByTypes — collect properties from all type-shapes in hierarchy
+            ((equal closed (sh-uri "ByTypes"))
+             (let ((types (mapcar #'triple-object
+                                  (get-triples g :subject focus-node :predicate *rdf-type*))))
+               ;; For each type and its superclasses, if it's also a shape, collect properties
+               (dolist (typ types)
+                 (labels ((collect-from-class (cls)
+                            (dolist (ps (shape-property-shapes g cls))
+                              (let ((p (prop-shape-path g ps)))
+                                (when p (pushnew p allowed-preds :test #'equal))))
+                            ;; Walk superclasses
+                            (dolist (tr (get-triples g :subject cls
+                                                    :predicate "http://www.w3.org/2000/01/rdf-schema#subClassOf"))
+                              (collect-from-class (triple-object tr)))))
+                   (collect-from-class typ)))))
+            ;; sh:closed true — only properties declared on this shape
+            ((or (eq (lit-val closed) t) (equal (lit-val closed) "true"))
+             (setf allowed-preds (mapcar (lambda (ps) (prop-shape-path g ps))
+                                         (shape-property-shapes g shape)))))
           (push *rdf-type* allowed-preds)
           (dolist (ig ignored) (push ig allowed-preds))
           (dolist (tr (get-triples g :subject focus-node))
