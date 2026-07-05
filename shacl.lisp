@@ -638,13 +638,13 @@ PATH can be a simple URI or a blank node with path operators."
                       (push m seen)))))))))
     violations))
 
-(defun make-violation (focus-node path shape message &key value)
+(defun make-violation (focus-node path shape message &key value (severity (sh-uri "Violation")))
   (list :focus-node focus-node
         :result-path path
         :source-shape shape
         :result-message message
         :value value
-        :result-severity (sh-uri "Violation")))
+        :result-severity severity))
 
 (defun value-matches-datatype-p (val datatype)
   "Check if VAL matches the expected XSD datatype."
@@ -836,10 +836,11 @@ PATH can be a simple URI or a blank node with path operators."
           (push (make-violation focus-node nil shape "does not satisfy any sh:or")
                 violations))))
     ;; sh:xone
-    (let ((xone-shapes (prop-shape-list-value g shape "xone")))
-      (when xone-shapes
-        (let ((pass-count (count-if (lambda (ss) (check-value-against-subshape g val ss))
-                                    xone-shapes)))
+    (let ((xone-tr (first (get-triples g :subject shape :predicate (sh-uri "xone")))))
+      (when xone-tr
+        (let* ((xone-shapes (prop-shape-list-value g shape "xone"))
+               (pass-count (count-if (lambda (ss) (check-value-against-subshape g val ss))
+                                     xone-shapes)))
           (unless (= 1 pass-count)
             (push (make-violation focus-node nil shape
                                   (format nil "sh:xone expects 1 match, got ~A" pass-count))
