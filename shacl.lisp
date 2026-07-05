@@ -1032,7 +1032,30 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                              (v (check-component-constraint g focus comp ps
                                                             :path ps-path
                                                             :param-bindings bindings)))
-                        (setf all-violations (nconc all-violations v))))))))))))
+                        (setf all-violations (nconc all-violations v))))))))
+            ;; sh:uniqueValuesFor (SHACL 1.2) — cross-node uniqueness check
+            (let ((uvf-preds (mapcar #'triple-object
+                                     (get-triples g :subject shape :predicate (sh-uri "uniqueValuesFor")))))
+              (dolist (uvf-pred uvf-preds)
+                (let ((seen (make-hash-table :test 'equal)))
+                  (dolist (focus targets)
+                    (dolist (val (resolve-path-values g focus uvf-pred))
+                      (let ((key (if (rdf-literal-p val) (rdf-literal-value val) val)))
+                        (if (gethash key seen)
+                            (progn
+                              (push (make-violation focus nil shape
+                                                    (format nil "duplicate value ~A for ~A" val uvf-pred)
+                                                    :value val)
+                                    all-violations)
+                              ;; Also report the first node that had this value (if not already reported)
+                              (let ((first-node (gethash key seen)))
+                                (when (stringp first-node)
+                                  (push (make-violation first-node nil shape
+                                                        (format nil "duplicate value ~A for ~A" val uvf-pred)
+                                                        :value val)
+                                        all-violations)
+                                  (setf (gethash key seen) t))))
+                            (setf (gethash key seen) focus))))))))))))
     (list :conforms (null all-violations)
           :results all-violations)))
 
