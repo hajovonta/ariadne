@@ -646,6 +646,16 @@ PATH can be a simple URI or a blank node with path operators."
         :value value
         :result-severity severity))
 
+(defun apply-shape-severity (g source-shape violations)
+  "Set the severity on VIOLATIONS based on SOURCE-SHAPE's sh:severity.
+If the shape has no explicit severity, violations keep their default (sh:Violation)."
+  (let ((sev-tr (first (get-triples g :subject source-shape :predicate (sh-uri "severity")))))
+    (when sev-tr
+      (let ((sev (triple-object sev-tr)))
+        (dolist (v violations)
+          (setf (getf v :result-severity) sev)))))
+  violations)
+
 (defun value-matches-datatype-p (val datatype)
   "Check if VAL matches the expected XSD datatype."
   (if (rdf-literal-p val)
@@ -972,14 +982,22 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                             (get-triples g :subject shape :predicate (sh-uri "sparql")))))
             (dolist (focus targets)
               (let ((node-violations (check-node-constraints g focus shape)))
+                (apply-shape-severity g shape node-violations)
                 (setf all-violations (nconc all-violations node-violations)))
               (when (and is-prop-shape (prop-shape-path g shape))
                 (let ((violations (check-property-shape g focus shape shape)))
+                  (apply-shape-severity g shape violations)
                   (setf all-violations (nconc all-violations violations))))
               (dolist (ps prop-shapes)
                 (let ((ps-deact (lit-val (prop-shape-value g ps "deactivated"))))
                   (unless (or (eq ps-deact t) (equal ps-deact "true"))
                     (let ((violations (check-property-shape g focus ps shape)))
+                      ;; Property shape severity overrides, else inherit from parent shape
+                      (let ((ps-sev (first (get-triples g :subject ps :predicate (sh-uri "severity")))))
+                        (if ps-sev
+                            (dolist (v violations)
+                              (setf (getf v :result-severity) (triple-object ps-sev)))
+                            (apply-shape-severity g shape violations)))
                       (setf all-violations (nconc all-violations violations))))))
               ;; SPARQL constraints
               (dolist (sc sparql-constraints)
@@ -1057,7 +1075,11 @@ Returns a plist with :conforms (boolean) and :results (list of violations)."
                                         all-violations)
                                   (setf (gethash key seen) t))))
                             (setf (gethash key seen) focus))))))))))))
-    (list :conforms (null all-violations)
+    (list :conforms (not (some (lambda (v)
+                                  (let ((sev (getf v :result-severity)))
+                                    (not (or (equal sev (sh-uri "Debug"))
+                                             (equal sev (sh-uri "Trace"))))))
+                                all-violations))
           :results all-violations)))
 
 ;;; ==========================================================================
