@@ -134,6 +134,25 @@
       (return-from node-conforms-to-shape-p nil)))
   t)
 
+(defun rdf-list-members (g node)
+  "Walk an RDF list starting at NODE. Returns list of members or :MALFORMED."
+  (let ((rdf-nil "http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")
+        (rdf-first "http://www.w3.org/1999/02/22-rdf-syntax-ns#first")
+        (rdf-rest "http://www.w3.org/1999/02/22-rdf-syntax-ns#rest")
+        (members nil)
+        (visited nil)
+        (current node))
+    (loop
+      (when (equal current rdf-nil) (return (nreverse members)))
+      (when (member current visited :test #'equal) (return :malformed))
+      (push current visited)
+      (let ((first-tr (get-triples g :subject current :predicate rdf-first))
+            (rest-tr (get-triples g :subject current :predicate rdf-rest)))
+        (unless (and (= 1 (length first-tr)) (= 1 (length rest-tr)))
+          (return :malformed))
+        (push (triple-object (first first-tr)) members)
+        (setf current (triple-object (first rest-tr)))))))
+
 (defun prop-shape-path (g ps)
   (let ((tr (first (get-triples g :subject ps :predicate (sh-uri "path")))))
     (when tr (triple-object tr))))
@@ -561,6 +580,59 @@ PATH can be a simple URI or a blank node with path operators."
                                     (format nil "value ~A not in ~A" val subset-path)
                                     :value val)
                     violations))))))
+    ;; sh:memberShape on property shape (SHACL 1.2) — each value node is a list, members conform
+    (let ((member-shape (prop-shape-value g prop-shape "memberShape")))
+      (when member-shape
+        (dolist (val values)
+          (let ((members (rdf-list-members g val)))
+            (if (eq members :malformed)
+                (push (make-violation focus-node path shape
+                                      "value is not a well-formed RDF list" :value val)
+                      violations)
+                (dolist (m members)
+                  (unless (check-value-against-subshape g m member-shape)
+                    (push (make-violation focus-node path shape
+                                          (format nil "list member ~A does not conform" m)
+                                          :value val)
+                          violations))))))))
+    ;; sh:minListLength on property shape (SHACL 1.2)
+    (let ((min-ll (lit-val (prop-shape-value g prop-shape "minListLength"))))
+      (when min-ll
+        (let ((n (if (numberp min-ll) min-ll (parse-integer (princ-to-string min-ll) :junk-allowed t))))
+          (dolist (val values)
+            (let* ((members (rdf-list-members g val))
+                   (len (if (eq members :malformed) -1 (length members))))
+              (when (and n (< len n))
+                (push (make-violation focus-node path shape
+                                      (format nil "list length ~A < minListLength ~A" len n)
+                                      :value val)
+                      violations)))))))
+    ;; sh:maxListLength on property shape (SHACL 1.2)
+    (let ((max-ll (lit-val (prop-shape-value g prop-shape "maxListLength"))))
+      (when max-ll
+        (let ((n (if (numberp max-ll) max-ll (parse-integer (princ-to-string max-ll) :junk-allowed t))))
+          (dolist (val values)
+            (let* ((members (rdf-list-members g val))
+                   (len (if (eq members :malformed) -1 (length members))))
+              (when (and n (not (eq members :malformed)) (> len n))
+                (push (make-violation focus-node path shape
+                                      (format nil "list length ~A > maxListLength ~A" len n)
+                                      :value val)
+                      violations)))))))
+    ;; sh:uniqueMembers on property shape (SHACL 1.2)
+    (let ((um (lit-val (prop-shape-value g prop-shape "uniqueMembers"))))
+      (when (or (eq um t) (equal um "true"))
+        (dolist (val values)
+          (let ((members (rdf-list-members g val)))
+            (unless (eq members :malformed)
+              (let ((seen nil))
+                (dolist (m members)
+                  (if (member m seen :test #'equal)
+                      (push (make-violation focus-node path shape
+                                            (format nil "duplicate list member ~A" m)
+                                            :value val)
+                            violations)
+                      (push m seen)))))))))
     violations))
 
 (defun make-violation (focus-node path shape message &key value)
@@ -819,6 +891,55 @@ PATH can be a simple URI or a blank node with path operators."
           (push (make-violation focus-node nil shape
                                 (format nil "does not conform to ~A" ref-shape))
                 violations))))
+    ;; sh:memberShape (SHACL 1.2) — focus node must be a well-formed list, each member conforms
+    (let ((member-shape (prop-shape-value g shape "memberShape")))
+      (when member-shape
+        (let ((members (rdf-list-members g focus-node)))
+          (if (eq members :malformed)
+              (push (make-violation focus-node nil shape
+                                    "not a well-formed RDF list" :value focus-node)
+                    violations)
+              (dolist (m members)
+                (unless (check-value-against-subshape g m member-shape)
+                  (push (make-violation focus-node nil shape
+                                        (format nil "list member ~A does not conform" m)
+                                        :value focus-node)
+                        violations)))))))
+    ;; sh:minListLength (SHACL 1.2)
+    (let ((min-ll (lit-val (prop-shape-value g shape "minListLength"))))
+      (when min-ll
+        (let* ((n (if (numberp min-ll) min-ll (parse-integer (princ-to-string min-ll) :junk-allowed t)))
+               (members (rdf-list-members g focus-node))
+               (len (if (eq members :malformed) -1 (length members))))
+          (when (and n (< len n))
+            (push (make-violation focus-node nil shape
+                                  (format nil "list length ~A < minListLength ~A" len n)
+                                  :value focus-node)
+                  violations)))))
+    ;; sh:maxListLength (SHACL 1.2)
+    (let ((max-ll (lit-val (prop-shape-value g shape "maxListLength"))))
+      (when max-ll
+        (let* ((n (if (numberp max-ll) max-ll (parse-integer (princ-to-string max-ll) :junk-allowed t)))
+               (members (rdf-list-members g focus-node))
+               (len (if (eq members :malformed) -1 (length members))))
+          (when (and n (not (eq members :malformed)) (> len n))
+            (push (make-violation focus-node nil shape
+                                  (format nil "list length ~A > maxListLength ~A" len n)
+                                  :value focus-node)
+                  violations)))))
+    ;; sh:uniqueMembers (SHACL 1.2)
+    (let ((um (lit-val (prop-shape-value g shape "uniqueMembers"))))
+      (when (or (eq um t) (equal um "true"))
+        (let ((members (rdf-list-members g focus-node)))
+          (unless (eq members :malformed)
+            (let ((seen nil))
+              (dolist (m members)
+                (if (member m seen :test #'equal)
+                    (push (make-violation focus-node nil shape
+                                          (format nil "duplicate list member ~A" m)
+                                          :value focus-node)
+                          violations)
+                    (push m seen))))))))
     violations))
 
 ;;; ==========================================================================
