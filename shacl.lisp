@@ -60,8 +60,11 @@
       (pushnew (triple-subject tr) shapes :test #'equal))
     (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "PropertyShape")))
       (pushnew (triple-subject tr) shapes :test #'equal))
-    ;; Implicit: anything with sh:targetClass, sh:targetNode, sh:targetSubjectsOf, sh:targetObjectsOf
-    (dolist (pred '("targetClass" "targetNode" "targetSubjectsOf" "targetObjectsOf"))
+    ;; sh:ShapeClass instances (SHACL 1.2)
+    (dolist (tr (get-triples g :predicate *rdf-type* :object (sh-uri "ShapeClass")))
+      (pushnew (triple-subject tr) shapes :test #'equal))
+    ;; Implicit: anything with sh:targetClass, sh:targetNode, sh:targetSubjectsOf, sh:targetObjectsOf, sh:targetWhere
+    (dolist (pred '("targetClass" "targetNode" "targetSubjectsOf" "targetObjectsOf" "targetWhere"))
       (dolist (tr (get-triples g :predicate (sh-uri pred)))
         (pushnew (triple-subject tr) shapes :test #'equal)))
     shapes))
@@ -107,6 +110,9 @@
         (dolist (subj (all-subjects g))
           (when (node-conforms-to-shape-p g subj where-shape)
             (pushnew subj nodes :test #'equal)))))
+    ;; sh:shape explicit target (SHACL 1.2) — nodes that declare sh:shape <this-shape>
+    (dolist (tr (get-triples g :predicate (sh-uri "shape") :object shape))
+      (pushnew (triple-subject tr) nodes :test #'equal))
     nodes))
 
 (defun shape-property-shapes (g shape)
